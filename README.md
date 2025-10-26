@@ -53,10 +53,7 @@ INBOX_AI_IMAP__APP_PASSWORD=application_specific_password
 Run the full quality gate with:
 
 ```bash
-ruff check src
-pylint src/inbox_ai
-mypy src/inbox_ai
-pytest
+ruff check src && pylint src/inbox_ai && mypy src/inbox_ai && pytest
 ```
 
 ## Roadmap
