@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from dotenv import dotenv_values
 from pydantic import BaseModel, Field
@@ -51,6 +51,17 @@ class LoggingSettings(BaseModel):
     )
 
 
+class SyncSettings(BaseModel):
+    """Settings controlling fetch cadence and bounds."""
+
+    batch_size: int = Field(
+        default=50, ge=1, description="Messages fetched per IMAP batch"
+    )
+    max_messages: int | None = Field(
+        default=None, description="Hard cap for messages processed in a cycle"
+    )
+
+
 class AppSettings(BaseModel):
     """Aggregated application configuration."""
 
@@ -58,6 +69,7 @@ class AppSettings(BaseModel):
     llm: LlmSettings = Field(default_factory=LlmSettings)
     storage: StorageSettings = Field(default_factory=StorageSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
+    sync: SyncSettings = Field(default_factory=SyncSettings)
 
 
 ENV_PREFIX = "INBOX_AI_"
@@ -65,23 +77,21 @@ ENV_PREFIX = "INBOX_AI_"
 
 def _normalize_key(raw_key: str) -> list[str]:
     """Convert an environment variable key into a nested attribute path."""
-
     trimmed = raw_key.removeprefix(ENV_PREFIX)
     return [segment.lower() for segment in trimmed.split("__") if segment]
 
 
 def _merge_into_tree(tree: dict[str, Any], path: list[str], value: Any) -> None:
     """Assign a value to a nested dictionary given a path."""
-
     cursor = tree
     for segment in path[:-1]:
-        cursor = cursor.setdefault(segment, {})  # type: ignore[assignment]
+        next_node = cursor.setdefault(segment, {})
+        cursor = cast(dict[str, Any], next_node)
     cursor[path[-1]] = value
 
 
 def _collect_env_values(env_file: Path | str | None) -> dict[str, Any]:
     """Load configuration values from environment variables and optional file."""
-
     collected: dict[str, Any] = {}
 
     file_values = {}
@@ -113,17 +123,7 @@ def _collect_env_values(env_file: Path | str | None) -> dict[str, Any]:
 def load_app_settings(
     env_file: Path | str | None = None, **overrides: Any
 ) -> AppSettings:
-    """Load application settings with optional overrides.
-
-    Parameters
-    ----------
-    env_file:
-        Explicit path to an environment file.
-    **overrides:
-        Keyword overrides for the resulting settings instance. Useful
-        during testing.
-    """
-
+    """Load application settings, applying env files and overrides."""
     collected = _collect_env_values(env_file)
     if overrides:
         collected.update(overrides)
@@ -136,5 +136,6 @@ __all__ = [
     "LlmSettings",
     "LoggingSettings",
     "StorageSettings",
+    "SyncSettings",
     "load_app_settings",
 ]

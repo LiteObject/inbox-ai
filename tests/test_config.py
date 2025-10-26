@@ -22,6 +22,7 @@ def test_defaults_loaded_without_env_file() -> None:
     settings = load_app_settings()
     assert settings.imap.host == "imap.gmail.com"
     assert settings.storage.db_path == Path("./inbox_ai.db")
+    assert settings.sync.batch_size == 50
 
 
 def test_env_file_overrides(tmp_path: Path) -> None:

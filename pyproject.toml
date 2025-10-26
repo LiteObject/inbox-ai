@@ -55,18 +55,21 @@ packages = ["inbox_ai"]
 [tool.ruff]
 line-length = 100
 src = ["src"]
+
+[tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "N", "D"]
 ignore = [
     "D100",  # Missing docstring in public module
     "D104",  # Missing docstring in public package
 ]
 
-[tool.ruff.per-file-ignores]
+[tool.ruff.lint.per-file-ignores]
 "tests/*" = ["D"]
 
 [tool.pylint.MASTER]
 py-version = "3.11"
 ignore = [".venv", "build", "dist"]
+init-hook = "import os, sys; sys.path.insert(0, os.path.join(os.getcwd(), 'src'))"
 
 [tool.pylint."MESSAGES CONTROL"]
 disable = [

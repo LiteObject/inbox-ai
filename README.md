@@ -27,6 +27,12 @@ implemented incrementally and safely.
    pytest
    ```
 
+5. Perform a mailbox sync once IMAP credentials are configured:
+
+   ```bash
+   python -m inbox_ai.cli sync
+   ```
+
 ## Configuration
 
 Configuration is managed with Pydantic settings and can be injected from environment variables or an
@@ -58,7 +64,7 @@ pytest
 Planned milestones include:
 
 1. Project foundation (configuration, logging, testing harness).
-2. IMAP ingestion and persistence.
+2. IMAP ingestion and persistence. ✅
 3. LLM-backed intelligence services (summaries, prioritisation).
 4. Draft generation and follow-up tracking.
 5. User-facing CLI/TUI enhancements.
