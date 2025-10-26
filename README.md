@@ -60,7 +60,7 @@ ruff check src && pylint src/inbox_ai && mypy src/inbox_ai && pytest
 
 Planned milestones include:
 
-1. Project foundation (configuration, logging, testing harness).
+1. Project foundation (configuration, logging, testing harness). ✅
 2. IMAP ingestion and persistence. ✅
 3. LLM-backed intelligence services (summaries, prioritisation).
 4. Draft generation and follow-up tracking.
