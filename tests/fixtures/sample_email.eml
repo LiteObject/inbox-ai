@@ -1,0 +1,32 @@
+From: Example Sender <sender@example.com>
+To: User <user@example.com>
+Cc: Another <another@example.com>
+Subject: Test Email
+Date: Fri, 24 Oct 2025 10:30:00 -0400
+Message-ID: <1234@example.com>
+In-Reply-To: <thread@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="==boundary=="
+
+--==boundary==
+Content-Type: multipart/alternative; boundary="==inner=="
+
+--==inner==
+Content-Type: text/plain; charset="utf-8"
+
+Hello world.
+
+--==inner==
+Content-Type: text/html; charset="utf-8"
+
+<p>Hello <strong>world</strong>.</p>
+
+--==inner==--
+
+--==boundary==
+Content-Type: application/octet-stream
+Content-Disposition: attachment; filename="note.txt"
+Content-Transfer-Encoding: base64
+
+SGVsbG8sIGF0dGFjaG1lbnQh
+--==boundary==--
