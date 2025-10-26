@@ -114,7 +114,16 @@ def _collect_env_values(env_file: Path | str | None) -> dict[str, Any]:
         path = _normalize_key(key)
         if not path:
             continue
-        _merge_into_tree(collected, path, value)
+        normalized_value: Any = value
+        if isinstance(value, str) and value == "":
+            normalized_value = None
+        elif isinstance(value, str):
+            lowercase_value = value.lower()
+            if lowercase_value == "true":
+                normalized_value = True
+            elif lowercase_value == "false":
+                normalized_value = False
+        _merge_into_tree(collected, path, normalized_value)
 
     return collected
 
