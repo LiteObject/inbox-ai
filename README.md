@@ -93,6 +93,8 @@ ruff check src && pylint src/inbox_ai && mypy src/inbox_ai && pytest
    served by the JSON ``/api/dashboard`` endpoint.
 - The app reuses the SQLite repository, so the dashboard reflects the latest sync results without
    additional services.
+- Filter limits and follow-up status on the dashboard, and toggle tasks between open/done without
+   leaving the page.
 
 ## Roadmap
 

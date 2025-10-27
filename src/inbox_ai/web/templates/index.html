@@ -103,18 +103,377 @@
             color: #059669;
             font-weight: 600;
         }
+
+        .filter-form {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            margin: 16px 0 0;
+            align-items: flex-end;
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .filter-group label {
+            font-weight: 600;
+            margin-bottom: 4px;
+            color: #333;
+        }
+
+        .filter-group input,
+        .filter-group select {
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            min-width: 120px;
+        }
+
+        .filter-form button {
+            padding: 10px 16px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .filter-form button:hover {
+            background: #005dc1;
+        }
+
+        .card-actions {
+            margin-top: 14px;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .card-actions form {
+            margin: 0;
+        }
+
+        .card-actions button {
+            padding: 8px 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .card-actions .primary {
+            background: #059669;
+            color: white;
+        }
+
+        .card-actions .secondary {
+            background: #d1d5db;
+            color: #1f2937;
+        }
+
+        .card-actions button:hover {
+            opacity: 0.9;
+        }
+
+        .sync-section {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .sync-section form {
+            margin: 0;
+        }
+
+        .sync-section button {
+            padding: 12px 20px;
+            background: #2563eb;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .sync-section button:hover {
+            background: #1e40af;
+        }
+
+        .sync-copy {
+            color: #555;
+            margin: 8px 0 0;
+        }
+
+        .config-details {
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            padding: 12px 16px;
+            background: #ffffff;
+        }
+
+        .config-details summary {
+            font-weight: 700;
+            font-size: 1.05rem;
+            cursor: pointer;
+            list-style: none;
+        }
+
+        .config-details summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .config-form {
+            margin-top: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .config-group {
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            padding: 12px 16px 4px;
+            background: #f9fafb;
+        }
+
+        .config-group legend {
+            padding: 0 6px;
+            font-weight: 700;
+            color: #1f2937;
+        }
+
+        .config-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px 20px;
+            margin-top: 10px;
+        }
+
+        .config-label {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            font-weight: 600;
+            color: #1f2937;
+        }
+
+        .config-label input,
+        .config-label select {
+            padding: 8px;
+            border: 1px solid #cbd5f5;
+            border-radius: 4px;
+            font-weight: 400;
+            background: #ffffff;
+        }
+
+        .config-label input:focus,
+        .config-label select:focus {
+            outline: 2px solid #2563eb;
+            outline-offset: 1px;
+        }
+
+        .config-help {
+            font-size: 0.85rem;
+            color: #6b7280;
+            font-weight: 400;
+        }
+
+        .config-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .config-actions button {
+            padding: 10px 18px;
+            background: #0f766e;
+            color: #ffffff;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .config-actions button:hover {
+            background: #0d5c57;
+        }
+
+        .config-actions .note {
+            font-size: 0.85rem;
+            color: #374151;
+        }
+
+        .config-meta {
+            margin-top: 8px;
+            font-size: 0.8rem;
+            color: #6b7280;
+        }
+
+        .flash {
+            margin-top: 12px;
+            padding: 10px 12px;
+            border-radius: 6px;
+            font-weight: 600;
+        }
+
+        .flash.success {
+            background: #dcfce7;
+            color: #166534;
+            border: 1px solid #bbf7d0;
+        }
+
+        .flash.error {
+            background: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #fecaca;
+        }
+
+        .spinner-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.4);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            z-index: 1000;
+            color: #f8fafc;
+            font-weight: 600;
+        }
+
+        .spinner {
+            width: 56px;
+            height: 56px;
+            border: 6px solid rgba(255, 255, 255, 0.25);
+            border-top-color: #38bdf8;
+            border-radius: 50%;
+            animation: spin 0.9s linear infinite;
+        }
+
+        @keyframes spin {
+            from {
+                transform: rotate(0deg);
+            }
+
+            to {
+                transform: rotate(360deg);
+            }
+        }
     </style>
 </head>
 
 <body>
     <h1>Inbox AI Dashboard</h1>
 
+    <div id="sync-spinner" class="spinner-overlay" hidden>
+        <div class="spinner" role="status" aria-live="assertive"></div>
+        <p>Sync in progress&hellip;</p>
+    </div>
+
+    {% if sync_status %}
     <div class="section">
-        <h2>Getting Started</h2>
-        <p class="description">
-            Run <code>uvicorn inbox_ai.web:app --reload</code> and open this page in your browser to
-            inspect recent insights, drafts, and follow-up tasks collected during syncs.
-        </p>
+        <div class="flash {% if sync_status == 'ok' %}success{% else %}error{% endif %}">
+            {{ sync_message }}
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="section">
+        <div class="sync-section">
+            <div>
+                <h2>Sync Mailbox</h2>
+                <p class="description">Trigger a manual sync to fetch new emails, refresh insights, drafts, and
+                    follow-ups.</p>
+            </div>
+            <form method="post" action="/sync" data-sync>
+                <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
+                <button type="submit">Sync Now</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="section">
+        <details class="config-details">
+            <summary>Configuration</summary>
+            {% if config_status == "saved" %}
+            <div class="flash success">Configuration saved. Restart the server to apply changes.</div>
+            {% elif config_status == "error" %}
+            <div class="flash error">Unable to update {{ config_env_path }}. Check file permissions.</div>
+            {% endif %}
+            <form class="config-form" method="post" action="/config">
+                <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
+                {% for section in config_sections %}
+                <fieldset class="config-group">
+                    <legend>{{ section.title }}</legend>
+                    <div class="config-grid">
+                        {% for field in section.fields %}
+                        <label class="config-label" for="{{ field.key }}">
+                            <span>{{ field.label }}</span>
+                            {% if field.input_type == "select" %}
+                            <select id="{{ field.key }}" name="{{ field.key }}">
+                                {% for option in field.options %}
+                                <option value="{{ option }}" {% if config_values.get(field.key, '' )==option
+                                    %}selected{% endif %}>{{ option | capitalize }}</option>
+                                {% endfor %}
+                            </select>
+                            {% else %}
+                            <input type="{{ field.input_type }}" id="{{ field.key }}" name="{{ field.key }}"
+                                value="{{ config_values.get(field.key, '') }}" />
+                            {% endif %}
+                            {% if field.description %}
+                            <span class="config-help">{{ field.description }}</span>
+                            {% endif %}
+                        </label>
+                        {% endfor %}
+                    </div>
+                </fieldset>
+                {% endfor %}
+                <div class="config-actions">
+                    <button type="submit">Save Changes</button>
+                    <span class="note">Restart the server after saving to ensure new values are used.</span>
+                </div>
+            </form>
+            <div class="config-meta">Editing <code>{{ config_env_path }}</code></div>
+        </details>
+    </div>
+
+    <div class="section">
+        <h2>Filters</h2>
+        <form class="filter-form" method="get">
+            <div class="filter-group">
+                <label for="insights_limit">Insights limit</label>
+                <input type="number" id="insights_limit" name="insights_limit" min="1" max="100"
+                    value="{{ filters.insights_limit }}" />
+            </div>
+            <div class="filter-group">
+                <label for="drafts_limit">Drafts limit</label>
+                <input type="number" id="drafts_limit" name="drafts_limit" min="1" max="100"
+                    value="{{ filters.drafts_limit }}" />
+            </div>
+            <div class="filter-group">
+                <label for="follow_status">Follow-up status</label>
+                <select id="follow_status" name="follow_status">
+                    {% for option in follow_status_options %}
+                    <option value="{{ option }}" {% if option==filters.follow_status_value %}selected{% endif %}>
+                        {{ option | capitalize }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="follow_limit">Follow-up limit</label>
+                <input type="number" id="follow_limit" name="follow_limit" min="1" max="100"
+                    value="{{ filters.follow_limit }}" />
+            </div>
+            <button type="submit">Apply Filters</button>
+        </form>
     </div>
 
     <div class="section">
@@ -132,77 +491,123 @@
                 </tr>
             </thead>
             <tbody>
-                {% for item in insights %}
-                <tr>
-                    <td>{{ item.uid }}</td>
-                    <td>
-                        <strong>{{ item.subject or "(no subject)" }}</strong><br />
-                        <span class="meta">From: {{ item.sender or "Unknown" }}</span>
-                    </td>
-                    <td>{{ item.summary }}</td>
-                    <td>
-                        {% if item.actionItems %}
-                        <ul class="actions-list">
-                            {% for action in item.actionItems %}
-                            <li>{{ action }}</li>
-                            {% endfor %}
-                        </ul>
-                        {% else %}
-                        <span class="empty">No action items</span>
-                        {% endif %}
-                    </td>
-                    <td>{{ item.priority }}</td>
-                    <td>{{ item.generatedAt }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-        {% else %}
-        <p class="empty">No insights found. Run a sync to populate data.</p>
-        {% endif %}
-    </div>
 
-    <div class="section">
-        <h2>Latest Drafts</h2>
-        {% if drafts %}
-        <div class="grid">
-            {% for draft in drafts %}
-            <div class="card">
-                <div class="meta">Draft for UID {{ draft.emailUid }}</div>
-                <p>{{ draft.body }}</p>
-                <div class="meta">Provider: {{ draft.provider }} | Generated: {{ draft.generatedAt }}</div>
-                {% if draft.confidence is not none %}
-                <div class="meta">Confidence: {{ '%.2f' | format(draft.confidence) }}</div>
-                {% endif %}
-                {% if draft.usedFallback %}
-                <div class="meta">Fallback used</div>
+</html>
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        var syncForm = document.querySelector("form[data-sync]");
+        var spinner = document.getElementById("sync-spinner");
+        if (!syncForm || !spinner) {
+            return;
+        }
+        syncForm.addEventListener("submit", function () {
+            spinner.hidden = false;
+        });
+    });
+</script>
+</body>
+<tr>
+    <td>{{ item.uid }}</td>
+    <td>
+        <strong>{{ item.subject or "(no subject)" }}</strong><br />
+        <span class="meta">From: {{ item.sender or "Unknown" }}</span>
+    </td>
+    <td>{{ item.summary }}</td>
+    <td>
+        {% if item.actionItems %}
+        <ul class="actions-list">
+            {% for action in item.actionItems %}
+            <li>{{ action }}</li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <span class="empty">No action items</span>
+        {% endif %}
+    </td>
+    <td>
+        <strong>{{ item.priorityLabel }}</strong><br />
+        <span class="meta">({{ item.priority }})</span>
+    </td>
+    <td>{{ item.generatedAt }}</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+{% else %}
+<p class="empty">No insights found. Run a sync to populate data.</p>
+{% endif %}
+</div>
+
+<div class="section">
+    <h2>Latest Drafts</h2>
+    {% if drafts %}
+    <div class="grid">
+        {% for draft in drafts %}
+        <div class="card">
+            <div class="meta">Draft for UID {{ draft.emailUid }}</div>
+            <p>{{ draft.body }}</p>
+            <div class="meta">Provider: {{ draft.provider }} | Generated: {{ draft.generatedAt }}</div>
+            {% if draft.confidence is not none %}
+            <div class="meta">Confidence: {{ '%.2f' | format(draft.confidence) }}</div>
+            {% endif %}
+            {% if draft.usedFallback %}
+            <div class="meta">Fallback used</div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="empty">No drafts generated yet.</p>
+    {% endif %}
+</div>
+
+<div class="section">
+    <h2>{{ filters.follow_status_value | capitalize }} Follow-Ups</h2>
+    {% if follow_ups %}
+    <div class="grid">
+        {% for task in follow_ups %}
+        <div class="card">
+            <div class="meta">Email UID {{ task.emailUid }}</div>
+            <p>{{ task.action }}</p>
+            <div class="meta">Due: {{ task.dueAt or "None" }}</div>
+            <div class="meta status-{{ task.status }}">Status: {{ task.status }}</div>
+            <div class="meta">Created: {{ task.createdAt }}</div>
+            {% if task.id is not none %}
+            <div class="card-actions">
+                {% if task.status != "done" %}
+                <form method="post" action="/follow-ups/{{ task.id }}/status">
+                    <input type="hidden" name="status" value="done" />
+                    <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
+                    <button class="primary" type="submit">Mark Done</button>
+                </form>
+                {% else %}
+                <form method="post" action="/follow-ups/{{ task.id }}/status">
+                    <input type="hidden" name="status" value="open" />
+                    <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
+                    <button class="secondary" type="submit">Reopen</button>
+                </form>
                 {% endif %}
             </div>
-            {% endfor %}
+            {% endif %}
         </div>
-        {% else %}
-        <p class="empty">No drafts generated yet.</p>
-        {% endif %}
+        {% endfor %}
     </div>
-
-    <div class="section">
-        <h2>Open Follow-Ups</h2>
-        {% if follow_ups %}
-        <div class="grid">
-            {% for task in follow_ups %}
-            <div class="card">
-                <div class="meta">Email UID {{ task.emailUid }}</div>
-                <p>{{ task.action }}</p>
-                <div class="meta">Due: {{ task.dueAt or "None" }}</div>
-                <div class="meta status-{{ task.status }}">Status: {{ task.status }}</div>
-                <div class="meta">Created: {{ task.createdAt }}</div>
-            </div>
-            {% endfor %}
-        </div>
-        {% else %}
-        <p class="empty">You're all caught up!</p>
-        {% endif %}
-    </div>
+    {% else %}
+    <p class="empty">You're all caught up!</p>
+    {% endif %}
+</div>
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        var syncForm = document.querySelector("form[data-sync]");
+        var spinner = document.getElementById("sync-spinner");
+        if (!syncForm || !spinner) {
+            return;
+        }
+        syncForm.addEventListener("submit", function () {
+            spinner.hidden = false;
+        });
+    });
+</script>
 </body>
 
 </html>
