@@ -72,6 +72,10 @@ class EmailRepository(Protocol):
         """Return recent emails joined with their insights for quick browsing."""
         raise NotImplementedError
 
+    def list_recent_drafts(self, limit: int) -> list[DraftRecord]:
+        """Return recently generated drafts sorted by newest first."""
+        raise NotImplementedError
+
     def replace_follow_ups(self, email_uid: int, tasks: Sequence[FollowUpTask]) -> None:
         """Replace follow-up tasks for an email with the supplied tasks."""
         raise NotImplementedError

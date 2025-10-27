@@ -233,3 +233,29 @@ def test_repository_lists_and_updates_follow_ups(tmp_path: Path) -> None:
     assert updated_task.status == "done"
     assert updated_task.completed_at is not None
     repository.close()
+
+
+def test_repository_lists_recent_drafts(tmp_path: Path) -> None:
+    db_path = tmp_path / "drafts_list.db"
+    settings = StorageSettings(db_path=db_path)
+    repository = SqliteEmailRepository(settings)
+    repository.persist_email(_sample_envelope(uid=1))
+    repository.persist_email(_sample_envelope(uid=2))
+    base_time = datetime(2025, 10, 26, 12, 0, tzinfo=timezone.utc)
+    for idx, uid in enumerate((1, 2), start=1):
+        draft = DraftRecord(
+            id=None,
+            email_uid=uid,
+            body=f"Draft {uid}",
+            provider="test",
+            generated_at=base_time + timedelta(minutes=idx),
+            confidence=None,
+            used_fallback=False,
+        )
+        repository.persist_draft(draft)
+
+    drafts = repository.list_recent_drafts(limit=5)
+    repository.close()
+
+    assert [draft.email_uid for draft in drafts] == [2, 1]
+    assert drafts[0].generated_at.tzinfo is not None

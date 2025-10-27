@@ -7,9 +7,9 @@ import logging
 import sqlite3
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import cast
 from pathlib import Path
 from types import TracebackType
+from typing import cast
 
 from ..core.config import StorageSettings
 from ..core.interfaces import EmailRepository
@@ -35,7 +35,9 @@ class SqliteEmailRepository(EmailRepository):
         db_path = Path(settings.db_path)
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self._connection = sqlite3.connect(
-            db_path, detect_types=sqlite3.PARSE_DECLTYPES
+            db_path,
+            detect_types=sqlite3.PARSE_DECLTYPES,
+            check_same_thread=False,
         )
         self._connection.row_factory = sqlite3.Row
         self._enable_foreign_keys()
@@ -188,6 +190,7 @@ class SqliteEmailRepository(EmailRepository):
         )
 
     def fetch_insight(self, email_uid: int) -> EmailInsight | None:
+        """Fetch the stored insight row for the supplied email UID."""
         cur = self._connection.execute(
             """
             SELECT summary, action_items, priority_score, provider, generated_at, used_fallback
@@ -214,6 +217,7 @@ class SqliteEmailRepository(EmailRepository):
         )
 
     def persist_draft(self, draft: DraftRecord) -> DraftRecord:
+        """Insert a new draft row and return the stored record with identifier."""
         LOGGER.debug("Persisting draft for UID %s", draft.email_uid)
         with self._connection:
             cur = self._connection.execute(
@@ -252,6 +256,7 @@ class SqliteEmailRepository(EmailRepository):
     def list_recent_insights(
         self, limit: int
     ) -> list[tuple[EmailEnvelope, EmailInsight]]:
+        """Return recent email/insight pairs ordered by newest insight first."""
         cur = self._connection.execute(
             """
             SELECT
@@ -313,7 +318,43 @@ class SqliteEmailRepository(EmailRepository):
             results.append((email, insight))
         return results
 
+    def list_recent_drafts(self, limit: int) -> list[DraftRecord]:
+        """Return recently generated drafts ordered by generation timestamp."""
+        cur = self._connection.execute(
+            """
+            SELECT
+                id,
+                email_uid,
+                body,
+                provider,
+                generated_at,
+                confidence,
+                used_fallback
+            FROM drafts
+            ORDER BY generated_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+        drafts: list[DraftRecord] = []
+        for row in cur.fetchall():
+            drafts.append(
+                DraftRecord(
+                    id=row["id"],
+                    email_uid=row["email_uid"],
+                    body=row["body"],
+                    provider=row["provider"],
+                    generated_at=cast(
+                        datetime, _parse_datetime(row["generated_at"], assume_utc=True)
+                    ),
+                    confidence=row["confidence"],
+                    used_fallback=bool(row["used_fallback"]),
+                )
+            )
+        return drafts
+
     def replace_follow_ups(self, email_uid: int, tasks: Sequence[FollowUpTask]) -> None:
+        """Replace existing follow-ups for the email with the provided sequence."""
         LOGGER.debug("Replacing follow-ups for UID %s", email_uid)
         with self._connection:
             self._connection.execute(
@@ -344,6 +385,7 @@ class SqliteEmailRepository(EmailRepository):
     def list_follow_ups(
         self, *, status: str | None = None, limit: int | None = None
     ) -> list[FollowUpTask]:
+        """Return follow-ups filtered by status and limit, ordered by due/created date."""
         query = """
             SELECT id, email_uid, action, due_at, status, created_at, completed_at
             FROM follow_ups
@@ -384,6 +426,7 @@ class SqliteEmailRepository(EmailRepository):
         return items
 
     def update_follow_up_status(self, follow_up_id: int, status: str) -> None:
+        """Update the status (and completion timestamp) for a follow-up entry."""
         completed_at = datetime.now(tz=UTC) if status == "done" else None
         with self._connection:
             self._connection.execute(

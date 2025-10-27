@@ -16,11 +16,13 @@ class FollowUpPlannerService(FollowUpPlannerProtocol):
     """Derive actionable follow-up tasks from insight action items."""
 
     def __init__(self, settings: FollowUpSettings) -> None:
+        """Store scheduling heuristics drawn from application settings."""
         self._settings = settings
 
     def plan_follow_ups(
         self, email: EmailEnvelope, insight: EmailInsight
     ) -> tuple[FollowUpTask, ...]:
+        """Generate unique follow-up tasks for an email based on insight data."""
         now = datetime.now(tz=UTC)
         tasks: list[FollowUpTask] = []
         seen: set[str] = set()

@@ -95,6 +95,10 @@ class RecordingRepository:
         del status, limit
         return []
 
+    def list_recent_drafts(self, limit: int):
+        del limit
+        return []
+
     def list_recent_insights(self, limit: int):
         del limit
         return []

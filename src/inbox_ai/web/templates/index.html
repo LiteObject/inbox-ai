@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Inbox AI Dashboard</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 960px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+
+        h1 {
+            color: #007bff;
+        }
+
+        h2 {
+            color: #0056b3;
+            margin-top: 0;
+        }
+
+        .section {
+            background: #ffffff;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .section p.description {
+            color: #555;
+            margin-top: 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th,
+        td {
+            border: 1px solid #e0e0e0;
+            padding: 10px;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        th {
+            background: #f0f7ff;
+            color: #0056b3;
+        }
+
+        .empty {
+            color: #777;
+            font-style: italic;
+        }
+
+        code {
+            background: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "Courier New", monospace;
+        }
+
+        .meta {
+            font-size: 0.9rem;
+            color: #555;
+        }
+
+        .actions-list {
+            margin: 8px 0 0 18px;
+            padding: 0;
+        }
+
+        .actions-list li {
+            margin-bottom: 4px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 16px;
+        }
+
+        .card {
+            background: #ffffff;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            padding: 16px;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+        }
+
+        .status-open {
+            color: #d97706;
+            font-weight: 600;
+        }
+
+        .status-done {
+            color: #059669;
+            font-weight: 600;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Inbox AI Dashboard</h1>
+
+    <div class="section">
+        <h2>Getting Started</h2>
+        <p class="description">
+            Run <code>uvicorn inbox_ai.web:app --reload</code> and open this page in your browser to
+            inspect recent insights, drafts, and follow-up tasks collected during syncs.
+        </p>
+    </div>
+
+    <div class="section">
+        <h2>Recent Insights</h2>
+        {% if insights %}
+        <table>
+            <thead>
+                <tr>
+                    <th>UID</th>
+                    <th>Subject</th>
+                    <th>Summary</th>
+                    <th>Actions</th>
+                    <th>Priority</th>
+                    <th>Generated</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in insights %}
+                <tr>
+                    <td>{{ item.uid }}</td>
+                    <td>
+                        <strong>{{ item.subject or "(no subject)" }}</strong><br />
+                        <span class="meta">From: {{ item.sender or "Unknown" }}</span>
+                    </td>
+                    <td>{{ item.summary }}</td>
+                    <td>
+                        {% if item.actionItems %}
+                        <ul class="actions-list">
+                            {% for action in item.actionItems %}
+                            <li>{{ action }}</li>
+                            {% endfor %}
+                        </ul>
+                        {% else %}
+                        <span class="empty">No action items</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ item.priority }}</td>
+                    <td>{{ item.generatedAt }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="empty">No insights found. Run a sync to populate data.</p>
+        {% endif %}
+    </div>
+
+    <div class="section">
+        <h2>Latest Drafts</h2>
+        {% if drafts %}
+        <div class="grid">
+            {% for draft in drafts %}
+            <div class="card">
+                <div class="meta">Draft for UID {{ draft.emailUid }}</div>
+                <p>{{ draft.body }}</p>
+                <div class="meta">Provider: {{ draft.provider }} | Generated: {{ draft.generatedAt }}</div>
+                {% if draft.confidence is not none %}
+                <div class="meta">Confidence: {{ '%.2f' | format(draft.confidence) }}</div>
+                {% endif %}
+                {% if draft.usedFallback %}
+                <div class="meta">Fallback used</div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="empty">No drafts generated yet.</p>
+        {% endif %}
+    </div>
+
+    <div class="section">
+        <h2>Open Follow-Ups</h2>
+        {% if follow_ups %}
+        <div class="grid">
+            {% for task in follow_ups %}
+            <div class="card">
+                <div class="meta">Email UID {{ task.emailUid }}</div>
+                <p>{{ task.action }}</p>
+                <div class="meta">Due: {{ task.dueAt or "None" }}</div>
+                <div class="meta status-{{ task.status }}">Status: {{ task.status }}</div>
+                <div class="meta">Created: {{ task.createdAt }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="empty">You're all caught up!</p>
+        {% endif %}
+    </div>
+</body>
+
+</html>

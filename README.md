@@ -44,6 +44,12 @@ review. The system defaults to deterministic fallbacks if the local LLM is unava
    python -m inbox_ai.cli follow-ups --follow-limit 10
    ```
 
+7. Launch the optional web dashboard to browse insights, drafts, and follow-ups:
+
+   ```bash
+   uvicorn inbox_ai.web:app --reload
+   ```
+
 ## Configuration
 
 Configuration is managed with Pydantic settings and can be injected from environment variables or an
@@ -79,6 +85,15 @@ ruff check src && pylint src/inbox_ai && mypy src/inbox_ai && pytest
 - Reply drafts and follow-up tasks are persisted alongside insights, enabling quick responses and
    task tracking directly from the CLI.
 
+## Web Dashboard
+
+- A lightweight FastAPI application (``uvicorn inbox_ai.web:app --reload``) renders a dashboard
+   styled after the TypeRight sample page.
+- The landing page presents recent insights, latest drafts, and open follow-ups with the same data
+   served by the JSON ``/api/dashboard`` endpoint.
+- The app reuses the SQLite repository, so the dashboard reflects the latest sync results without
+   additional services.
+
 ## Roadmap
 
 Planned milestones include:
@@ -87,4 +102,4 @@ Planned milestones include:
 2. IMAP ingestion and persistence. ✅
 3. LLM-backed intelligence services (summaries, prioritisation). ✅
 4. Draft generation and follow-up tracking. ✅
-5. User-facing CLI/TUI enhancements.
+5. Web dashboard for insights, drafts, and follow-ups. ✅
