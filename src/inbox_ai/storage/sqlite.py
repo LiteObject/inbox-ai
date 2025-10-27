@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import sqlite3
 from datetime import datetime
@@ -10,7 +11,12 @@ from types import TracebackType
 
 from ..core.config import StorageSettings
 from ..core.interfaces import EmailRepository
-from ..core.models import AttachmentMeta, EmailEnvelope, SyncCheckpoint
+from ..core.models import (
+    AttachmentMeta,
+    EmailEnvelope,
+    EmailInsight,
+    SyncCheckpoint,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -100,6 +106,40 @@ class SqliteEmailRepository(EmailRepository):
             )
             for attachment in email.attachments:
                 self._insert_attachment(email.uid, attachment)
+
+    def persist_insight(self, insight: EmailInsight) -> None:
+        """Insert or update summarisation data for an email."""
+        LOGGER.debug("Persisting insight for UID %s", insight.email_uid)
+        with self._connection:
+            self._connection.execute(
+                """
+                INSERT INTO email_insights (
+                    email_uid,
+                    summary,
+                    action_items,
+                    priority_score,
+                    provider,
+                    generated_at,
+                    used_fallback
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(email_uid) DO UPDATE SET
+                    summary=excluded.summary,
+                    action_items=excluded.action_items,
+                    priority_score=excluded.priority_score,
+                    provider=excluded.provider,
+                    generated_at=excluded.generated_at,
+                    used_fallback=excluded.used_fallback
+                """,
+                (
+                    insight.email_uid,
+                    insight.summary,
+                    json.dumps(list(insight.action_items)),
+                    insight.priority,
+                    insight.provider,
+                    insight.generated_at.isoformat(),
+                    1 if insight.used_fallback else 0,
+                ),
+            )
 
     def get_checkpoint(self, mailbox: str) -> SyncCheckpoint | None:
         """Retrieve the last recorded UID for ``mailbox``."""

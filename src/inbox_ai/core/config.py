@@ -32,6 +32,20 @@ class LlmSettings(BaseModel):
     timeout_seconds: int = Field(
         default=30, description="Request timeout for LLM calls"
     )
+    temperature: float = Field(
+        default=0.2,
+        ge=0.0,
+        le=1.0,
+        description="Sampling temperature for LLM completions",
+    )
+    max_output_tokens: int | None = Field(
+        default=512,
+        ge=32,
+        description="Maximum tokens to request from the provider",
+    )
+    fallback_enabled: bool = Field(
+        default=True, description="Use deterministic fallback when LLM fails"
+    )
 
 
 class StorageSettings(BaseModel):

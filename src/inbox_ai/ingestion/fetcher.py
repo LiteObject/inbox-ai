@@ -5,7 +5,12 @@ from __future__ import annotations
 import logging
 from typing import Protocol
 
-from ..core.interfaces import EmailRepository, MailboxProvider
+from ..core.interfaces import (
+    EmailRepository,
+    InsightError,
+    InsightService,
+    MailboxProvider,
+)
 from ..core.models import EmailEnvelope, FetchReport, SyncCheckpoint
 
 LOGGER = logging.getLogger(__name__)
@@ -32,6 +37,7 @@ class MailFetcher:
         *,
         batch_size: int = 50,
         max_messages: int | None = None,
+        insight_service: InsightService | None = None,
     ) -> None:
         # pylint: disable=too-many-arguments
         """Initialise the fetcher with mailbox, storage, and parser."""
@@ -42,6 +48,7 @@ class MailFetcher:
         self._parser = parser
         self._batch_size = batch_size
         self._max_messages = max_messages
+        self._insight_service = insight_service
 
     def run(self) -> MailFetcherResult:
         """Execute a synchronization cycle and return a summary."""
@@ -58,6 +65,16 @@ class MailFetcher:
         for chunk in self._mailbox.fetch_since(last_uid, self._batch_size):
             envelope = self._parser.parse(chunk.uid, chunk.raw)
             self._repository.persist_email(envelope)
+            if self._insight_service is not None:
+                try:
+                    insight = self._insight_service.generate_insight(envelope)
+                    self._repository.persist_insight(insight)
+                except InsightError as exc:
+                    LOGGER.warning(
+                        "Failed to generate insight for UID %s: %s",
+                        envelope.uid,
+                        exc,
+                    )
             new_last_uid = chunk.uid
             self._repository.upsert_checkpoint(
                 SyncCheckpoint(mailbox=mailbox_name, last_uid=new_last_uid)

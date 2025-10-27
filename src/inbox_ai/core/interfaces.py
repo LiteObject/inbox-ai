@@ -5,7 +5,11 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Protocol
 
-from .models import EmailEnvelope, MessageChunk, SyncCheckpoint
+from .models import EmailEnvelope, EmailInsight, MessageChunk, SyncCheckpoint
+
+
+class InsightError(RuntimeError):
+    """Raised when generating insights for an email fails."""
 
 
 class MailboxProvider(Protocol):
@@ -39,12 +43,26 @@ class EmailRepository(Protocol):
         """Persist the latest checkpoint for a mailbox."""
         raise NotImplementedError
 
+    def persist_insight(self, insight: EmailInsight) -> None:
+        """Store summarisation and prioritisation results for an email."""
+        raise NotImplementedError
+
     def close(self) -> None:
         """Close database connections if necessary."""
+        raise NotImplementedError
+
+
+class InsightService(Protocol):
+    """Provides summarisation and prioritisation for emails."""
+
+    def generate_insight(self, email: EmailEnvelope) -> EmailInsight:
+        """Produce an :class:`EmailInsight` for an email."""
         raise NotImplementedError
 
 
 __all__ = [
     "EmailRepository",
     "MailboxProvider",
+    "InsightError",
+    "InsightService",
 ]

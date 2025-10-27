@@ -7,6 +7,7 @@ from pathlib import Path
 
 from inbox_ai.core import AppSettings, configure_logging, load_app_settings
 from inbox_ai.ingestion import EmailParser, MailFetcher
+from inbox_ai.intelligence import OllamaClient, SummarizationService
 from inbox_ai.storage import SqliteEmailRepository
 from inbox_ai.transport import ImapClient, ImapError
 
@@ -53,6 +54,15 @@ def main() -> None:
 def _run_sync(settings: AppSettings) -> None:
     """Run a synchronization cycle and report the outcome."""
     email_parser = EmailParser()
+    llm_client = (
+        OllamaClient(settings.llm)
+        if settings.llm.base_url and settings.llm.model
+        else None
+    )
+    insight_service = SummarizationService(
+        llm_client,
+        fallback_enabled=settings.llm.fallback_enabled,
+    )
     try:
         with (
             ImapClient(settings.imap) as mailbox,
@@ -64,6 +74,7 @@ def _run_sync(settings: AppSettings) -> None:
                 parser=email_parser,
                 batch_size=settings.sync.batch_size,
                 max_messages=settings.sync.max_messages,
+                insight_service=insight_service,
             )
             result = fetcher.run()
     except ImapError as exc:

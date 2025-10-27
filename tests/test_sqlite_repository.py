@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import datetime, timezone
+import json
 from pathlib import Path
 
 from inbox_ai.core.config import StorageSettings
@@ -11,6 +12,7 @@ from inbox_ai.core.models import (
     AttachmentMeta,
     EmailBody,
     EmailEnvelope,
+    EmailInsight,
     SyncCheckpoint,
 )
 from inbox_ai.storage import SqliteEmailRepository
@@ -76,3 +78,36 @@ def test_repository_checkpoint_roundtrip(tmp_path: Path) -> None:
     restored = repository.get_checkpoint("INBOX")
     assert restored == checkpoint
     repository.close()
+
+
+def test_repository_persists_insights(tmp_path: Path) -> None:
+    db_path = tmp_path / "insights.db"
+    settings = StorageSettings(db_path=db_path)
+    repository = SqliteEmailRepository(settings)
+    repository.persist_email(_sample_envelope(uid=99))
+    generated_at = datetime(2025, 10, 26, 8, 0, tzinfo=timezone.utc)
+    insight = EmailInsight(
+        email_uid=99,
+        summary="Summary text",
+        action_items=("Reply soon", "Schedule meeting"),
+        priority=7,
+        provider="test-provider",
+        generated_at=generated_at,
+        used_fallback=True,
+    )
+
+    repository.persist_insight(insight)
+    repository.close()
+
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT summary, action_items, priority_score, provider, used_fallback FROM email_insights WHERE email_uid = ?",
+            (99,),
+        ).fetchone()
+        assert row is not None
+        assert row["summary"] == "Summary text"
+        assert json.loads(row["action_items"]) == ["Reply soon", "Schedule meeting"]
+        assert row["priority_score"] == 7
+        assert row["provider"] == "test-provider"
+        assert row["used_fallback"] == 1
