@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 
 from inbox_ai.core.config import StorageSettings
 from inbox_ai.core.models import (
     AttachmentMeta,
+    DraftRecord,
     EmailBody,
     EmailEnvelope,
     EmailInsight,
+    FollowUpTask,
     SyncCheckpoint,
 )
 from inbox_ai.storage import SqliteEmailRepository
@@ -111,3 +113,123 @@ def test_repository_persists_insights(tmp_path: Path) -> None:
         assert row["priority_score"] == 7
         assert row["provider"] == "test-provider"
         assert row["used_fallback"] == 1
+
+
+def test_repository_persists_drafts(tmp_path: Path) -> None:
+    db_path = tmp_path / "drafts.db"
+    settings = StorageSettings(db_path=db_path)
+    repository = SqliteEmailRepository(settings)
+    repository.persist_email(_sample_envelope(uid=55))
+    generated_at = datetime(2025, 10, 26, 9, 30, tzinfo=timezone.utc)
+    draft = DraftRecord(
+        id=None,
+        email_uid=55,
+        body="Thanks for the update.",
+        provider="test",
+        generated_at=generated_at,
+        confidence=0.7,
+        used_fallback=False,
+    )
+
+    stored = repository.persist_draft(draft)
+    repository.close()
+
+    assert stored.id is not None
+
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT body, provider, confidence, used_fallback FROM drafts WHERE email_uid = ?",
+            (55,),
+        ).fetchone()
+        assert row is not None
+        assert row["body"] == "Thanks for the update."
+        assert row["provider"] == "test"
+        assert row["confidence"] == 0.7
+        assert row["used_fallback"] == 0
+
+
+def test_repository_replaces_follow_ups(tmp_path: Path) -> None:
+    db_path = tmp_path / "followups.db"
+    settings = StorageSettings(db_path=db_path)
+    repository = SqliteEmailRepository(settings)
+    repository.persist_email(_sample_envelope(uid=77))
+    created_at = datetime(2025, 10, 26, 10, 0, tzinfo=timezone.utc)
+    due_at = created_at + timedelta(days=2)
+    initial_tasks = (
+        FollowUpTask(
+            id=None,
+            email_uid=77,
+            action="Send notes",
+            due_at=due_at,
+            status="open",
+            created_at=created_at,
+            completed_at=None,
+        ),
+        FollowUpTask(
+            id=None,
+            email_uid=77,
+            action="Book meeting",
+            due_at=None,
+            status="open",
+            created_at=created_at,
+            completed_at=None,
+        ),
+    )
+    repository.replace_follow_ups(77, initial_tasks)
+
+    revised_tasks = (
+        FollowUpTask(
+            id=None,
+            email_uid=77,
+            action="Send summary",
+            due_at=due_at,
+            status="open",
+            created_at=created_at,
+            completed_at=None,
+        ),
+    )
+    repository.replace_follow_ups(77, revised_tasks)
+    repository.close()
+
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT action, due_at FROM follow_ups WHERE email_uid = ?",
+            (77,),
+        ).fetchall()
+        assert len(rows) == 1
+    assert rows[0]["action"] == "Send summary"
+    assert datetime.fromisoformat(rows[0]["due_at"]) == due_at
+
+
+def test_repository_lists_and_updates_follow_ups(tmp_path: Path) -> None:
+    db_path = tmp_path / "followups_status.db"
+    settings = StorageSettings(db_path=db_path)
+    repository = SqliteEmailRepository(settings)
+    repository.persist_email(_sample_envelope(uid=88))
+    created_at = datetime(2025, 10, 26, 11, 0, tzinfo=timezone.utc)
+    task = FollowUpTask(
+        id=None,
+        email_uid=88,
+        action="Review contract",
+        due_at=created_at + timedelta(days=1),
+        status="open",
+        created_at=created_at,
+        completed_at=None,
+    )
+    repository.replace_follow_ups(88, (task,))
+
+    open_tasks = repository.list_follow_ups(status="open")
+    assert len(open_tasks) == 1
+    stored_task = open_tasks[0]
+    assert stored_task.id is not None
+    assert stored_task.action == "Review contract"
+
+    repository.update_follow_up_status(stored_task.id, "done")
+    done_tasks = repository.list_follow_ups(status="done")
+    assert len(done_tasks) == 1
+    updated_task = done_tasks[0]
+    assert updated_task.status == "done"
+    assert updated_task.completed_at is not None
+    repository.close()

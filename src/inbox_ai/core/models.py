@@ -79,6 +79,32 @@ class EmailInsight:
     used_fallback: bool
 
 
+@dataclass(slots=True)
+class DraftRecord:
+    """Draft reply generated for an email."""
+
+    id: int | None
+    email_uid: int
+    body: str
+    provider: str
+    generated_at: datetime
+    confidence: float | None
+    used_fallback: bool
+
+
+@dataclass(slots=True)
+class FollowUpTask:
+    """Action item extracted from an email with scheduling metadata."""
+
+    id: int | None
+    email_uid: int
+    action: str
+    due_at: datetime | None
+    status: str
+    created_at: datetime
+    completed_at: datetime | None
+
+
 __all__ = [
     "AttachmentMeta",
     "EmailBody",
@@ -87,4 +113,6 @@ __all__ = [
     "SyncCheckpoint",
     "FetchReport",
     "EmailInsight",
+    "DraftRecord",
+    "FollowUpTask",
 ]
