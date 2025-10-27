@@ -357,6 +357,10 @@
             animation: spin 0.9s linear infinite;
         }
 
+        .spinner-overlay[hidden] {
+            display: none !important;
+        }
+
         @keyframes spin {
             from {
                 transform: rotate(0deg);
@@ -491,123 +495,152 @@
                 </tr>
             </thead>
             <tbody>
+                {% for item in insights %}
 
-</html>
-<script>
-    document.addEventListener("DOMContentLoaded", function () {
-        var syncForm = document.querySelector("form[data-sync]");
-        var spinner = document.getElementById("sync-spinner");
-        if (!syncForm || !spinner) {
-            return;
-        }
-        syncForm.addEventListener("submit", function () {
-            spinner.hidden = false;
-        });
-    });
-</script>
-</body>
-<tr>
-    <td>{{ item.uid }}</td>
-    <td>
-        <strong>{{ item.subject or "(no subject)" }}</strong><br />
-        <span class="meta">From: {{ item.sender or "Unknown" }}</span>
-    </td>
-    <td>{{ item.summary }}</td>
-    <td>
-        {% if item.actionItems %}
-        <ul class="actions-list">
-            {% for action in item.actionItems %}
-            <li>{{ action }}</li>
-            {% endfor %}
-        </ul>
+                <tr>
+                    <td>{{ item.uid }}</td>
+                    <td>
+                        <strong>{{ item.subject or "(no subject)" }}</strong><br />
+                        <span class="meta">From: {{ item.sender or "Unknown" }}</span>
+                    </td>
+                    <td>{{ item.summary }}</td>
+                    <td>
+                        {% if item.actionItems %}
+                        <ul class="actions-list">
+                            {% for action in item.actionItems %}
+                            <li>{{ action }}</li>
+                            {% endfor %}
+                        </ul>
+                        {% else %}
+                        <span class="empty">No action items</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <strong>{{ item.priorityLabel }}</strong><br />
+                        <span class="meta">({{ item.priority }})</span>
+                    </td>
+                    <td>{{ item.generatedAt }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
         {% else %}
-        <span class="empty">No action items</span>
+        <p class="empty">No insights found. Run a sync to populate data.</p>
         {% endif %}
-    </td>
-    <td>
-        <strong>{{ item.priorityLabel }}</strong><br />
-        <span class="meta">({{ item.priority }})</span>
-    </td>
-    <td>{{ item.generatedAt }}</td>
-</tr>
-{% endfor %}
-</tbody>
-</table>
-{% else %}
-<p class="empty">No insights found. Run a sync to populate data.</p>
-{% endif %}
-</div>
-
-<div class="section">
-    <h2>Latest Drafts</h2>
-    {% if drafts %}
-    <div class="grid">
-        {% for draft in drafts %}
-        <div class="card">
-            <div class="meta">Draft for UID {{ draft.emailUid }}</div>
-            <p>{{ draft.body }}</p>
-            <div class="meta">Provider: {{ draft.provider }} | Generated: {{ draft.generatedAt }}</div>
-            {% if draft.confidence is not none %}
-            <div class="meta">Confidence: {{ '%.2f' | format(draft.confidence) }}</div>
-            {% endif %}
-            {% if draft.usedFallback %}
-            <div class="meta">Fallback used</div>
-            {% endif %}
-        </div>
-        {% endfor %}
     </div>
-    {% else %}
-    <p class="empty">No drafts generated yet.</p>
-    {% endif %}
-</div>
 
-<div class="section">
-    <h2>{{ filters.follow_status_value | capitalize }} Follow-Ups</h2>
-    {% if follow_ups %}
-    <div class="grid">
-        {% for task in follow_ups %}
-        <div class="card">
-            <div class="meta">Email UID {{ task.emailUid }}</div>
-            <p>{{ task.action }}</p>
-            <div class="meta">Due: {{ task.dueAt or "None" }}</div>
-            <div class="meta status-{{ task.status }}">Status: {{ task.status }}</div>
-            <div class="meta">Created: {{ task.createdAt }}</div>
-            {% if task.id is not none %}
-            <div class="card-actions">
-                {% if task.status != "done" %}
-                <form method="post" action="/follow-ups/{{ task.id }}/status">
-                    <input type="hidden" name="status" value="done" />
-                    <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-                    <button class="primary" type="submit">Mark Done</button>
-                </form>
-                {% else %}
-                <form method="post" action="/follow-ups/{{ task.id }}/status">
-                    <input type="hidden" name="status" value="open" />
-                    <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-                    <button class="secondary" type="submit">Reopen</button>
-                </form>
+    <div class="section">
+        <h2>Latest Drafts</h2>
+        {% if drafts %}
+        <div class="grid">
+            {% for draft in drafts %}
+            <div class="card">
+                <div class="meta">Draft for UID {{ draft.emailUid }}</div>
+                <p>{{ draft.body }}</p>
+                <div class="meta">Provider: {{ draft.provider }} | Generated: {{ draft.generatedAt }}</div>
+                {% if draft.confidence is not none %}
+                <div class="meta">Confidence: {{ '%.2f' | format(draft.confidence) }}</div>
+                {% endif %}
+                {% if draft.usedFallback %}
+                <div class="meta">Fallback used</div>
                 {% endif %}
             </div>
-            {% endif %}
+            {% endfor %}
         </div>
-        {% endfor %}
+        {% else %}
+        <p class="empty">No drafts generated yet.</p>
+        {% endif %}
     </div>
-    {% else %}
-    <p class="empty">You're all caught up!</p>
-    {% endif %}
-</div>
-<script>
-    document.addEventListener("DOMContentLoaded", function () {
-        var syncForm = document.querySelector("form[data-sync]");
-        var spinner = document.getElementById("sync-spinner");
-        if (!syncForm || !spinner) {
-            return;
-        }
-        syncForm.addEventListener("submit", function () {
-            spinner.hidden = false;
+
+    <div class="section">
+        <h2>{{ filters.follow_status_value | capitalize }} Follow-Ups</h2>
+        {% if follow_ups %}
+        <div class="grid">
+            {% for task in follow_ups %}
+            <div class="card">
+                <div class="meta">Email UID {{ task.emailUid }}</div>
+                <p>{{ task.action }}</p>
+                <div class="meta">Due: {{ task.dueAt or "None" }}</div>
+                <div class="meta status-{{ task.status }}">Status: {{ task.status }}</div>
+                <div class="meta">Created: {{ task.createdAt }}</div>
+                {% if task.id is not none %}
+                <div class="card-actions">
+                    {% if task.status != "done" %}
+                    <form method="post" action="/follow-ups/{{ task.id }}/status">
+                        <input type="hidden" name="status" value="done" />
+                        <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
+                        <button class="primary" type="submit">Mark Done</button>
+                    </form>
+                    {% else %}
+                    <form method="post" action="/follow-ups/{{ task.id }}/status">
+                        <input type="hidden" name="status" value="open" />
+                        <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
+                        <button class="secondary" type="submit">Reopen</button>
+                    </form>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="empty">You're all caught up!</p>
+        {% endif %}
+    </div>
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            var syncForm = document.querySelector("form[data-sync]");
+            var spinner = document.getElementById("sync-spinner");
+            var syncButton = syncForm ? syncForm.querySelector("button[type='submit']") : null;
+
+            function hideSpinner() {
+                if (spinner) {
+                    spinner.hidden = true;
+                }
+                if (syncButton) {
+                    syncButton.disabled = false;
+                }
+            }
+
+            if (!syncForm || !spinner) {
+                return;
+            }
+
+            syncForm.addEventListener("submit", async function (event) {
+                if (!window.fetch) {
+                    return; // fall back to normal form submission
+                }
+
+                event.preventDefault();
+                spinner.hidden = false;
+                if (syncButton) {
+                    syncButton.disabled = true;
+                }
+
+                try {
+                    var formData = new FormData(syncForm);
+                    var response = await fetch(syncForm.action, {
+                        method: "POST",
+                        body: formData,
+                        redirect: "follow",
+                    });
+
+                    var targetUrl = response.url || formData.get("redirect_to") || "/";
+                    window.location.href = targetUrl;
+                } catch (error) {
+                    hideSpinner();
+                    alert("Sync request failed. Please try again.");
+                }
+            });
+
+            // Hide the spinner if the page is restored from the browser cache.
+            window.addEventListener("pageshow", function (event) {
+                if (event.persisted) {
+                    hideSpinner();
+                }
+            });
         });
-    });
-</script>
+    </script>
 </body>
 
 </html>
