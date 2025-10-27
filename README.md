@@ -13,8 +13,8 @@ implemented incrementally and safely.
 
 The current build includes the intelligence core: each synced message is summarised, key action
 items are extracted, and a heuristic priority score is stored alongside the raw email for downstream
-workflows. The system defaults to a deterministic fallback summariser if the local LLM is
-unavailable.
+workflows. Reply drafts and follow-up tasks are generated automatically and persisted for later
+review. The system defaults to deterministic fallbacks if the local LLM is unavailable.
 
 ## Getting Started
 
@@ -38,6 +38,12 @@ unavailable.
    python -m inbox_ai.cli sync
    ```
 
+6. Review open follow-up tasks and mark them complete as actions are taken:
+
+   ```bash
+   python -m inbox_ai.cli follow-ups --follow-limit 10
+   ```
+
 ## Configuration
 
 Configuration is managed with Pydantic settings and can be injected from environment variables or an
@@ -47,7 +53,11 @@ Configuration is managed with Pydantic settings and can be injected from environ
 INBOX_AI_IMAP__HOST=imap.gmail.com
 INBOX_AI_IMAP__USERNAME=your_username
 INBOX_AI_IMAP__APP_PASSWORD=application_specific_password
+INBOX_AI_FOLLOW_UP__DEFAULT_DUE_DAYS=2
 ```
+
+Follow-up scheduling is controlled via the `INBOX_AI_FOLLOW_UP__*` settings, which influence the
+heuristics used to compute due dates for planned actions.
 
 ## Linting & Formatting
 
@@ -66,7 +76,8 @@ ruff check src && pylint src/inbox_ai && mypy src/inbox_ai && pytest
 - The Ollama-backed LLM client generates structured JSON summaries per message.
 - Deterministic heuristics provide a fallback summary/action list when the LLM is unreachable.
 - A priority score (0–10) is derived from sender hints, tone, and actionable content.
-- Insights are persisted in the `email_insights` table with timestamps and provenance metadata.
+- Reply drafts and follow-up tasks are persisted alongside insights, enabling quick responses and
+   task tracking directly from the CLI.
 
 ## Roadmap
 
@@ -75,5 +86,5 @@ Planned milestones include:
 1. Project foundation (configuration, logging, testing harness). ✅
 2. IMAP ingestion and persistence. ✅
 3. LLM-backed intelligence services (summaries, prioritisation). ✅
-4. Draft generation and follow-up tracking.
+4. Draft generation and follow-up tracking. ✅
 5. User-facing CLI/TUI enhancements.

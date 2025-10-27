@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from typing import Protocol
 
-from .models import EmailEnvelope, EmailInsight, MessageChunk, SyncCheckpoint
+from .models import (
+    DraftRecord,
+    EmailEnvelope,
+    EmailInsight,
+    FollowUpTask,
+    MessageChunk,
+    SyncCheckpoint,
+)
 
 
 class InsightError(RuntimeError):
@@ -35,6 +42,10 @@ class EmailRepository(Protocol):
         """Store a normalized email instance."""
         raise NotImplementedError
 
+    def fetch_email(self, uid: int) -> EmailEnvelope | None:
+        """Retrieve a stored email by UID."""
+        raise NotImplementedError
+
     def get_checkpoint(self, mailbox: str) -> SyncCheckpoint | None:
         """Return the last stored checkpoint for the given mailbox."""
         raise NotImplementedError
@@ -45,6 +56,34 @@ class EmailRepository(Protocol):
 
     def persist_insight(self, insight: EmailInsight) -> None:
         """Store summarisation and prioritisation results for an email."""
+        raise NotImplementedError
+
+    def fetch_insight(self, email_uid: int) -> EmailInsight | None:
+        """Retrieve stored insight for an email if available."""
+        raise NotImplementedError
+
+    def persist_draft(self, draft: DraftRecord) -> DraftRecord:
+        """Save a generated draft reply and return the stored record."""
+        raise NotImplementedError
+
+    def list_recent_insights(
+        self, limit: int
+    ) -> list[tuple[EmailEnvelope, EmailInsight]]:
+        """Return recent emails joined with their insights for quick browsing."""
+        raise NotImplementedError
+
+    def replace_follow_ups(self, email_uid: int, tasks: Sequence[FollowUpTask]) -> None:
+        """Replace follow-up tasks for an email with the supplied tasks."""
+        raise NotImplementedError
+
+    def list_follow_ups(
+        self, *, status: str | None = None, limit: int | None = None
+    ) -> list[FollowUpTask]:
+        """Return follow-up tasks optionally filtered by status."""
+        raise NotImplementedError
+
+    def update_follow_up_status(self, follow_up_id: int, status: str) -> None:
+        """Set the status for a follow-up entry."""
         raise NotImplementedError
 
     def close(self) -> None:
@@ -60,9 +99,31 @@ class InsightService(Protocol):
         raise NotImplementedError
 
 
+class DraftingService(Protocol):
+    """Generates reply drafts for emails."""
+
+    def generate_draft(
+        self, email: EmailEnvelope, insight: EmailInsight
+    ) -> DraftRecord:
+        """Return a draft reply for the provided email."""
+        raise NotImplementedError
+
+
+class FollowUpPlanner(Protocol):
+    """Derives follow-up tasks from email insights."""
+
+    def plan_follow_ups(
+        self, email: EmailEnvelope, insight: EmailInsight
+    ) -> Sequence[FollowUpTask]:
+        """Return follow-up tasks for the supplied email."""
+        raise NotImplementedError
+
+
 __all__ = [
     "EmailRepository",
     "MailboxProvider",
     "InsightError",
     "InsightService",
+    "DraftingService",
+    "FollowUpPlanner",
 ]

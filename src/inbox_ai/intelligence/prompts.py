@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from textwrap import dedent
 
-from inbox_ai.core.models import EmailEnvelope
+from inbox_ai.core.models import EmailEnvelope, EmailInsight
 
 
 def build_insight_prompt(email: EmailEnvelope, *, body_text: str) -> str:
@@ -36,4 +36,31 @@ def build_insight_prompt(email: EmailEnvelope, *, body_text: str) -> str:
     return dedent(prompt).strip()
 
 
-__all__ = ["build_insight_prompt"]
+def build_draft_prompt(email: EmailEnvelope, insight: EmailInsight) -> str:
+    """Compose a prompt instructing the LLM to draft a reply."""
+    subject = email.subject or "this message"
+    sender = email.sender or "the sender"
+    summary = insight.summary
+    actions = "\n".join(f"- {item}" for item in insight.action_items) or "- none"
+
+    prompt = f"""
+    You assist with professional email replies. Return ONLY JSON matching this schema:
+    {{
+      "draft": string,            # the email body, with greeting and closing
+      "confidence": number|null   # optional confidence between 0 and 1
+    }}
+
+    Base the reply on the following context.
+    Subject: {subject}
+    Sender: {sender}
+    Summary: {summary}
+    Action items:
+    {actions}
+
+    Draft should be concise, polite, and mention next steps when appropriate.
+    """
+
+    return dedent(prompt).strip()
+
+
+__all__ = ["build_insight_prompt", "build_draft_prompt"]

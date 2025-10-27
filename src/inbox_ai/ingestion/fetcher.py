@@ -6,12 +6,14 @@ import logging
 from typing import Protocol
 
 from ..core.interfaces import (
+    DraftingService,
     EmailRepository,
+    FollowUpPlanner,
     InsightError,
     InsightService,
     MailboxProvider,
 )
-from ..core.models import EmailEnvelope, FetchReport, SyncCheckpoint
+from ..core.models import EmailEnvelope, EmailInsight, FetchReport, SyncCheckpoint
 
 LOGGER = logging.getLogger(__name__)
 
@@ -38,6 +40,8 @@ class MailFetcher:
         batch_size: int = 50,
         max_messages: int | None = None,
         insight_service: InsightService | None = None,
+        drafting_service: DraftingService | None = None,
+        follow_up_planner: FollowUpPlanner | None = None,
     ) -> None:
         # pylint: disable=too-many-arguments
         """Initialise the fetcher with mailbox, storage, and parser."""
@@ -49,6 +53,8 @@ class MailFetcher:
         self._batch_size = batch_size
         self._max_messages = max_messages
         self._insight_service = insight_service
+        self._drafting_service = drafting_service
+        self._follow_up_planner = follow_up_planner
 
     def run(self) -> MailFetcherResult:
         """Execute a synchronization cycle and return a summary."""
@@ -65,6 +71,8 @@ class MailFetcher:
         for chunk in self._mailbox.fetch_since(last_uid, self._batch_size):
             envelope = self._parser.parse(chunk.uid, chunk.raw)
             self._repository.persist_email(envelope)
+
+            insight: EmailInsight | None = None
             if self._insight_service is not None:
                 try:
                     insight = self._insight_service.generate_insight(envelope)
@@ -72,6 +80,31 @@ class MailFetcher:
                 except InsightError as exc:
                     LOGGER.warning(
                         "Failed to generate insight for UID %s: %s",
+                        envelope.uid,
+                        exc,
+                    )
+
+            if insight is None:
+                insight = self._repository.fetch_insight(envelope.uid)
+
+            if self._drafting_service is not None and insight is not None:
+                try:
+                    draft = self._drafting_service.generate_draft(envelope, insight)
+                    self._repository.persist_draft(draft)
+                except Exception as exc:  # pylint: disable=broad-except
+                    LOGGER.warning(
+                        "Failed to generate draft for UID %s: %s",
+                        envelope.uid,
+                        exc,
+                    )
+
+            if self._follow_up_planner is not None and insight is not None:
+                try:
+                    tasks = self._follow_up_planner.plan_follow_ups(envelope, insight)
+                    self._repository.replace_follow_ups(envelope.uid, tasks)
+                except Exception as exc:  # pylint: disable=broad-except
+                    LOGGER.warning(
+                        "Failed to derive follow-ups for UID %s: %s",
                         envelope.uid,
                         exc,
                     )

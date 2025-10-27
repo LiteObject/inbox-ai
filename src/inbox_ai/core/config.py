@@ -76,6 +76,27 @@ class SyncSettings(BaseModel):
     )
 
 
+class FollowUpSettings(BaseModel):
+    """Settings guiding follow-up scheduling heuristics."""
+
+    default_due_days: int = Field(
+        default=2,
+        ge=1,
+        description="Number of days to add when scheduling generic follow-ups",
+    )
+    priority_due_days: int = Field(
+        default=1,
+        ge=0,
+        description="Days to add when the email priority is above threshold",
+    )
+    priority_threshold: int = Field(
+        default=7,
+        ge=0,
+        le=10,
+        description="Insight priority triggering the accelerated due date",
+    )
+
+
 class AppSettings(BaseModel):
     """Aggregated application configuration."""
 
@@ -84,6 +105,7 @@ class AppSettings(BaseModel):
     storage: StorageSettings = Field(default_factory=StorageSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
     sync: SyncSettings = Field(default_factory=SyncSettings)
+    follow_up: FollowUpSettings = Field(default_factory=FollowUpSettings)
 
 
 ENV_PREFIX = "INBOX_AI_"
@@ -160,5 +182,6 @@ __all__ = [
     "LoggingSettings",
     "StorageSettings",
     "SyncSettings",
+    "FollowUpSettings",
     "load_app_settings",
 ]
