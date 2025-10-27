@@ -28,6 +28,7 @@ class DraftingService(DraftingServiceProtocol):
         *,
         fallback_enabled: bool = True,
     ) -> None:
+        """Initialise the service with an optional LLM client and fallback flag."""
         self._llm_client = llm_client
         self._fallback_enabled = fallback_enabled
 
