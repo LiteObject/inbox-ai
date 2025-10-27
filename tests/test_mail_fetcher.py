@@ -3,9 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Iterable, List
 
-from inbox_ai.core.models import EmailBody, EmailEnvelope, MessageChunk, SyncCheckpoint
+from inbox_ai.core.models import (
+    EmailBody,
+    EmailEnvelope,
+    EmailInsight,
+    MessageChunk,
+    SyncCheckpoint,
+)
 from inbox_ai.ingestion import MailFetcher
 
 
@@ -44,9 +51,13 @@ class RecordingRepository:
     def __init__(self) -> None:
         self.persisted: List[RecordedEmail] = []
         self.checkpoint: SyncCheckpoint | None = None
+        self.insights: list[int] = []
 
     def persist_email(self, email: EmailEnvelope) -> None:
         self.persisted.append(RecordedEmail(uid=email.uid, subject=email.subject))
+
+    def persist_insight(self, insight: EmailInsight) -> None:
+        self.insights.append(insight.email_uid)
 
     def get_checkpoint(self, mailbox: str) -> SyncCheckpoint | None:
         return (
@@ -81,6 +92,25 @@ class StubParser:
             received_at=None,
             body=body,
             attachments=(),
+        )
+
+
+class StubInsightService:
+    """Deterministic insight generator for tests."""
+
+    def __init__(self) -> None:
+        self.calls: list[int] = []
+
+    def generate_insight(self, email: EmailEnvelope) -> EmailInsight:
+        self.calls.append(email.uid)
+        return EmailInsight(
+            email_uid=email.uid,
+            summary=f"Summary {email.uid}",
+            action_items=(f"Do {email.uid}",),
+            priority=5,
+            provider="test",
+            generated_at=datetime.now(tz=timezone.utc),
+            used_fallback=False,
         )
 
 
@@ -139,3 +169,27 @@ def test_mail_fetcher_honours_existing_checkpoint() -> None:
     assert result.processed == 1
     assert result.new_last_uid == 4
     assert repository.checkpoint == SyncCheckpoint(mailbox="INBOX", last_uid=4)
+
+
+def test_mail_fetcher_generates_insights_when_service_provided() -> None:
+    mailbox = DummyMailbox(
+        mailbox="INBOX",
+        chunks=[MessageChunk(uid=7, raw=b"")],
+    )
+    repository = RecordingRepository()
+    parser = StubParser()
+    insight_service = StubInsightService()
+
+    fetcher = MailFetcher(
+        mailbox=mailbox,
+        repository=repository,
+        parser=parser,
+        batch_size=2,
+        max_messages=None,
+        insight_service=insight_service,
+    )
+
+    fetcher.run()
+
+    assert insight_service.calls == [7]
+    assert repository.insights == [7]

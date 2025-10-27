@@ -66,6 +66,19 @@ class FetchReport:
     new_last_uid: int | None
 
 
+@dataclass(slots=True)
+class EmailInsight:
+    """Summary, action items, and priority metadata for an email."""
+
+    email_uid: int
+    summary: str
+    action_items: tuple[str, ...]
+    priority: int
+    provider: str
+    generated_at: datetime
+    used_fallback: bool
+
+
 __all__ = [
     "AttachmentMeta",
     "EmailBody",
@@ -73,4 +86,5 @@ __all__ = [
     "MessageChunk",
     "SyncCheckpoint",
     "FetchReport",
+    "EmailInsight",
 ]
