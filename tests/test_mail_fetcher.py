@@ -73,6 +73,14 @@ class RecordingRepository:
     def fetch_insight(self, email_uid: int) -> EmailInsight | None:
         return self._insight_store.get(email_uid)
 
+    def delete_email(self, uid: int) -> bool:
+        self._emails.pop(uid, None)
+        self._insight_store.pop(uid, None)
+        return True
+
+    def count_insights(self) -> int:
+        return len(self._insight_store)
+
     def get_checkpoint(self, mailbox: str) -> SyncCheckpoint | None:
         return (
             self.checkpoint
@@ -99,8 +107,14 @@ class RecordingRepository:
         del limit
         return []
 
-    def list_recent_insights(self, limit: int):
-        del limit
+    def list_recent_insights(
+        self,
+        limit: int,
+        *,
+        min_priority: int | None = None,
+        max_priority: int | None = None,
+    ):
+        del limit, min_priority, max_priority
         return []
 
     def update_follow_up_status(self, follow_up_id: int, status: str) -> None:
