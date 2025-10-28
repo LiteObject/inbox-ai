@@ -76,6 +76,10 @@ class EmailRepository(Protocol):
         """Return recent emails joined with their insights for quick browsing."""
         raise NotImplementedError
 
+    def count_insights(self) -> int:
+        """Return total stored insights."""
+        raise NotImplementedError
+
     def list_recent_drafts(self, limit: int) -> list[DraftRecord]:
         """Return recently generated drafts sorted by newest first."""
         raise NotImplementedError

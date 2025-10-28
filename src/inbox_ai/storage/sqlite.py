@@ -328,6 +328,12 @@ class SqliteEmailRepository(EmailRepository):
             results.append((email, insight))
         return results
 
+    def count_insights(self) -> int:
+        """Return total number of insight records."""
+        cur = self._connection.execute("SELECT COUNT(*) FROM email_insights")
+        row = cur.fetchone()
+        return int(row[0]) if row is not None else 0
+
     def list_recent_drafts(self, limit: int) -> list[DraftRecord]:
         """Return recently generated drafts ordered by generation timestamp."""
         cur = self._connection.execute(

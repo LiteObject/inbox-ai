@@ -219,6 +219,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
     ) -> HTMLResponse:
         filters = _parse_dashboard_filters(request.query_params)
         insights = repository.list_recent_insights(limit=filters.insights_limit)
+        total_insights = repository.count_insights()
         drafts = repository.list_recent_drafts(limit=filters.drafts_limit)
         follow_ups = repository.list_follow_ups(
             status=filters.follow_status_filter, limit=filters.follow_limit
@@ -232,6 +233,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                 "insights": [
                     _serialize_insight(email, insight) for email, insight in insights
                 ],
+                "insights_total": total_insights,
                 "drafts": [_serialize_draft(draft) for draft in drafts],
                 "follow_ups": [_serialize_follow_up(task) for task in follow_ups],
                 "filters": filters,
@@ -255,6 +257,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
     ) -> dict[str, Any]:
         filters = _parse_dashboard_filters(request.query_params)
         insights = repository.list_recent_insights(limit=filters.insights_limit)
+        total_insights = repository.count_insights()
         drafts = repository.list_recent_drafts(limit=filters.drafts_limit)
         follow_ups = repository.list_follow_ups(
             status=filters.follow_status_filter, limit=filters.follow_limit
@@ -263,6 +266,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             "insights": [
                 _serialize_insight(email, insight) for email, insight in insights
             ],
+            "insightsTotal": total_insights,
             "drafts": [_serialize_draft(draft) for draft in drafts],
             "followUps": [_serialize_follow_up(task) for task in follow_ups],
             "filters": {
@@ -368,6 +372,7 @@ def _serialize_insight(email: EmailEnvelope, insight: EmailInsight) -> dict[str,
         "priorityLabel": _priority_label(insight.priority),
         "provider": insight.provider,
         "generatedAt": _isoformat(insight.generated_at),
+        "generatedAtDisplay": _friendly_datetime(insight.generated_at),
     }
 
 
@@ -401,6 +406,13 @@ def _isoformat(value: datetime | None) -> str | None:
     if value.tzinfo is None:
         return value.isoformat()
     return value.astimezone().isoformat()
+
+
+def _friendly_datetime(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    display = value.astimezone() if value.tzinfo is not None else value
+    return display.strftime("%b %d, %Y %I:%M %p")
 
 
 def _priority_label(score: int) -> str:
