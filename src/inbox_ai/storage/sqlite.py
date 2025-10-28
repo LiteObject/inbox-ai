@@ -189,6 +189,16 @@ class SqliteEmailRepository(EmailRepository):
             attachments=attachments,
         )
 
+    def delete_email(self, uid: int) -> bool:
+        """Delete the stored email and cascading metadata."""
+        LOGGER.debug("Deleting email UID %s", uid)
+        with self._connection:
+            cur = self._connection.execute(
+                "DELETE FROM emails WHERE uid = ?",
+                (uid,),
+            )
+        return cur.rowcount > 0
+
     def fetch_insight(self, email_uid: int) -> EmailInsight | None:
         """Fetch the stored insight row for the supplied email UID."""
         cur = self._connection.execute(
