@@ -11,6 +11,7 @@ from inbox_ai.ingestion import EmailParser, MailFetcher
 from inbox_ai.intelligence import (
     DraftingService,
     FollowUpPlannerService,
+    KeywordCategoryService,
     OllamaClient,
     SummarizationService,
 )
@@ -111,6 +112,7 @@ def _run_sync(settings: AppSettings) -> None:
         llm_client,
         fallback_enabled=settings.llm.fallback_enabled,
     )
+    category_service = KeywordCategoryService()
     try:
         with (
             ImapClient(settings.imap) as mailbox,
@@ -125,6 +127,7 @@ def _run_sync(settings: AppSettings) -> None:
                 insight_service=insight_service,
                 drafting_service=drafting_service,
                 follow_up_planner=follow_up_planner,
+                category_service=category_service,
             )
             result = fetcher.run()
     except ImapError as exc:

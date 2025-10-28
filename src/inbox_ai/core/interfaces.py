@@ -7,6 +7,7 @@ from typing import Protocol
 
 from .models import (
     DraftRecord,
+    EmailCategory,
     EmailEnvelope,
     EmailInsight,
     FollowUpTask,
@@ -92,6 +93,18 @@ class EmailRepository(Protocol):
         """Return the newest draft for each supplied email UID."""
         raise NotImplementedError
 
+    def replace_categories(
+        self, email_uid: int, categories: Sequence[EmailCategory]
+    ) -> None:
+        """Replace stored categories for an email."""
+        raise NotImplementedError
+
+    def get_categories_for_uids(
+        self, uids: Sequence[int]
+    ) -> dict[int, tuple[EmailCategory, ...]]:
+        """Return categories for each requested email UID."""
+        raise NotImplementedError
+
     def replace_follow_ups(self, email_uid: int, tasks: Sequence[FollowUpTask]) -> None:
         """Replace follow-up tasks for an email with the supplied tasks."""
         raise NotImplementedError
@@ -139,6 +152,16 @@ class FollowUpPlanner(Protocol):
         raise NotImplementedError
 
 
+class CategoryService(Protocol):
+    """Assigns categories/tags to emails based on content."""
+
+    def categorize(
+        self, email: EmailEnvelope, insight: EmailInsight | None
+    ) -> Sequence[EmailCategory]:
+        """Return ordered categories for the supplied email."""
+        raise NotImplementedError
+
+
 __all__ = [
     "EmailRepository",
     "MailboxProvider",
@@ -146,4 +169,5 @@ __all__ = [
     "InsightService",
     "DraftingService",
     "FollowUpPlanner",
+    "CategoryService",
 ]

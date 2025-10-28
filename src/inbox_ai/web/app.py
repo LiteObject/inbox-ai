@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -20,11 +20,18 @@ from starlette.templating import Jinja2Templates
 from urllib.parse import parse_qsl, urlencode
 
 from inbox_ai.core import AppSettings, load_app_settings
-from inbox_ai.core.models import DraftRecord, EmailEnvelope, EmailInsight, FollowUpTask
+from inbox_ai.core.models import (
+    DraftRecord,
+    EmailCategory,
+    EmailEnvelope,
+    EmailInsight,
+    FollowUpTask,
+)
 from inbox_ai.ingestion import EmailParser, MailFetcher
 from inbox_ai.intelligence import (
     DraftingService,
     FollowUpPlannerService,
+    KeywordCategoryService,
     OllamaClient,
     SummarizationService,
 )
@@ -254,6 +261,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         draft_records = repository.list_recent_drafts(limit=filters.insights_limit)
         insight_uids = [email.uid for email, _ in insights]
         draft_lookup = repository.fetch_latest_drafts(insight_uids)
+        category_lookup = repository.get_categories_for_uids(insight_uids)
         follow_ups = repository.list_follow_ups(
             status=filters.follow_status_filter, limit=filters.follow_limit
         )
@@ -264,7 +272,12 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             {
                 "request": request,
                 "insights": [
-                    _serialize_insight(email, insight, draft_lookup.get(email.uid))
+                    _serialize_insight(
+                        email,
+                        insight,
+                        draft_lookup.get(email.uid),
+                        category_lookup.get(email.uid, ()),
+                    )
                     for email, insight in insights
                 ],
                 "insights_total": total_insights,
@@ -301,12 +314,18 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         draft_records = repository.list_recent_drafts(limit=filters.insights_limit)
         insight_uids = [email.uid for email, _ in insights]
         draft_lookup = repository.fetch_latest_drafts(insight_uids)
+        category_lookup = repository.get_categories_for_uids(insight_uids)
         follow_ups = repository.list_follow_ups(
             status=filters.follow_status_filter, limit=filters.follow_limit
         )
         return {
             "insights": [
-                _serialize_insight(email, insight, draft_lookup.get(email.uid))
+                _serialize_insight(
+                    email,
+                    insight,
+                    draft_lookup.get(email.uid),
+                    category_lookup.get(email.uid, ()),
+                )
                 for email, insight in insights
             ],
             "insightsTotal": total_insights,
@@ -408,6 +427,7 @@ def _serialize_insight(
     email: EmailEnvelope,
     insight: EmailInsight,
     draft: DraftRecord | None = None,
+    categories: Sequence[EmailCategory] | None = None,
 ) -> dict[str, Any]:
     return {
         "uid": email.uid,
@@ -415,6 +435,10 @@ def _serialize_insight(
         "sender": email.sender,
         "summary": insight.summary,
         "actionItems": list(insight.action_items),
+        "categories": [
+            {"key": category.key, "label": category.label}
+            for category in (categories or ())
+        ],
         "priority": insight.priority,
         "priorityLabel": _priority_label(insight.priority),
         "provider": insight.provider,
@@ -555,6 +579,7 @@ def _run_sync_cycle(settings: AppSettings) -> SyncOutcome:
     insight_service = SummarizationService(
         llm_client, fallback_enabled=settings.llm.fallback_enabled
     )
+    category_service = KeywordCategoryService()
 
     try:
         with (
@@ -570,6 +595,7 @@ def _run_sync_cycle(settings: AppSettings) -> SyncOutcome:
                 insight_service=insight_service,
                 drafting_service=drafting_service,
                 follow_up_planner=follow_up_planner,
+                category_service=category_service,
             )
             result = fetcher.run()
     except ImapError as exc:
