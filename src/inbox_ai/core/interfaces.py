@@ -88,6 +88,10 @@ class EmailRepository(Protocol):
         """Return recently generated drafts sorted by newest first."""
         raise NotImplementedError
 
+    def fetch_latest_drafts(self, uids: Sequence[int]) -> dict[int, DraftRecord]:
+        """Return the newest draft for each supplied email UID."""
+        raise NotImplementedError
+
     def replace_follow_ups(self, email_uid: int, tasks: Sequence[FollowUpTask]) -> None:
         """Replace follow-up tasks for an email with the supplied tasks."""
         raise NotImplementedError
