@@ -48,6 +48,24 @@ _PRIORITY_LABELS: Mapping[int, str] = {
     10: "Urgent",
 }
 
+_PRIORITY_FILTER_MAP: dict[str, tuple[int | None, int | None]] = {
+    "all": (None, None),
+    "urgent": (9, 10),
+    "high": (7, 8),
+    "normal": (5, 6),
+    "moderate": (3, 4),
+    "low": (0, 2),
+}
+
+_PRIORITY_FILTER_OPTIONS: tuple[tuple[str, str], ...] = (
+    ("all", "All priorities"),
+    ("urgent", "Urgent (9-10)"),
+    ("high", "High (7-8)"),
+    ("normal", "Normal (5-6)"),
+    ("moderate", "Moderate (3-4)"),
+    ("low", "Low (0-2)"),
+)
+
 _STATUS_QUERY_KEYS: tuple[str, ...] = (
     "sync_status",
     "sync_message",
@@ -62,10 +80,10 @@ class DashboardFilters:
     """Container for dashboard query parameters."""
 
     insights_limit: int
-    drafts_limit: int
     follow_limit: int
     follow_status_filter: str | None
     follow_status_value: str
+    priority_filter: str
 
 
 @dataclass(frozen=True)
@@ -226,10 +244,14 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
     ) -> HTMLResponse:
         filters = _parse_dashboard_filters(request.query_params)
-        insights = repository.list_recent_insights(limit=filters.insights_limit)
+        min_priority, max_priority = _PRIORITY_FILTER_MAP[filters.priority_filter]
+        insights = repository.list_recent_insights(
+            limit=filters.insights_limit,
+            min_priority=min_priority,
+            max_priority=max_priority,
+        )
         total_insights = repository.count_insights()
-        draft_limit = max(filters.drafts_limit, filters.insights_limit)
-        draft_records = repository.list_recent_drafts(limit=draft_limit)
+        draft_records = repository.list_recent_drafts(limit=filters.insights_limit)
         draft_lookup: dict[int, DraftRecord] = {}
         for draft in draft_records:
             if draft.email_uid not in draft_lookup:
@@ -252,6 +274,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                 "follow_ups": [_serialize_follow_up(task) for task in follow_ups],
                 "filters": filters,
                 "follow_status_options": _FOLLOW_STATUS_OPTIONS,
+                "priority_filter_options": _PRIORITY_FILTER_OPTIONS,
                 "redirect_to": _build_redirect_target(request),
                 "config_sections": CONFIG_SECTIONS,
                 "config_values": _load_env_values(env_file),
@@ -270,10 +293,14 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
     ) -> dict[str, Any]:
         filters = _parse_dashboard_filters(request.query_params)
-        insights = repository.list_recent_insights(limit=filters.insights_limit)
+        min_priority, max_priority = _PRIORITY_FILTER_MAP[filters.priority_filter]
+        insights = repository.list_recent_insights(
+            limit=filters.insights_limit,
+            min_priority=min_priority,
+            max_priority=max_priority,
+        )
         total_insights = repository.count_insights()
-        draft_limit = max(filters.drafts_limit, filters.insights_limit)
-        draft_records = repository.list_recent_drafts(limit=draft_limit)
+        draft_records = repository.list_recent_drafts(limit=filters.insights_limit)
         draft_lookup: dict[int, DraftRecord] = {}
         for draft in draft_records:
             if draft.email_uid not in draft_lookup:
@@ -291,9 +318,9 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             "followUps": [_serialize_follow_up(task) for task in follow_ups],
             "filters": {
                 "insightsLimit": filters.insights_limit,
-                "draftsLimit": filters.drafts_limit,
                 "followLimit": filters.follow_limit,
                 "followStatus": filters.follow_status_value,
+                "priority": filters.priority_filter,
             },
         }
 
@@ -447,18 +474,25 @@ def _priority_label(score: int) -> str:
 
 def _parse_dashboard_filters(params: Mapping[str, str]) -> DashboardFilters:
     insights_limit = _parse_limit(params.get("insights_limit"), DEFAULT_LIMIT)
-    drafts_limit = _parse_limit(params.get("drafts_limit"), DEFAULT_LIMIT)
     follow_limit = _parse_limit(params.get("follow_limit"), DEFAULT_LIMIT)
     follow_status_filter, follow_status_value = _normalize_follow_status(
         params.get("follow_status")
     )
+    priority_filter = _normalize_priority_filter(params.get("priority"))
     return DashboardFilters(
         insights_limit=insights_limit,
-        drafts_limit=drafts_limit,
         follow_limit=follow_limit,
         follow_status_filter=follow_status_filter,
         follow_status_value=follow_status_value,
+        priority_filter=priority_filter,
     )
+
+
+def _normalize_priority_filter(raw: str | None) -> str:
+    value = (raw or "all").lower()
+    if value not in _PRIORITY_FILTER_MAP:
+        return "all"
+    return value
 
 
 def _parse_limit(raw: str | None, default: int) -> int:

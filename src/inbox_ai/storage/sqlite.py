@@ -264,10 +264,14 @@ class SqliteEmailRepository(EmailRepository):
         )
 
     def list_recent_insights(
-        self, limit: int
+        self,
+        limit: int,
+        *,
+        min_priority: int | None = None,
+        max_priority: int | None = None,
     ) -> list[tuple[EmailEnvelope, EmailInsight]]:
         """Return recent email/insight pairs ordered by newest insight first."""
-        cur = self._connection.execute(
+        query = [
             """
             SELECT
                 e.uid,
@@ -290,11 +294,22 @@ class SqliteEmailRepository(EmailRepository):
                 i.used_fallback
             FROM email_insights i
             INNER JOIN emails e ON e.uid = i.email_uid
-            ORDER BY i.generated_at DESC
-            LIMIT ?
-            """,
-            (limit,),
-        )
+            """
+        ]
+        params: list[object] = []
+        conditions: list[str] = []
+        if min_priority is not None:
+            conditions.append("i.priority_score >= ?")
+            params.append(min_priority)
+        if max_priority is not None:
+            conditions.append("i.priority_score <= ?")
+            params.append(max_priority)
+        if conditions:
+            query.append("WHERE ")
+            query.append(" AND ".join(conditions))
+        query.append(" ORDER BY i.generated_at DESC LIMIT ?")
+        params.append(limit)
+        cur = self._connection.execute("".join(query), params)
         results: list[tuple[EmailEnvelope, EmailInsight]] = []
         for row in cur.fetchall():
             uid = row["uid"]

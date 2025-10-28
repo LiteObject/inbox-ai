@@ -71,7 +71,11 @@ class EmailRepository(Protocol):
         raise NotImplementedError
 
     def list_recent_insights(
-        self, limit: int
+        self,
+        limit: int,
+        *,
+        min_priority: int | None = None,
+        max_priority: int | None = None,
     ) -> list[tuple[EmailEnvelope, EmailInsight]]:
         """Return recent emails joined with their insights for quick browsing."""
         raise NotImplementedError
