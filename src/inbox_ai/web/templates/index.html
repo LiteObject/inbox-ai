@@ -41,6 +41,35 @@
             border-collapse: collapse;
         }
 
+        .recent-insights-table {
+            table-layout: fixed;
+        }
+
+        .recent-insights-table th:first-child,
+        .recent-insights-table td:first-child {
+            width: 72px;
+        }
+
+        .recent-insights-table th:nth-child(2),
+        .recent-insights-table td:nth-child(2) {
+            width: auto;
+        }
+
+        .insights-controls {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .insights-search {
+            flex: 1 1 280px;
+            padding: 8px 10px;
+            border: 1px solid #cbd5f5;
+            border-radius: 4px;
+            font-size: 1rem;
+        }
+
         th,
         td {
             border: 1px solid #e0e0e0;
@@ -54,16 +83,61 @@
             color: #0056b3;
         }
 
+        .subject-summary {
+            overflow-wrap: anywhere;
+        }
+
+        .subject-summary-top {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 16px;
+        }
+
+        .subject-details {
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+
+        .summary-text {
+            margin-top: 8px;
+            color: #374151;
+            line-height: 1.4;
+        }
+
+        .actions-block {
+            margin-top: 12px;
+        }
+
+        .actions-heading {
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: #1f2937;
+            text-transform: uppercase;
+            margin-bottom: 6px;
+        }
+
+        .priority-meta {
+            margin-top: 10px;
+            font-size: 0.9rem;
+            color: #1f2937;
+        }
+
+        .priority-meta .meta {
+            margin-left: 6px;
+            color: #4b5563;
+            font-weight: 500;
+        }
+
+        .generated-meta {
+            margin-top: 6px;
+            font-size: 0.85rem;
+            color: #6b7280;
+        }
+
         .empty {
             color: #777;
             font-style: italic;
-        }
-
-        code {
-            background: #f4f4f4;
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-family: "Courier New", monospace;
         }
 
         .meta {
@@ -78,6 +152,42 @@
 
         .actions-list li {
             margin-bottom: 4px;
+        }
+
+        .table-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: flex-end;
+        }
+
+        .table-actions form {
+            margin: 0;
+        }
+
+        .table-actions button {
+            padding: 8px 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .button-danger {
+            background: #dc2626;
+            color: #ffffff;
+        }
+
+        .button-danger:hover {
+            background: #b91c1c;
+        }
+
+        code {
+            background: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "Courier New", monospace;
         }
 
         .grid {
@@ -176,34 +286,6 @@
 
         .card-actions button:hover {
             opacity: 0.9;
-        }
-
-        .table-actions {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-            align-items: center;
-        }
-
-        .table-actions form {
-            margin: 0;
-        }
-
-        .table-actions button {
-            padding: 8px 12px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-weight: 600;
-        }
-
-        .button-danger {
-            background: #dc2626;
-            color: #ffffff;
-        }
-
-        .button-danger:hover {
-            background: #b91c1c;
         }
 
         .sync-section {
@@ -517,18 +599,18 @@
     </div>
 
     <div class="section">
-        <h2>Recent Insights</h2>
+        <h2>Recent Insights (<span id="insights-visible-count">{{ insights | length }}</span> / {{ insights_total |
+            default(0) }})</h2>
         {% if insights %}
-        <table>
+        <div class="insights-controls">
+            <input type="search" id="insights-search" class="insights-search" placeholder="Search insights"
+                aria-label="Search insights" />
+        </div>
+        <table class="recent-insights-table">
             <thead>
                 <tr>
                     <th>UID</th>
-                    <th>Subject</th>
-                    <th>Summary</th>
-                    <th>Actions</th>
-                    <th>Priority</th>
-                    <th>Generated</th>
-                    <th>Manage</th>
+                    <th>Subject &amp; Summary</th>
                 </tr>
             </thead>
             <tbody>
@@ -536,40 +618,49 @@
 
                 <tr>
                     <td>{{ item.uid }}</td>
-                    <td>
-                        <strong>{{ item.subject or "(no subject)" }}</strong><br />
-                        <span class="meta">From: {{ item.sender or "Unknown" }}</span>
-                    </td>
-                    <td>{{ item.summary }}</td>
-                    <td>
-                        {% if item.actionItems %}
-                        <ul class="actions-list">
-                            {% for action in item.actionItems %}
-                            <li>{{ action }}</li>
-                            {% endfor %}
-                        </ul>
-                        {% else %}
-                        <span class="empty">No action items</span>
-                        {% endif %}
-                    </td>
-                    <td>
-                        <strong>{{ item.priorityLabel }}</strong><br />
-                        <span class="meta">({{ item.priority }})</span>
-                    </td>
-                    <td>{{ item.generatedAt }}</td>
-                    <td>
-                        <div class="table-actions">
-                            <form method="post" action="/emails/{{ item.uid }}/delete"
-                                onsubmit="return confirm('Delete message UID {{ item.uid }} from the mailbox?');">
-                                <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-                                <button type="submit" class="button-danger">Delete</button>
-                            </form>
+                    <td class="subject-summary">
+                        <div class="subject-summary-top">
+                            <div class="subject-details">
+                                <strong>{{ item.subject or "(no subject)" }}</strong><br />
+                                <span class="meta">From: {{ item.sender or "Unknown" }}</span>
+                                {% if item.summary %}
+                                <div class="summary-text">{{ item.summary }}</div>
+                                {% endif %}
+                                <div class="actions-block">
+                                    {% if item.actionItems %}
+                                    <div class="actions-heading">Actions</div>
+                                    <ul class="actions-list">
+                                        {% for action in item.actionItems %}
+                                        <li>{{ action }}</li>
+                                        {% endfor %}
+                                    </ul>
+                                    {% else %}
+                                    <span class="empty">No action items</span>
+                                    {% endif %}
+                                    <div class="priority-meta">
+                                        <strong>{{ item.priorityLabel }}</strong>
+                                        <span class="meta">({{ item.priority }})</span>
+                                    </div>
+                                    {% set display_date = item.generatedAtDisplay or item.generatedAt %}
+                                    {% if display_date %}
+                                    <div class="generated-meta">Generated {{ display_date }}</div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="table-actions">
+                                <form method="post" action="/emails/{{ item.uid }}/delete" data-scroll-restore
+                                    onsubmit="return confirm('Delete message UID {{ item.uid }} from the mailbox?');">
+                                    <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
+                                    <button type="submit" class="button-danger">x</button>
+                                </form>
+                            </div>
                         </div>
                     </td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
+        <p class="empty" id="insights-filter-empty" hidden>No matching insights.</p>
         {% else %}
         <p class="empty">No insights found. Run a sync to populate data.</p>
         {% endif %}
@@ -687,6 +778,82 @@
                     hideSpinner();
                 }
             });
+
+            var scrollStorageKey = "dashboard-scroll";
+
+            var restoreForms = document.querySelectorAll("form[data-scroll-restore]");
+            restoreForms.forEach(function (form) {
+                form.addEventListener("submit", function () {
+                    try {
+                        var position = {
+                            x: window.pageXOffset || document.documentElement.scrollLeft || 0,
+                            y: window.pageYOffset || document.documentElement.scrollTop || 0,
+                        };
+                        sessionStorage.setItem(scrollStorageKey, JSON.stringify(position));
+                    } catch (error) {
+                        // Ignore storage failures (private browsing, disabled storage, etc.)
+                    }
+                });
+            });
+
+            var insightsSearch = document.getElementById("insights-search");
+            if (insightsSearch) {
+                var tableBody = document.querySelector(".recent-insights-table tbody");
+                var visibleCount = document.getElementById("insights-visible-count");
+                var emptyNotice = document.getElementById("insights-filter-empty");
+                var rows = tableBody
+                    ? Array.prototype.slice.call(tableBody.querySelectorAll("tr"))
+                    : [];
+
+                rows.forEach(function (row) {
+                    row.dataset.searchText = (row.textContent || "").toLowerCase();
+                });
+
+                function applyInsightFilter() {
+                    var term = insightsSearch.value.trim().toLowerCase();
+                    var visible = 0;
+                    rows.forEach(function (row) {
+                        var matches = !term || row.dataset.searchText.indexOf(term) !== -1;
+                        row.style.display = matches ? "" : "none";
+                        if (matches) {
+                            visible += 1;
+                        }
+                    });
+                    if (visibleCount) {
+                        visibleCount.textContent = String(visible);
+                    }
+                    if (emptyNotice) {
+                        emptyNotice.hidden = visible !== 0;
+                    }
+                }
+
+                insightsSearch.addEventListener("input", applyInsightFilter);
+                applyInsightFilter();
+            }
+
+            try {
+                var storedScroll = sessionStorage.getItem(scrollStorageKey);
+                if (storedScroll !== null) {
+                    sessionStorage.removeItem(scrollStorageKey);
+                    var parsed;
+                    try {
+                        parsed = JSON.parse(storedScroll);
+                    } catch (error) {
+                        parsed = null;
+                    }
+                    if (
+                        parsed &&
+                        typeof parsed.x === "number" &&
+                        typeof parsed.y === "number" &&
+                        Number.isFinite(parsed.x) &&
+                        Number.isFinite(parsed.y)
+                    ) {
+                        window.scrollTo({ left: parsed.x, top: parsed.y, behavior: "auto" });
+                    }
+                }
+            } catch (error) {
+                // Ignore storage access issues.
+            }
         });
     </script>
 </body>
