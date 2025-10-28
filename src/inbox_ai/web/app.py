@@ -91,6 +91,7 @@ class DashboardFilters:
     follow_status_filter: str | None
     follow_status_value: str
     priority_filter: str
+    category_key: str | None
 
 
 @dataclass(frozen=True)
@@ -256,15 +257,19 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             limit=filters.insights_limit,
             min_priority=min_priority,
             max_priority=max_priority,
+            category_key=filters.category_key,
         )
-        total_insights = repository.count_insights()
+        total_insights = repository.count_insights(
+            min_priority=min_priority,
+            max_priority=max_priority,
+            category_key=filters.category_key,
+        )
         draft_records = repository.list_recent_drafts(limit=filters.insights_limit)
         insight_uids = [email.uid for email, _ in insights]
         draft_lookup = repository.fetch_latest_drafts(insight_uids)
         category_lookup = repository.get_categories_for_uids(insight_uids)
-        follow_ups = repository.list_follow_ups(
-            status=filters.follow_status_filter, limit=filters.follow_limit
-        )
+        follow_up_lookup = repository.fetch_follow_ups_for_uids(insight_uids)
+        category_options = repository.list_categories()
         env_file = _resolve_env_file()
         return templates.TemplateResponse(
             request,
@@ -277,15 +282,15 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                         insight,
                         draft_lookup.get(email.uid),
                         category_lookup.get(email.uid, ()),
+                        follow_up_lookup.get(email.uid, ()),
                     )
                     for email, insight in insights
                 ],
                 "insights_total": total_insights,
                 "drafts": [_serialize_draft(draft) for draft in draft_records],
-                "follow_ups": [_serialize_follow_up(task) for task in follow_ups],
                 "filters": filters,
-                "follow_status_options": _FOLLOW_STATUS_OPTIONS,
                 "priority_filter_options": _PRIORITY_FILTER_OPTIONS,
+                "category_options": category_options,
                 "redirect_to": _build_redirect_target(request),
                 "config_sections": CONFIG_SECTIONS,
                 "config_values": _load_env_values(env_file),
@@ -309,15 +314,24 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             limit=filters.insights_limit,
             min_priority=min_priority,
             max_priority=max_priority,
+            category_key=filters.category_key,
         )
-        total_insights = repository.count_insights()
+        total_insights = repository.count_insights(
+            min_priority=min_priority,
+            max_priority=max_priority,
+            category_key=filters.category_key,
+        )
         draft_records = repository.list_recent_drafts(limit=filters.insights_limit)
         insight_uids = [email.uid for email, _ in insights]
         draft_lookup = repository.fetch_latest_drafts(insight_uids)
         category_lookup = repository.get_categories_for_uids(insight_uids)
-        follow_ups = repository.list_follow_ups(
-            status=filters.follow_status_filter, limit=filters.follow_limit
-        )
+        follow_up_lookup = repository.fetch_follow_ups_for_uids(insight_uids)
+        category_options = repository.list_categories()
+        flattened_follow_ups = [
+            _serialize_follow_up(task)
+            for tasks in follow_up_lookup.values()
+            for task in tasks
+        ]
         return {
             "insights": [
                 _serialize_insight(
@@ -325,18 +339,24 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                     insight,
                     draft_lookup.get(email.uid),
                     category_lookup.get(email.uid, ()),
+                    follow_up_lookup.get(email.uid, ()),
                 )
                 for email, insight in insights
             ],
             "insightsTotal": total_insights,
             "drafts": [_serialize_draft(draft) for draft in draft_records],
-            "followUps": [_serialize_follow_up(task) for task in follow_ups],
+            "followUps": flattened_follow_ups,
             "filters": {
                 "insightsLimit": filters.insights_limit,
                 "followLimit": filters.follow_limit,
                 "followStatus": filters.follow_status_value,
                 "priority": filters.priority_filter,
+                "category": filters.category_key,
             },
+            "availableCategories": [
+                {"key": option.key, "label": option.label}
+                for option in category_options
+            ],
         }
 
     @app.post("/config")
@@ -428,6 +448,7 @@ def _serialize_insight(
     insight: EmailInsight,
     draft: DraftRecord | None = None,
     categories: Sequence[EmailCategory] | None = None,
+    follow_ups: Sequence[FollowUpTask] | None = None,
 ) -> dict[str, Any]:
     return {
         "uid": email.uid,
@@ -439,6 +460,7 @@ def _serialize_insight(
             {"key": category.key, "label": category.label}
             for category in (categories or ())
         ],
+        "followUps": [_serialize_follow_up(task) for task in (follow_ups or ())],
         "priority": insight.priority,
         "priorityLabel": _priority_label(insight.priority),
         "provider": insight.provider,
@@ -499,12 +521,14 @@ def _parse_dashboard_filters(params: Mapping[str, str]) -> DashboardFilters:
         params.get("follow_status")
     )
     priority_filter = _normalize_priority_filter(params.get("priority"))
+    category_key = _normalize_category_filter(params.get("category"))
     return DashboardFilters(
         insights_limit=insights_limit,
         follow_limit=follow_limit,
         follow_status_filter=follow_status_filter,
         follow_status_value=follow_status_value,
         priority_filter=priority_filter,
+        category_key=category_key,
     )
 
 
@@ -512,6 +536,15 @@ def _normalize_priority_filter(raw: str | None) -> str:
     value = (raw or "all").lower()
     if value not in _PRIORITY_FILTER_MAP:
         return "all"
+    return value
+
+
+def _normalize_category_filter(raw: str | None) -> str | None:
+    if raw is None:
+        return None
+    value = raw.strip()
+    if not value or value.lower() == "all":
+        return None
     return value
 
 

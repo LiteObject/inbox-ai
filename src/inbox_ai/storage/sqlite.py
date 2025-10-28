@@ -270,6 +270,7 @@ class SqliteEmailRepository(EmailRepository):
         *,
         min_priority: int | None = None,
         max_priority: int | None = None,
+        category_key: str | None = None,
     ) -> list[tuple[EmailEnvelope, EmailInsight]]:
         """Return recent email/insight pairs ordered by newest insight first."""
         query = [
@@ -305,6 +306,11 @@ class SqliteEmailRepository(EmailRepository):
         if max_priority is not None:
             conditions.append("i.priority_score <= ?")
             params.append(max_priority)
+        if category_key is not None:
+            conditions.append(
+                "EXISTS (SELECT 1 FROM email_categories c WHERE c.email_uid = i.email_uid AND c.category_key = ?)"
+            )
+            params.append(category_key)
         if conditions:
             query.append("WHERE ")
             query.append(" AND ".join(conditions))
@@ -344,9 +350,32 @@ class SqliteEmailRepository(EmailRepository):
             results.append((email, insight))
         return results
 
-    def count_insights(self) -> int:
-        """Return total number of insight records."""
-        cur = self._connection.execute("SELECT COUNT(*) FROM email_insights")
+    def count_insights(
+        self,
+        *,
+        min_priority: int | None = None,
+        max_priority: int | None = None,
+        category_key: str | None = None,
+    ) -> int:
+        """Return total number of insight records matching optional filters."""
+        query = ["SELECT COUNT(*) FROM email_insights i"]
+        params: list[object] = []
+        conditions: list[str] = []
+        if min_priority is not None:
+            conditions.append("i.priority_score >= ?")
+            params.append(min_priority)
+        if max_priority is not None:
+            conditions.append("i.priority_score <= ?")
+            params.append(max_priority)
+        if category_key is not None:
+            conditions.append(
+                "EXISTS (SELECT 1 FROM email_categories c WHERE c.email_uid = i.email_uid AND c.category_key = ?)"
+            )
+            params.append(category_key)
+        if conditions:
+            query.append(" WHERE ")
+            query.append(" AND ".join(conditions))
+        cur = self._connection.execute("".join(query), params)
         row = cur.fetchone()
         return int(row[0]) if row is not None else 0
 
@@ -463,6 +492,62 @@ class SqliteEmailRepository(EmailRepository):
             categories = grouped.get(uid)
             results[uid] = tuple(categories) if categories else ()
         return results
+
+    def fetch_follow_ups_for_uids(
+        self, uids: Sequence[int]
+    ) -> dict[int, tuple[FollowUpTask, ...]]:
+        """Return follow-up tasks grouped by email UID."""
+        if not uids:
+            return {}
+        unique_uids = tuple(dict.fromkeys(uids))
+        placeholders = ",".join("?" for _ in unique_uids)
+        query = f"""
+            SELECT id, email_uid, action, due_at, status, created_at, completed_at
+            FROM follow_ups
+            WHERE email_uid IN ({placeholders})
+            ORDER BY
+                email_uid,
+                CASE WHEN due_at IS NULL THEN 1 ELSE 0 END,
+                due_at ASC,
+                created_at ASC
+        """
+        cur = self._connection.execute(query, unique_uids)
+        grouped: dict[int, list[FollowUpTask]] = {}
+        for row in cur.fetchall():
+            uid = row["email_uid"]
+            grouped.setdefault(uid, []).append(
+                FollowUpTask(
+                    id=row["id"],
+                    email_uid=uid,
+                    action=row["action"],
+                    due_at=_parse_datetime(row["due_at"]),
+                    status=row["status"],
+                    created_at=cast(
+                        datetime,
+                        _parse_datetime(row["created_at"], assume_utc=True),
+                    ),
+                    completed_at=_parse_datetime(row["completed_at"], assume_utc=True),
+                )
+            )
+        results: dict[int, tuple[FollowUpTask, ...]] = {}
+        for uid in unique_uids:
+            tasks = grouped.get(uid)
+            results[uid] = tuple(tasks) if tasks else ()
+        return results
+
+    def list_categories(self) -> tuple[EmailCategory, ...]:
+        """Return distinct categories stored in the database."""
+        cur = self._connection.execute(
+            """
+            SELECT DISTINCT category_key, label
+            FROM email_categories
+            ORDER BY LOWER(label), category_key
+            """
+        )
+        return tuple(
+            EmailCategory(key=row["category_key"], label=row["label"])
+            for row in cur.fetchall()
+        )
 
     def replace_follow_ups(self, email_uid: int, tasks: Sequence[FollowUpTask]) -> None:
         """Replace existing follow-ups for the email with the provided sequence."""

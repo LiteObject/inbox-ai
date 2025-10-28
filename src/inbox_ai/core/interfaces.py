@@ -77,12 +77,19 @@ class EmailRepository(Protocol):
         *,
         min_priority: int | None = None,
         max_priority: int | None = None,
+        category_key: str | None = None,
     ) -> list[tuple[EmailEnvelope, EmailInsight]]:
         """Return recent emails joined with their insights for quick browsing."""
         raise NotImplementedError
 
-    def count_insights(self) -> int:
-        """Return total stored insights."""
+    def count_insights(
+        self,
+        *,
+        min_priority: int | None = None,
+        max_priority: int | None = None,
+        category_key: str | None = None,
+    ) -> int:
+        """Return total stored insights matching optional filters."""
         raise NotImplementedError
 
     def list_recent_drafts(self, limit: int) -> list[DraftRecord]:
@@ -105,6 +112,12 @@ class EmailRepository(Protocol):
         """Return categories for each requested email UID."""
         raise NotImplementedError
 
+    def fetch_follow_ups_for_uids(
+        self, uids: Sequence[int]
+    ) -> dict[int, tuple[FollowUpTask, ...]]:
+        """Return follow-up tasks grouped by email UID."""
+        raise NotImplementedError
+
     def replace_follow_ups(self, email_uid: int, tasks: Sequence[FollowUpTask]) -> None:
         """Replace follow-up tasks for an email with the supplied tasks."""
         raise NotImplementedError
@@ -113,6 +126,10 @@ class EmailRepository(Protocol):
         self, *, status: str | None = None, limit: int | None = None
     ) -> list[FollowUpTask]:
         """Return follow-up tasks optionally filtered by status."""
+        raise NotImplementedError
+
+    def list_categories(self) -> tuple[EmailCategory, ...]:
+        """Return distinct categories currently stored in the repository."""
         raise NotImplementedError
 
     def update_follow_up_status(self, follow_up_id: int, status: str) -> None:

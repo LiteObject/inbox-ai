@@ -209,6 +209,88 @@
             letter-spacing: 0.02em;
         }
 
+        .followups-block {
+            margin-top: 12px;
+        }
+
+        .followups-heading {
+            font-size: 0.82rem;
+            font-weight: 700;
+            color: #1f2937;
+            text-transform: uppercase;
+            margin-bottom: 6px;
+        }
+
+        .followups-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .followup-item {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            padding: 10px 12px;
+        }
+
+        .followup-action {
+            font-weight: 600;
+            color: #111827;
+            margin-bottom: 6px;
+        }
+
+        .followup-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px 16px;
+            font-size: 0.82rem;
+            color: #4b5563;
+        }
+
+        .followup-actions {
+            margin-top: 8px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .followup-actions form {
+            margin: 0;
+        }
+
+        .followup-actions button {
+            padding: 6px 12px;
+            border: none;
+            border-radius: 4px;
+            font-size: 0.82rem;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .followup-actions .primary {
+            background: #2563eb;
+            color: #ffffff;
+        }
+
+        .followup-actions .primary:hover,
+        .followup-actions .primary:focus {
+            background: #1d4ed8;
+        }
+
+        .followup-actions .secondary {
+            background: #e5e7eb;
+            color: #1f2937;
+        }
+
+        .followup-actions .secondary:hover,
+        .followup-actions .secondary:focus {
+            background: #d1d5db;
+        }
+
         .priority-meta {
             margin-top: 10px;
             font-size: 0.9rem;
@@ -323,20 +405,6 @@
             font-family: "Courier New", monospace;
         }
 
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-            gap: 16px;
-        }
-
-        .card {
-            background: #ffffff;
-            border: 1px solid #e0e0e0;
-            border-radius: 6px;
-            padding: 16px;
-            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
-        }
-
         .status-open {
             color: #d97706;
             font-weight: 600;
@@ -386,17 +454,6 @@
 
         .filter-form button:hover {
             background: #005dc1;
-        }
-
-        .card-actions {
-            margin-top: 14px;
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-
-        .card-actions form {
-            margin: 0;
         }
 
         .card-actions button {
@@ -709,19 +766,15 @@
                 </select>
             </div>
             <div class="filter-group">
-                <label for="follow_status">Follow-up status</label>
-                <select id="follow_status" name="follow_status">
-                    {% for option in follow_status_options %}
-                    <option value="{{ option }}" {% if option==filters.follow_status_value %}selected{% endif %}>
-                        {{ option | capitalize }}
+                <label for="category">Category</label>
+                <select id="category" name="category">
+                    <option value="" {% if not filters.category_key %}selected{% endif %}>All categories</option>
+                    {% for category in category_options %}
+                    <option value="{{ category.key }}" {% if filters.category_key==category.key %}selected{% endif %}>
+                        {{ category.label }}
                     </option>
                     {% endfor %}
                 </select>
-            </div>
-            <div class="filter-group">
-                <label for="follow_limit">Follow-up limit</label>
-                <input type="number" id="follow_limit" name="follow_limit" min="1" max="100"
-                    value="{{ filters.follow_limit }}" />
             </div>
             <button type="submit">Apply Filters</button>
         </form>
@@ -804,6 +857,48 @@
                                         </div>
                                     </div>
                                     {% endif %}
+                                    {% if item.followUps %}
+                                    <div class="followups-block">
+                                        <div class="followups-heading">Follow-Ups</div>
+                                        <ul class="followups-list">
+                                            {% for task in item.followUps %}
+                                            <li class="followup-item">
+                                                <div class="followup-action">{{ task.action }}</div>
+                                                <div class="followup-meta">
+                                                    {% if task.dueAt %}
+                                                    <span class="meta">Due: {{ task.dueAt }}</span>
+                                                    {% endif %}
+                                                    <span class="meta status-{{ task.status }}">Status: {{ task.status
+                                                        }}</span>
+                                                    <span class="meta">Created: {{ task.createdAt }}</span>
+                                                    {% if task.completedAt %}
+                                                    <span class="meta">Completed: {{ task.completedAt }}</span>
+                                                    {% endif %}
+                                                </div>
+                                                {% if task.id is not none %}
+                                                <div class="followup-actions">
+                                                    {% if task.status != "done" %}
+                                                    <form method="post" action="/follow-ups/{{ task.id }}/status">
+                                                        <input type="hidden" name="status" value="done" />
+                                                        <input type="hidden" name="redirect_to"
+                                                            value="{{ redirect_to }}" />
+                                                        <button class="primary" type="submit">Mark Done</button>
+                                                    </form>
+                                                    {% else %}
+                                                    <form method="post" action="/follow-ups/{{ task.id }}/status">
+                                                        <input type="hidden" name="status" value="open" />
+                                                        <input type="hidden" name="redirect_to"
+                                                            value="{{ redirect_to }}" />
+                                                        <button class="secondary" type="submit">Reopen</button>
+                                                    </form>
+                                                    {% endif %}
+                                                </div>
+                                                {% endif %}
+                                            </li>
+                                            {% endfor %}
+                                        </ul>
+                                    </div>
+                                    {% endif %}
                                 </div>
                             </div>
                             <div class="table-actions">
@@ -825,41 +920,6 @@
         {% endif %}
     </div>
 
-    <div class="section">
-        <h2>{{ filters.follow_status_value | capitalize }} Follow-Ups</h2>
-        {% if follow_ups %}
-        <div class="grid">
-            {% for task in follow_ups %}
-            <div class="card">
-                <div class="meta">Email UID {{ task.emailUid }}</div>
-                <p>{{ task.action }}</p>
-                <div class="meta">Due: {{ task.dueAt or "None" }}</div>
-                <div class="meta status-{{ task.status }}">Status: {{ task.status }}</div>
-                <div class="meta">Created: {{ task.createdAt }}</div>
-                {% if task.id is not none %}
-                <div class="card-actions">
-                    {% if task.status != "done" %}
-                    <form method="post" action="/follow-ups/{{ task.id }}/status">
-                        <input type="hidden" name="status" value="done" />
-                        <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-                        <button class="primary" type="submit">Mark Done</button>
-                    </form>
-                    {% else %}
-                    <form method="post" action="/follow-ups/{{ task.id }}/status">
-                        <input type="hidden" name="status" value="open" />
-                        <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-                        <button class="secondary" type="submit">Reopen</button>
-                    </form>
-                    {% endif %}
-                </div>
-                {% endif %}
-            </div>
-            {% endfor %}
-        </div>
-        {% else %}
-        <p class="empty">You're all caught up!</p>
-        {% endif %}
-    </div>
     <script>
         document.addEventListener("DOMContentLoaded", function () {
             var syncForm = document.querySelector("form[data-sync]");
