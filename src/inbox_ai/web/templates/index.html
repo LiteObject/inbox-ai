@@ -41,6 +41,52 @@
             border-collapse: collapse;
         }
 
+        .section-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 16px;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+        }
+
+        .section-header h2 {
+            margin: 0;
+        }
+
+        .button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 10px 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            line-height: 1.2;
+            margin: 0;
+        }
+
+        .button-primary {
+            background: #2563eb;
+            color: #ffffff;
+        }
+
+        .button-primary:hover,
+        .button-primary:focus {
+            background: #1e40af;
+        }
+
+        .button-danger {
+            background: #dc2626;
+            color: #ffffff;
+        }
+
+        .button-danger:hover,
+        .button-danger:focus {
+            background: #b91c1c;
+        }
+
         .insights-grid {
             display: grid;
             grid-template-columns: 1fr;
@@ -402,15 +448,6 @@
             font-weight: 600;
         }
 
-        .button-danger {
-            background: #dc2626;
-            color: #ffffff;
-        }
-
-        .button-danger:hover {
-            background: #b91c1c;
-        }
-
         code {
             background: #f4f4f4;
             padding: 2px 6px;
@@ -511,18 +548,14 @@
             margin: 0;
         }
 
-        .sync-section button {
-            padding: 12px 20px;
-            background: #2563eb;
-            color: white;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: 600;
+        .bulk-delete-form {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
         }
 
-        .sync-section button:hover {
-            background: #1e40af;
+        .hidden-inputs {
+            display: none;
         }
 
         .sync-copy {
@@ -721,12 +754,12 @@
             <div class="sync-actions">
                 <form method="post" action="/sync" data-spinner data-spinner-label="Sync in progress&hellip;">
                     <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-                    <button type="submit">Sync Now</button>
+                    <button type="submit" class="button button-primary">Sync Now</button>
                 </form>
                 <form method="post" action="/categories/regenerate" data-spinner
                     data-spinner-label="Regenerating categories&hellip;">
                     <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-                    <button type="submit">Rebuild Categories</button>
+                    <button type="submit" class="button button-primary">Rebuild Categories</button>
                 </form>
             </div>
         </div>
@@ -818,8 +851,23 @@
     </div>
 
     <div class="section">
-        <h2>Recent Insights (<span id="insights-visible-count">{{ insights | length }}</span> / {{ insights_total |
-            default(0) }})</h2>
+        <div class="section-header">
+            <h2>Recent Insights (<span id="insights-visible-count">{{ insights | length }}</span> / {{ insights_total |
+                default(0) }})</h2>
+            {% if insights %}
+            <form method="post" action="/emails/bulk-delete" class="bulk-delete-form" data-spinner
+                data-spinner-label="Deleting emails&hellip;"
+                data-confirm="Delete all listed emails and related data? This cannot be undone.">
+                <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
+                <div class="hidden-inputs" aria-hidden="true">
+                    {% for item in insights %}
+                    <input type="hidden" name="uids" value="{{ item.uid }}" />
+                    {% endfor %}
+                </div>
+                <button type="submit" class="button button-danger">Delete These Emails</button>
+            </form>
+            {% endif %}
+        </div>
         {% if insights %}
         <div class="insights-controls">
             <input type="search" id="insights-search" class="insights-search" placeholder="Search insights"
@@ -975,9 +1023,17 @@
             var asyncForms = document.querySelectorAll("form[data-spinner]");
             asyncForms.forEach(function (form) {
                 var submitButton = form.querySelector("button[type='submit']");
-                spinnerButtons.push(submitButton);
+                if (submitButton) {
+                    spinnerButtons.push(submitButton);
+                }
 
                 form.addEventListener("submit", async function (event) {
+                    var confirmMessage = form.dataset.confirm;
+                    if (confirmMessage && !window.confirm(confirmMessage)) {
+                        event.preventDefault();
+                        return;
+                    }
+
                     if (!window.fetch) {
                         return;
                     }
