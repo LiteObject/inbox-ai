@@ -228,7 +228,12 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         filters = _parse_dashboard_filters(request.query_params)
         insights = repository.list_recent_insights(limit=filters.insights_limit)
         total_insights = repository.count_insights()
-        drafts = repository.list_recent_drafts(limit=filters.drafts_limit)
+        draft_limit = max(filters.drafts_limit, filters.insights_limit)
+        draft_records = repository.list_recent_drafts(limit=draft_limit)
+        draft_lookup: dict[int, DraftRecord] = {}
+        for draft in draft_records:
+            if draft.email_uid not in draft_lookup:
+                draft_lookup[draft.email_uid] = draft
         follow_ups = repository.list_follow_ups(
             status=filters.follow_status_filter, limit=filters.follow_limit
         )
@@ -239,10 +244,11 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             {
                 "request": request,
                 "insights": [
-                    _serialize_insight(email, insight) for email, insight in insights
+                    _serialize_insight(email, insight, draft_lookup.get(email.uid))
+                    for email, insight in insights
                 ],
                 "insights_total": total_insights,
-                "drafts": [_serialize_draft(draft) for draft in drafts],
+                "drafts": [_serialize_draft(draft) for draft in draft_records],
                 "follow_ups": [_serialize_follow_up(task) for task in follow_ups],
                 "filters": filters,
                 "follow_status_options": _FOLLOW_STATUS_OPTIONS,
@@ -266,16 +272,22 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         filters = _parse_dashboard_filters(request.query_params)
         insights = repository.list_recent_insights(limit=filters.insights_limit)
         total_insights = repository.count_insights()
-        drafts = repository.list_recent_drafts(limit=filters.drafts_limit)
+        draft_limit = max(filters.drafts_limit, filters.insights_limit)
+        draft_records = repository.list_recent_drafts(limit=draft_limit)
+        draft_lookup: dict[int, DraftRecord] = {}
+        for draft in draft_records:
+            if draft.email_uid not in draft_lookup:
+                draft_lookup[draft.email_uid] = draft
         follow_ups = repository.list_follow_ups(
             status=filters.follow_status_filter, limit=filters.follow_limit
         )
         return {
             "insights": [
-                _serialize_insight(email, insight) for email, insight in insights
+                _serialize_insight(email, insight, draft_lookup.get(email.uid))
+                for email, insight in insights
             ],
             "insightsTotal": total_insights,
-            "drafts": [_serialize_draft(draft) for draft in drafts],
+            "drafts": [_serialize_draft(draft) for draft in draft_records],
             "followUps": [_serialize_follow_up(task) for task in follow_ups],
             "filters": {
                 "insightsLimit": filters.insights_limit,
@@ -369,7 +381,11 @@ def _ensure_route_names(app: FastAPI) -> None:
             route.name = route.path_format.replace("/", ":") or "root"
 
 
-def _serialize_insight(email: EmailEnvelope, insight: EmailInsight) -> dict[str, Any]:
+def _serialize_insight(
+    email: EmailEnvelope,
+    insight: EmailInsight,
+    draft: DraftRecord | None = None,
+) -> dict[str, Any]:
     return {
         "uid": email.uid,
         "subject": email.subject,
@@ -381,6 +397,7 @@ def _serialize_insight(email: EmailEnvelope, insight: EmailInsight) -> dict[str,
         "provider": insight.provider,
         "generatedAt": _isoformat(insight.generated_at),
         "generatedAtDisplay": _friendly_datetime(insight.generated_at),
+        "draft": _serialize_draft(draft) if draft is not None else None,
     }
 
 
@@ -392,6 +409,7 @@ def _serialize_draft(draft: DraftRecord) -> dict[str, Any]:
         "provider": draft.provider,
         "confidence": draft.confidence,
         "generatedAt": _isoformat(draft.generated_at),
+        "generatedAtDisplay": _friendly_datetime(draft.generated_at),
         "usedFallback": draft.used_fallback,
     }
 

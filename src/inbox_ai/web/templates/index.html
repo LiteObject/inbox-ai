@@ -205,6 +205,38 @@
             color: #6b7280;
         }
 
+        .draft-preview {
+            margin-top: 14px;
+            padding: 12px 14px;
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+        }
+
+        .draft-heading {
+            font-size: 0.85rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: #1f2937;
+        }
+
+        .draft-body {
+            margin-top: 8px;
+            color: #111827;
+            white-space: pre-wrap;
+            line-height: 1.45;
+        }
+
+        .draft-meta {
+            margin-top: 10px;
+            font-size: 0.82rem;
+            color: #4b5563;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px 16px;
+        }
+
         .empty {
             color: #777;
             font-style: italic;
@@ -705,6 +737,25 @@
                                     {% if display_date %}
                                     <div class="generated-meta">Generated {{ display_date }}</div>
                                     {% endif %}
+                                    {% if item.draft %}
+                                    <div class="draft-preview">
+                                        <div class="draft-heading">Latest Draft</div>
+                                        <div class="draft-body">{{ item.draft.body }}</div>
+                                        <div class="draft-meta">
+                                            <span class="meta">Provider: {{ item.draft.provider }}</span>
+                                            {% if item.draft.generatedAtDisplay %}
+                                            <span class="meta">Generated {{ item.draft.generatedAtDisplay }}</span>
+                                            {% endif %}
+                                            {% if item.draft.confidence is not none %}
+                                            <span class="meta">Confidence {{ '%.2f' | format(item.draft.confidence)
+                                                }}</span>
+                                            {% endif %}
+                                            {% if item.draft.usedFallback %}
+                                            <span class="meta">Fallback used</span>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                    {% endif %}
                                 </div>
                             </div>
                             <div class="table-actions">
@@ -723,29 +774,6 @@
         <p class="empty" id="insights-filter-empty" hidden>No matching insights.</p>
         {% else %}
         <p class="empty">No insights found. Run a sync to populate data.</p>
-        {% endif %}
-    </div>
-
-    <div class="section">
-        <h2>Latest Drafts</h2>
-        {% if drafts %}
-        <div class="grid">
-            {% for draft in drafts %}
-            <div class="card">
-                <div class="meta">Draft for UID {{ draft.emailUid }}</div>
-                <p>{{ draft.body }}</p>
-                <div class="meta">Provider: {{ draft.provider }} | Generated: {{ draft.generatedAt }}</div>
-                {% if draft.confidence is not none %}
-                <div class="meta">Confidence: {{ '%.2f' | format(draft.confidence) }}</div>
-                {% endif %}
-                {% if draft.usedFallback %}
-                <div class="meta">Fallback used</div>
-                {% endif %}
-            </div>
-            {% endfor %}
-        </div>
-        {% else %}
-        <p class="empty">No drafts generated yet.</p>
         {% endif %}
     </div>
 
