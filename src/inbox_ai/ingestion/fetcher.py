@@ -6,6 +6,7 @@ import logging
 from typing import Protocol
 
 from ..core.interfaces import (
+    CategoryService,
     DraftingService,
     EmailRepository,
     FollowUpPlanner,
@@ -42,6 +43,7 @@ class MailFetcher:
         insight_service: InsightService | None = None,
         drafting_service: DraftingService | None = None,
         follow_up_planner: FollowUpPlanner | None = None,
+        category_service: CategoryService | None = None,
     ) -> None:
         # pylint: disable=too-many-arguments
         """Initialise the fetcher with mailbox, storage, and parser."""
@@ -55,6 +57,7 @@ class MailFetcher:
         self._insight_service = insight_service
         self._drafting_service = drafting_service
         self._follow_up_planner = follow_up_planner
+        self._category_service = category_service
 
     def run(self) -> MailFetcherResult:
         """Execute a synchronization cycle and return a summary."""
@@ -105,6 +108,19 @@ class MailFetcher:
                 except Exception as exc:  # pylint: disable=broad-except
                     LOGGER.warning(
                         "Failed to derive follow-ups for UID %s: %s",
+                        envelope.uid,
+                        exc,
+                    )
+
+            if self._category_service is not None:
+                try:
+                    categories = tuple(
+                        self._category_service.categorize(envelope, insight)
+                    )
+                    self._repository.replace_categories(envelope.uid, categories)
+                except Exception as exc:  # pylint: disable=broad-except
+                    LOGGER.warning(
+                        "Failed to assign categories for UID %s: %s",
                         envelope.uid,
                         exc,
                     )

@@ -2,6 +2,7 @@
 
 from inbox_ai.core.interfaces import InsightError
 
+from .category import KeywordCategoryService
 from .drafter import DraftingError, DraftingService
 from .follow_up import FollowUpPlannerService
 from .llm import LLMClient, LLMError, OllamaClient
@@ -18,4 +19,5 @@ __all__ = [
     "DraftingService",
     "DraftingError",
     "FollowUpPlannerService",
+    "KeywordCategoryService",
 ]

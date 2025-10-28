@@ -17,6 +17,7 @@ from ..core.models import (
     AttachmentMeta,
     DraftRecord,
     EmailBody,
+    EmailCategory,
     EmailEnvelope,
     EmailInsight,
     FollowUpTask,
@@ -416,6 +417,51 @@ class SqliteEmailRepository(EmailRepository):
                 confidence=row["confidence"],
                 used_fallback=bool(row["used_fallback"]),
             )
+        return results
+
+    def replace_categories(
+        self, email_uid: int, categories: Sequence[EmailCategory]
+    ) -> None:
+        """Replace stored categories for an email."""
+        LOGGER.debug("Replacing categories for UID %s", email_uid)
+        with self._connection:
+            self._connection.execute(
+                "DELETE FROM email_categories WHERE email_uid = ?", (email_uid,)
+            )
+            for category in categories:
+                self._connection.execute(
+                    """
+                    INSERT INTO email_categories (email_uid, category_key, label)
+                    VALUES (?, ?, ?)
+                    """,
+                    (email_uid, category.key, category.label),
+                )
+
+    def get_categories_for_uids(
+        self, uids: Sequence[int]
+    ) -> dict[int, tuple[EmailCategory, ...]]:
+        """Return categories for each requested email UID."""
+        if not uids:
+            return {}
+        unique_uids = tuple(dict.fromkeys(uids))
+        placeholders = ",".join("?" for _ in unique_uids)
+        query = f"""
+            SELECT email_uid, category_key, label
+            FROM email_categories
+            WHERE email_uid IN ({placeholders})
+            ORDER BY email_uid, category_key
+        """
+        cur = self._connection.execute(query, unique_uids)
+        grouped: dict[int, list[EmailCategory]] = {}
+        for row in cur.fetchall():
+            uid = row["email_uid"]
+            grouped.setdefault(uid, []).append(
+                EmailCategory(key=row["category_key"], label=row["label"])
+            )
+        results: dict[int, tuple[EmailCategory, ...]] = {}
+        for uid in unique_uids:
+            categories = grouped.get(uid)
+            results[uid] = tuple(categories) if categories else ()
         return results
 
     def replace_follow_ups(self, email_uid: int, tasks: Sequence[FollowUpTask]) -> None:

@@ -178,6 +178,37 @@
             margin-bottom: 6px;
         }
 
+        .categories-block {
+            margin-top: 10px;
+        }
+
+        .categories-heading {
+            font-size: 0.82rem;
+            font-weight: 700;
+            color: #1f2937;
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+
+        .categories-list {
+            margin: 0;
+            padding: 0;
+            list-style: none;
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .categories-list li {
+            background: #e5edff;
+            color: #1d4ed8;
+            font-size: 0.78rem;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 999px;
+            letter-spacing: 0.02em;
+        }
+
         .priority-meta {
             margin-top: 10px;
             font-size: 0.9rem;
@@ -734,6 +765,18 @@
                                     {% else %}
                                     <span class="empty">No action items</span>
                                     {% endif %}
+                                    <div class="categories-block">
+                                        <div class="categories-heading">Categories</div>
+                                        {% if item.categories %}
+                                        <ul class="categories-list">
+                                            {% for category in item.categories %}
+                                            <li>{{ category.label }}</li>
+                                            {% endfor %}
+                                        </ul>
+                                        {% else %}
+                                        <span class="empty">Not categorized</span>
+                                        {% endif %}
+                                    </div>
                                     <div class="priority-meta">
                                         <strong>{{ item.priorityLabel }}</strong>
                                         <span class="meta">({{ item.priority }})</span>

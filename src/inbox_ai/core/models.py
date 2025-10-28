@@ -105,6 +105,14 @@ class FollowUpTask:
     completed_at: datetime | None
 
 
+@dataclass(slots=True)
+class EmailCategory:
+    """Categorisation label assigned to an email."""
+
+    key: str
+    label: str
+
+
 __all__ = [
     "AttachmentMeta",
     "EmailBody",
@@ -115,4 +123,5 @@ __all__ = [
     "EmailInsight",
     "DraftRecord",
     "FollowUpTask",
+    "EmailCategory",
 ]
