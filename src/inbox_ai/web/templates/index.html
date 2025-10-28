@@ -45,13 +45,8 @@
             table-layout: fixed;
         }
 
-        .recent-insights-table th:first-child,
-        .recent-insights-table td:first-child {
-            width: 72px;
-        }
-
-        .recent-insights-table th:nth-child(2),
-        .recent-insights-table td:nth-child(2) {
+        .recent-insights-table th,
+        .recent-insights-table td {
             width: auto;
         }
 
@@ -60,6 +55,72 @@
             align-items: center;
             gap: 12px;
             margin-bottom: 12px;
+        }
+
+        .toast-container {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            z-index: 2000;
+            pointer-events: none;
+            align-items: flex-end;
+        }
+
+        .toast {
+            min-width: 240px;
+            max-width: 360px;
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            background: #1f2937;
+            color: #f9fafb;
+            border-radius: 8px;
+            padding: 12px 16px;
+            box-shadow: 0 12px 32px rgba(15, 23, 42, 0.35);
+            pointer-events: auto;
+            opacity: 0;
+            transform: translateY(8px);
+            transition: opacity 0.16s ease-out, transform 0.16s ease-out;
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .toast.success {
+            background: #047857;
+        }
+
+        .toast.error {
+            background: #b91c1c;
+        }
+
+        .toast-message {
+            flex: 1 1 auto;
+        }
+
+        .toast button {
+            background: transparent;
+            border: none;
+            color: inherit;
+            cursor: pointer;
+            font-size: 1.1rem;
+            line-height: 1;
+            padding: 0;
+        }
+
+        .toast button:hover,
+        .toast button:focus {
+            opacity: 0.75;
+        }
+
+        .toast button:focus {
+            outline: 2px solid rgba(255, 255, 255, 0.7);
+            outline-offset: 2px;
         }
 
         .insights-search {
@@ -121,6 +182,15 @@
             margin-top: 10px;
             font-size: 0.9rem;
             color: #1f2937;
+        }
+
+        .meta.uid {
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: #1f2937;
+            margin-bottom: 6px;
+            letter-spacing: 0.02em;
+            text-transform: uppercase;
         }
 
         .priority-meta .meta {
@@ -491,21 +561,12 @@
         <p>Sync in progress&hellip;</p>
     </div>
 
-    {% if sync_status %}
-    <div class="section">
-        <div class="flash {% if sync_status == 'ok' %}success{% else %}error{% endif %}">
-            {{ sync_message }}
-        </div>
+    <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+    <div id="toast-data" hidden aria-hidden="true" data-sync-status="{{ sync_status | default('', true) }}"
+        data-sync-message="{{ sync_message | default('', true) | e }}"
+        data-delete-status="{{ delete_status | default('', true) }}"
+        data-delete-message="{{ delete_message | default('', true) | e }}">
     </div>
-    {% endif %}
-
-    {% if delete_status %}
-    <div class="section">
-        <div class="flash {% if delete_status == 'ok' %}success{% else %}error{% endif %}">
-            {{ delete_message }}
-        </div>
-    </div>
-    {% endif %}
 
     <div class="section">
         <div class="sync-section">
@@ -609,18 +670,17 @@
         <table class="recent-insights-table">
             <thead>
                 <tr>
-                    <th>UID</th>
-                    <th>Subject &amp; Summary</th>
+                    <th class="subject-header">Subject &amp; Summary</th>
                 </tr>
             </thead>
             <tbody>
                 {% for item in insights %}
 
                 <tr>
-                    <td>{{ item.uid }}</td>
                     <td class="subject-summary">
                         <div class="subject-summary-top">
                             <div class="subject-details">
+                                <div class="meta uid">UID {{ item.uid }}</div>
                                 <strong>{{ item.subject or "(no subject)" }}</strong><br />
                                 <span class="meta">From: {{ item.sender or "Unknown" }}</span>
                                 {% if item.summary %}
@@ -741,36 +801,34 @@
 
             hideSpinner();
 
-            if (!syncForm || !spinner) {
-                return;
+            if (syncForm && spinner) {
+                syncForm.addEventListener("submit", async function (event) {
+                    if (!window.fetch) {
+                        return; // fall back to normal form submission
+                    }
+
+                    event.preventDefault();
+                    spinner.hidden = false;
+                    if (syncButton) {
+                        syncButton.disabled = true;
+                    }
+
+                    try {
+                        var formData = new FormData(syncForm);
+                        var response = await fetch(syncForm.action, {
+                            method: "POST",
+                            body: formData,
+                            redirect: "follow",
+                        });
+
+                        var targetUrl = response.url || formData.get("redirect_to") || "/";
+                        window.location.href = targetUrl;
+                    } catch (error) {
+                        hideSpinner();
+                        alert("Sync request failed. Please try again.");
+                    }
+                });
             }
-
-            syncForm.addEventListener("submit", async function (event) {
-                if (!window.fetch) {
-                    return; // fall back to normal form submission
-                }
-
-                event.preventDefault();
-                spinner.hidden = false;
-                if (syncButton) {
-                    syncButton.disabled = true;
-                }
-
-                try {
-                    var formData = new FormData(syncForm);
-                    var response = await fetch(syncForm.action, {
-                        method: "POST",
-                        body: formData,
-                        redirect: "follow",
-                    });
-
-                    var targetUrl = response.url || formData.get("redirect_to") || "/";
-                    window.location.href = targetUrl;
-                } catch (error) {
-                    hideSpinner();
-                    alert("Sync request failed. Please try again.");
-                }
-            });
 
             // Hide the spinner if the page is restored from the browser cache.
             window.addEventListener("pageshow", function (event) {
@@ -795,6 +853,113 @@
                     }
                 });
             });
+
+            var toastContainer = document.getElementById("toast-container");
+
+            function dismissToast(element) {
+                if (!element) {
+                    return;
+                }
+                element.classList.remove("show");
+                window.setTimeout(function () {
+                    if (element.parentNode) {
+                        element.parentNode.removeChild(element);
+                    }
+                }, 220);
+            }
+
+            function showToast(message, variant, duration) {
+                if (!toastContainer || !message) {
+                    return;
+                }
+
+                var toast = document.createElement("div");
+                toast.className = "toast" + (variant ? " " + variant : "");
+                toast.setAttribute("role", "status");
+                toast.setAttribute("aria-live", "assertive");
+
+                var text = document.createElement("div");
+                text.className = "toast-message";
+                text.textContent = message;
+
+                var close = document.createElement("button");
+                close.type = "button";
+                close.setAttribute("aria-label", "Dismiss notification");
+                close.innerHTML = "&times;";
+
+                toast.appendChild(text);
+                toast.appendChild(close);
+                toastContainer.appendChild(toast);
+
+                window.requestAnimationFrame(function () {
+                    toast.classList.add("show");
+                });
+
+                var hideDelay = typeof duration === "number" ? duration : 5000;
+                var hideTimer = window.setTimeout(function () {
+                    dismissToast(toast);
+                }, hideDelay);
+
+                close.addEventListener("click", function () {
+                    window.clearTimeout(hideTimer);
+                    dismissToast(toast);
+                });
+            }
+
+            var toastData = document.getElementById("toast-data");
+            if (toastData) {
+                var pendingToasts = [];
+                var statusParamKeys = [
+                    "sync_status",
+                    "sync_message",
+                    "delete_status",
+                    "delete_message",
+                    "config_status",
+                ];
+
+                function clearStatusQueryParams() {
+                    if (!window.history || !window.history.replaceState || !window.URL) {
+                        return;
+                    }
+                    var currentUrl = new URL(window.location.href);
+                    var removed = false;
+                    statusParamKeys.forEach(function (key) {
+                        if (currentUrl.searchParams.has(key)) {
+                            currentUrl.searchParams.delete(key);
+                            removed = true;
+                        }
+                    });
+                    if (removed) {
+                        var nextUrl = currentUrl.pathname + currentUrl.search + currentUrl.hash;
+                        window.history.replaceState({}, document.title, nextUrl);
+                    }
+                }
+
+                var syncStatus = (toastData.dataset.syncStatus || "").trim();
+                var syncMessage = (toastData.dataset.syncMessage || "").trim();
+                if (syncStatus && syncMessage) {
+                    pendingToasts.push({
+                        message: syncMessage,
+                        variant: syncStatus === "ok" ? "success" : "error",
+                    });
+                }
+                var deleteStatus = (toastData.dataset.deleteStatus || "").trim();
+                var deleteMessage = (toastData.dataset.deleteMessage || "").trim();
+                if (deleteStatus && deleteMessage) {
+                    pendingToasts.push({
+                        message: deleteMessage,
+                        variant: deleteStatus === "ok" ? "success" : "error",
+                    });
+                }
+                if (pendingToasts.length > 0) {
+                    pendingToasts.forEach(function (toast, index) {
+                        window.setTimeout(function () {
+                            showToast(toast.message, toast.variant);
+                        }, index * 240);
+                    });
+                    clearStatusQueryParams();
+                }
+            }
 
             var insightsSearch = document.getElementById("insights-search");
             if (insightsSearch) {

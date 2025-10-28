@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -47,6 +47,14 @@ _PRIORITY_LABELS: Mapping[int, str] = {
     9: "Urgent",
     10: "Urgent",
 }
+
+_STATUS_QUERY_KEYS: tuple[str, ...] = (
+    "sync_status",
+    "sync_message",
+    "delete_status",
+    "delete_message",
+    "config_status",
+)
 
 
 @dataclass(slots=True)
@@ -466,10 +474,16 @@ def _sanitize_redirect(target: str | None) -> str | None:
     return None
 
 
-def _build_redirect_target(request: Request) -> str:
-    query = request.url.query
+def _build_redirect_target(
+    request: Request, *, exclude_keys: Iterable[str] | None = None
+) -> str:
     base = request.url.path or "/"
-    return f"{base}?{query}" if query else base
+    raw_pairs = parse_qsl(request.url.query, keep_blank_values=True)
+    excluded = set(exclude_keys or _STATUS_QUERY_KEYS)
+    filtered = [(key, value) for key, value in raw_pairs if key not in excluded]
+    if not filtered:
+        return base
+    return f"{base}?{urlencode(filtered)}"
 
 
 def _run_sync_cycle(settings: AppSettings) -> SyncOutcome:
