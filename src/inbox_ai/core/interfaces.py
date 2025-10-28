@@ -78,6 +78,7 @@ class EmailRepository(Protocol):
         min_priority: int | None = None,
         max_priority: int | None = None,
         category_key: str | None = None,
+        require_follow_up: bool = False,
     ) -> list[tuple[EmailEnvelope, EmailInsight]]:
         """Return recent emails joined with their insights for quick browsing."""
         raise NotImplementedError
@@ -88,6 +89,7 @@ class EmailRepository(Protocol):
         min_priority: int | None = None,
         max_priority: int | None = None,
         category_key: str | None = None,
+        require_follow_up: bool = False,
     ) -> int:
         """Return total stored insights matching optional filters."""
         raise NotImplementedError

@@ -271,6 +271,7 @@ class SqliteEmailRepository(EmailRepository):
         min_priority: int | None = None,
         max_priority: int | None = None,
         category_key: str | None = None,
+        require_follow_up: bool = False,
     ) -> list[tuple[EmailEnvelope, EmailInsight]]:
         """Return recent email/insight pairs ordered by newest insight first."""
         query = [
@@ -311,6 +312,10 @@ class SqliteEmailRepository(EmailRepository):
                 "EXISTS (SELECT 1 FROM email_categories c WHERE c.email_uid = i.email_uid AND c.category_key = ?)"
             )
             params.append(category_key)
+        if require_follow_up:
+            conditions.append(
+                "EXISTS (SELECT 1 FROM follow_ups f WHERE f.email_uid = i.email_uid)"
+            )
         if conditions:
             query.append("WHERE ")
             query.append(" AND ".join(conditions))
@@ -356,6 +361,7 @@ class SqliteEmailRepository(EmailRepository):
         min_priority: int | None = None,
         max_priority: int | None = None,
         category_key: str | None = None,
+        require_follow_up: bool = False,
     ) -> int:
         """Return total number of insight records matching optional filters."""
         query = ["SELECT COUNT(*) FROM email_insights i"]
@@ -372,6 +378,10 @@ class SqliteEmailRepository(EmailRepository):
                 "EXISTS (SELECT 1 FROM email_categories c WHERE c.email_uid = i.email_uid AND c.category_key = ?)"
             )
             params.append(category_key)
+        if require_follow_up:
+            conditions.append(
+                "EXISTS (SELECT 1 FROM follow_ups f WHERE f.email_uid = i.email_uid)"
+            )
         if conditions:
             query.append(" WHERE ")
             query.append(" AND ".join(conditions))

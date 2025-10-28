@@ -41,13 +41,21 @@
             border-collapse: collapse;
         }
 
-        .recent-insights-table {
-            table-layout: fixed;
+        .insights-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 20px;
         }
 
-        .recent-insights-table th,
-        .recent-insights-table td {
-            width: auto;
+        .insight-card {
+            background: #ffffff;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 18px;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
         }
 
         .insights-controls {
@@ -131,21 +139,11 @@
             font-size: 1rem;
         }
 
-        th,
-        td {
-            border: 1px solid #e0e0e0;
-            padding: 10px;
-            text-align: left;
-            vertical-align: top;
-        }
-
-        th {
-            background: #f0f7ff;
-            color: #0056b3;
-        }
-
         .subject-summary {
             overflow-wrap: anywhere;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
         }
 
         .subject-summary-top {
@@ -153,6 +151,7 @@
             align-items: flex-start;
             justify-content: space-between;
             gap: 16px;
+            flex-wrap: wrap;
         }
 
         .subject-details {
@@ -262,35 +261,6 @@
             margin: 0;
         }
 
-        .followup-actions button {
-            padding: 6px 12px;
-            border: none;
-            border-radius: 4px;
-            font-size: 0.82rem;
-            font-weight: 600;
-            cursor: pointer;
-        }
-
-        .followup-actions .primary {
-            background: #2563eb;
-            color: #ffffff;
-        }
-
-        .followup-actions .primary:hover,
-        .followup-actions .primary:focus {
-            background: #1d4ed8;
-        }
-
-        .followup-actions .secondary {
-            background: #e5e7eb;
-            color: #1f2937;
-        }
-
-        .followup-actions .secondary:hover,
-        .followup-actions .secondary:focus {
-            background: #d1d5db;
-        }
-
         .priority-meta {
             margin-top: 10px;
             font-size: 0.9rem;
@@ -369,19 +339,19 @@
             margin-bottom: 4px;
         }
 
-        .table-actions {
+        .insight-actions {
             display: flex;
             gap: 8px;
             flex-wrap: wrap;
-            align-items: center;
+            align-items: flex-start;
             justify-content: flex-end;
         }
 
-        .table-actions form {
+        .insight-actions form {
             margin: 0;
         }
 
-        .table-actions button {
+        .insight-actions button {
             padding: 8px 12px;
             border: none;
             border-radius: 4px;
@@ -454,6 +424,24 @@
 
         .filter-form button:hover {
             background: #005dc1;
+        }
+
+        .checkbox-group {
+            flex-direction: row;
+            align-items: center;
+        }
+
+        .checkbox-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .checkbox-label input[type="checkbox"] {
+            width: auto;
+            height: auto;
         }
 
         .card-actions button {
@@ -776,6 +764,13 @@
                     {% endfor %}
                 </select>
             </div>
+            <div class="filter-group checkbox-group">
+                <label class="checkbox-label" for="follow_only">
+                    <input type="checkbox" id="follow_only" name="follow_only" value="1" {% if filters.follow_only
+                        %}checked{% endif %} />
+                    Only show emails with follow-ups
+                </label>
+            </div>
             <button type="submit">Apply Filters</button>
         </form>
     </div>
@@ -788,132 +783,122 @@
             <input type="search" id="insights-search" class="insights-search" placeholder="Search insights"
                 aria-label="Search insights" />
         </div>
-        <table class="recent-insights-table">
-            <thead>
-                <tr>
-                    <th class="subject-header">Subject &amp; Summary</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for item in insights %}
-
-                <tr>
-                    <td class="subject-summary">
-                        <div class="subject-summary-top">
-                            <div class="subject-details">
-                                <div class="meta uid">UID {{ item.uid }}</div>
-                                <strong>{{ item.subject or "(no subject)" }}</strong><br />
-                                <span class="meta">From: {{ item.sender or "Unknown" }}</span>
-                                {% if item.summary %}
-                                <div class="summary-text">{{ item.summary }}</div>
+        <div class="insights-grid" id="insights-grid">
+            {% for item in insights %}
+            <article class="insight-card" data-uid="{{ item.uid }}">
+                <div class="subject-summary">
+                    <div class="subject-summary-top">
+                        <div class="subject-details">
+                            <div class="meta uid">UID {{ item.uid }}</div>
+                            <strong>{{ item.subject or "(no subject)" }}</strong><br />
+                            <span class="meta">From: {{ item.sender or "Unknown" }}</span>
+                            {% if item.summary %}
+                            <div class="summary-text">{{ item.summary }}</div>
+                            {% endif %}
+                            <div class="actions-block">
+                                {% if item.actionItems %}
+                                <div class="actions-heading">Actions</div>
+                                <ul class="actions-list">
+                                    {% for action in item.actionItems %}
+                                    <li>{{ action }}</li>
+                                    {% endfor %}
+                                </ul>
+                                {% else %}
+                                <span class="empty">No action items</span>
                                 {% endif %}
-                                <div class="actions-block">
-                                    {% if item.actionItems %}
-                                    <div class="actions-heading">Actions</div>
-                                    <ul class="actions-list">
-                                        {% for action in item.actionItems %}
-                                        <li>{{ action }}</li>
+                                <div class="categories-block">
+                                    <div class="categories-heading">Categories</div>
+                                    {% if item.categories %}
+                                    <ul class="categories-list">
+                                        {% for category in item.categories %}
+                                        <li>{{ category.label }}</li>
                                         {% endfor %}
                                     </ul>
                                     {% else %}
-                                    <span class="empty">No action items</span>
-                                    {% endif %}
-                                    <div class="categories-block">
-                                        <div class="categories-heading">Categories</div>
-                                        {% if item.categories %}
-                                        <ul class="categories-list">
-                                            {% for category in item.categories %}
-                                            <li>{{ category.label }}</li>
-                                            {% endfor %}
-                                        </ul>
-                                        {% else %}
-                                        <span class="empty">Not categorized</span>
-                                        {% endif %}
-                                    </div>
-                                    <div class="priority-meta">
-                                        <strong>{{ item.priorityLabel }}</strong>
-                                        <span class="meta">({{ item.priority }})</span>
-                                    </div>
-                                    {% set display_date = item.generatedAtDisplay or item.generatedAt %}
-                                    {% if display_date %}
-                                    <div class="generated-meta">Generated {{ display_date }}</div>
-                                    {% endif %}
-                                    {% if item.draft %}
-                                    <div class="draft-preview">
-                                        <div class="draft-heading">Latest Draft</div>
-                                        <div class="draft-body">{{ item.draft.body }}</div>
-                                        <div class="draft-meta">
-                                            <span class="meta">Provider: {{ item.draft.provider }}</span>
-                                            {% if item.draft.generatedAtDisplay %}
-                                            <span class="meta">Generated {{ item.draft.generatedAtDisplay }}</span>
-                                            {% endif %}
-                                            {% if item.draft.confidence is not none %}
-                                            <span class="meta">Confidence {{ '%.2f' | format(item.draft.confidence)
-                                                }}</span>
-                                            {% endif %}
-                                            {% if item.draft.usedFallback %}
-                                            <span class="meta">Fallback used</span>
-                                            {% endif %}
-                                        </div>
-                                    </div>
-                                    {% endif %}
-                                    {% if item.followUps %}
-                                    <div class="followups-block">
-                                        <div class="followups-heading">Follow-Ups</div>
-                                        <ul class="followups-list">
-                                            {% for task in item.followUps %}
-                                            <li class="followup-item">
-                                                <div class="followup-action">{{ task.action }}</div>
-                                                <div class="followup-meta">
-                                                    {% if task.dueAt %}
-                                                    <span class="meta">Due: {{ task.dueAt }}</span>
-                                                    {% endif %}
-                                                    <span class="meta status-{{ task.status }}">Status: {{ task.status
-                                                        }}</span>
-                                                    <span class="meta">Created: {{ task.createdAt }}</span>
-                                                    {% if task.completedAt %}
-                                                    <span class="meta">Completed: {{ task.completedAt }}</span>
-                                                    {% endif %}
-                                                </div>
-                                                {% if task.id is not none %}
-                                                <div class="followup-actions">
-                                                    {% if task.status != "done" %}
-                                                    <form method="post" action="/follow-ups/{{ task.id }}/status">
-                                                        <input type="hidden" name="status" value="done" />
-                                                        <input type="hidden" name="redirect_to"
-                                                            value="{{ redirect_to }}" />
-                                                        <button class="primary" type="submit">Mark Done</button>
-                                                    </form>
-                                                    {% else %}
-                                                    <form method="post" action="/follow-ups/{{ task.id }}/status">
-                                                        <input type="hidden" name="status" value="open" />
-                                                        <input type="hidden" name="redirect_to"
-                                                            value="{{ redirect_to }}" />
-                                                        <button class="secondary" type="submit">Reopen</button>
-                                                    </form>
-                                                    {% endif %}
-                                                </div>
-                                                {% endif %}
-                                            </li>
-                                            {% endfor %}
-                                        </ul>
-                                    </div>
+                                    <span class="empty">Not categorized</span>
                                     {% endif %}
                                 </div>
-                            </div>
-                            <div class="table-actions">
-                                <form method="post" action="/emails/{{ item.uid }}/delete" data-scroll-restore
-                                    onsubmit="return confirm('Delete message UID {{ item.uid }} from the mailbox?');">
-                                    <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-                                    <button type="submit" class="button-danger">x</button>
-                                </form>
+                                <div class="priority-meta">
+                                    <strong>{{ item.priorityLabel }}</strong>
+                                    <span class="meta">({{ item.priority }})</span>
+                                </div>
+                                {% set display_date = item.generatedAtDisplay or item.generatedAt %}
+                                {% if display_date %}
+                                <div class="generated-meta">Generated {{ display_date }}</div>
+                                {% endif %}
+                                {% if item.draft %}
+                                <div class="draft-preview">
+                                    <div class="draft-heading">Latest Draft</div>
+                                    <div class="draft-body">{{ item.draft.body }}</div>
+                                    <div class="draft-meta">
+                                        <span class="meta">Provider: {{ item.draft.provider }}</span>
+                                        {% if item.draft.generatedAtDisplay %}
+                                        <span class="meta">Generated {{ item.draft.generatedAtDisplay }}</span>
+                                        {% endif %}
+                                        {% if item.draft.confidence is not none %}
+                                        <span class="meta">Confidence {{ '%.2f' | format(item.draft.confidence)
+                                            }}</span>
+                                        {% endif %}
+                                        {% if item.draft.usedFallback %}
+                                        <span class="meta">Fallback used</span>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                {% endif %}
+                                {% if item.followUps %}
+                                <div class="followups-block">
+                                    <div class="followups-heading">Follow-Ups</div>
+                                    <ul class="followups-list">
+                                        {% for task in item.followUps %}
+                                        <li class="followup-item">
+                                            <div class="followup-action">{{ task.action }}</div>
+                                            <div class="followup-meta">
+                                                {% if task.dueAt %}
+                                                <span class="meta">Due: {{ task.dueAt }}</span>
+                                                {% endif %}
+                                                <span class="meta status-{{ task.status }}">Status: {{ task.status
+                                                    }}</span>
+                                                <span class="meta">Created: {{ task.createdAt }}</span>
+                                                {% if task.completedAt %}
+                                                <span class="meta">Completed: {{ task.completedAt }}</span>
+                                                {% endif %}
+                                            </div>
+                                            {% if task.id is not none %}
+                                            <div class="followup-actions">
+                                                {% if task.status != "done" %}
+                                                <form method="post" action="/follow-ups/{{ task.id }}/status">
+                                                    <input type="hidden" name="status" value="done" />
+                                                    <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
+                                                    <button class="primary" type="submit">Mark Done</button>
+                                                </form>
+                                                {% else %}
+                                                <form method="post" action="/follow-ups/{{ task.id }}/status">
+                                                    <input type="hidden" name="status" value="open" />
+                                                    <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
+                                                    <button class="secondary" type="submit">Reopen</button>
+                                                </form>
+                                                {% endif %}
+                                            </div>
+                                            {% endif %}
+                                        </li>
+                                        {% endfor %}
+                                    </ul>
+                                </div>
+                                {% endif %}
                             </div>
                         </div>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+                        <div class="insight-actions">
+                            <form method="post" action="/emails/{{ item.uid }}/delete" data-scroll-restore
+                                onsubmit="return confirm('Delete message UID {{ item.uid }} from the mailbox?');">
+                                <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
+                                <button type="submit" class="button-danger">x</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </article>
+            {% endfor %}
+        </div>
         <p class="empty" id="insights-filter-empty" hidden>No matching insights.</p>
         {% else %}
         <p class="empty">No insights found. Run a sync to populate data.</p>
@@ -1099,23 +1084,23 @@
 
             var insightsSearch = document.getElementById("insights-search");
             if (insightsSearch) {
-                var tableBody = document.querySelector(".recent-insights-table tbody");
+                var insightsGrid = document.getElementById("insights-grid");
                 var visibleCount = document.getElementById("insights-visible-count");
                 var emptyNotice = document.getElementById("insights-filter-empty");
-                var rows = tableBody
-                    ? Array.prototype.slice.call(tableBody.querySelectorAll("tr"))
+                var cards = insightsGrid
+                    ? Array.prototype.slice.call(insightsGrid.querySelectorAll(".insight-card"))
                     : [];
 
-                rows.forEach(function (row) {
-                    row.dataset.searchText = (row.textContent || "").toLowerCase();
+                cards.forEach(function (card) {
+                    card.dataset.searchText = (card.textContent || "").toLowerCase();
                 });
 
                 function applyInsightFilter() {
                     var term = insightsSearch.value.trim().toLowerCase();
                     var visible = 0;
-                    rows.forEach(function (row) {
-                        var matches = !term || row.dataset.searchText.indexOf(term) !== -1;
-                        row.style.display = matches ? "" : "none";
+                    cards.forEach(function (card) {
+                        var matches = !term || card.dataset.searchText.indexOf(term) !== -1;
+                        card.style.display = matches ? "" : "none";
                         if (matches) {
                             visible += 1;
                         }

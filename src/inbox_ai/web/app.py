@@ -92,6 +92,7 @@ class DashboardFilters:
     follow_status_value: str
     priority_filter: str
     category_key: str | None
+    follow_only: bool
 
 
 @dataclass(frozen=True)
@@ -258,11 +259,13 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             min_priority=min_priority,
             max_priority=max_priority,
             category_key=filters.category_key,
+            require_follow_up=filters.follow_only,
         )
         total_insights = repository.count_insights(
             min_priority=min_priority,
             max_priority=max_priority,
             category_key=filters.category_key,
+            require_follow_up=filters.follow_only,
         )
         draft_records = repository.list_recent_drafts(limit=filters.insights_limit)
         insight_uids = [email.uid for email, _ in insights]
@@ -315,11 +318,13 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             min_priority=min_priority,
             max_priority=max_priority,
             category_key=filters.category_key,
+            require_follow_up=filters.follow_only,
         )
         total_insights = repository.count_insights(
             min_priority=min_priority,
             max_priority=max_priority,
             category_key=filters.category_key,
+            require_follow_up=filters.follow_only,
         )
         draft_records = repository.list_recent_drafts(limit=filters.insights_limit)
         insight_uids = [email.uid for email, _ in insights]
@@ -352,6 +357,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                 "followStatus": filters.follow_status_value,
                 "priority": filters.priority_filter,
                 "category": filters.category_key,
+                "followOnly": filters.follow_only,
             },
             "availableCategories": [
                 {"key": option.key, "label": option.label}
@@ -522,6 +528,7 @@ def _parse_dashboard_filters(params: Mapping[str, str]) -> DashboardFilters:
     )
     priority_filter = _normalize_priority_filter(params.get("priority"))
     category_key = _normalize_category_filter(params.get("category"))
+    follow_only = _parse_bool_flag(params.get("follow_only"))
     return DashboardFilters(
         insights_limit=insights_limit,
         follow_limit=follow_limit,
@@ -529,6 +536,7 @@ def _parse_dashboard_filters(params: Mapping[str, str]) -> DashboardFilters:
         follow_status_value=follow_status_value,
         priority_filter=priority_filter,
         category_key=category_key,
+        follow_only=follow_only,
     )
 
 
@@ -546,6 +554,13 @@ def _normalize_category_filter(raw: str | None) -> str | None:
     if not value or value.lower() == "all":
         return None
     return value
+
+
+def _parse_bool_flag(raw: str | None) -> bool:
+    if raw is None:
+        return False
+    value = raw.strip().lower()
+    return value in {"1", "true", "yes", "on"}
 
 
 def _parse_limit(raw: str | None, default: int) -> int:
