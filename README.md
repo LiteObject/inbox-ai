@@ -87,21 +87,20 @@ ruff check src && pylint src/inbox_ai && mypy src/inbox_ai && pytest
 
 ## Web Dashboard
 
-- A lightweight FastAPI application (``uvicorn inbox_ai.web:app --reload``) renders a dashboard
-   styled after the TypeRight sample page.
-- The landing page presents recent insights, latest drafts, and open follow-ups with the same data
-   served by the JSON ``/api/dashboard`` endpoint.
-- The app reuses the SQLite repository, so the dashboard reflects the latest sync results without
-   additional services.
-- Filter limits and follow-up status on the dashboard, and toggle tasks between open/done without
-   leaving the page.
+- Launch the FastAPI dashboard with ``uvicorn inbox_ai.web:app --reload`` to browse synced data in a
+   single view. The page consumes the same repository methods as ``/api/dashboard`` so the UI and
+   API remain consistent.
+- A prominent Sync card triggers manual mailbox refreshes; a spinner overlays the page while the
+   request runs and results surface through auto-dismissing toast notifications that appear in the
+   bottom-right corner.
+- Configuration fields are grouped by domain and editable in place. Saving updates writes to the
+   ``.env`` file while preserving blank entries, and success/error states also appear as toasts.
+- Recent Insights now show inline UID labels, a running ``visible / total`` counter, friendly
+   timestamps, action-item summaries, and an inline search box that filters rows instantly in
+   the browser.
+- Delete buttons beside each insight remove the underlying email from both IMAP and storage. Upon
+   completion a toast confirms success (or failure) and the table preserves scroll position.
+- Draft and follow-up panels mirror repository data; follow-up status toggles remain available via
+   inline forms without leaving the dashboard.
 
-## Roadmap
 
-Planned milestones include:
-
-1. Project foundation (configuration, logging, testing harness). ✅
-2. IMAP ingestion and persistence. ✅
-3. LLM-backed intelligence services (summaries, prioritisation). ✅
-4. Draft generation and follow-up tracking. ✅
-5. Web dashboard for insights, drafts, and follow-ups. ✅
