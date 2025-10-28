@@ -46,6 +46,10 @@ class EmailRepository(Protocol):
         """Retrieve a stored email by UID."""
         raise NotImplementedError
 
+    def delete_email(self, uid: int) -> bool:
+        """Remove an email and related records. Returns ``True`` if deleted."""
+        raise NotImplementedError
+
     def get_checkpoint(self, mailbox: str) -> SyncCheckpoint | None:
         """Return the last stored checkpoint for the given mailbox."""
         raise NotImplementedError

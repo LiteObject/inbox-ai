@@ -159,6 +159,8 @@ def _collect_env_values(env_file: Path | str | None) -> dict[str, Any]:
                 normalized_value = True
             elif lowercase_value == "false":
                 normalized_value = False
+        if normalized_value is None:
+            continue
         _merge_into_tree(collected, path, normalized_value)
 
     return collected

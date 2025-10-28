@@ -87,6 +87,14 @@ class SyncOutcome:
     message: str
 
 
+@dataclass(frozen=True)
+class DeleteOutcome:
+    """Result of a mailbox deletion request."""
+
+    success: bool
+    message: str
+
+
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_ENV_FILE = _PROJECT_ROOT / ".env"
@@ -235,6 +243,8 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                 "config_env_path": str(env_file),
                 "sync_status": request.query_params.get("sync_status"),
                 "sync_message": request.query_params.get("sync_message"),
+                "delete_status": request.query_params.get("delete_status"),
+                "delete_message": request.query_params.get("delete_message"),
             },
         )
 
@@ -284,7 +294,10 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             )
 
         for key, value in updates.items():
-            os.environ[key] = value
+            if value == "":
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
         load_app_settings.cache_clear()
         app_settings = load_app_settings(env_file=_resolve_env_file())
 
@@ -303,6 +316,18 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         status_value = "ok" if outcome.success else "error"
         target = _append_query_param(redirect_target, "sync_status", status_value)
         target = _append_query_param(target, "sync_message", outcome.message)
+        return RedirectResponse(url=target, status_code=http_status.HTTP_303_SEE_OTHER)
+
+    @app.post("/emails/{email_uid}/delete")
+    async def delete_email(
+        email_uid: int,
+        redirect_to: str | None = Form(None),
+    ) -> RedirectResponse:
+        redirect_target = _sanitize_redirect(redirect_to) or "/"
+        outcome = await asyncio.to_thread(_delete_email, app_settings, email_uid)
+        status_value = "ok" if outcome.success else "error"
+        target = _append_query_param(redirect_target, "delete_status", status_value)
+        target = _append_query_param(target, "delete_message", outcome.message)
         return RedirectResponse(url=target, status_code=http_status.HTTP_303_SEE_OTHER)
 
     @app.post("/follow-ups/{follow_up_id}/status")
@@ -490,6 +515,34 @@ def _run_sync_cycle(settings: AppSettings) -> SyncOutcome:
     )
 
 
+def _delete_email(settings: AppSettings, uid: int) -> DeleteOutcome:
+    missing_credentials = not settings.imap.username or not settings.imap.app_password
+    if missing_credentials:
+        return DeleteOutcome(
+            success=False,
+            message="Configure IMAP username and app password before deleting.",
+        )
+
+    try:
+        with (
+            ImapClient(settings.imap) as mailbox,
+            SqliteEmailRepository(settings.storage) as repository,
+        ):
+            mailbox.delete(uid)
+            removed = repository.delete_email(uid)
+    except ImapError as exc:
+        return DeleteOutcome(success=False, message=f"Delete failed: {exc}")
+    except Exception as exc:  # noqa: BLE001 - surface unexpected failure to UI
+        return DeleteOutcome(success=False, message=f"Delete failed: {exc}")
+
+    if removed:
+        return DeleteOutcome(success=True, message=f"Message UID {uid} deleted.")
+    return DeleteOutcome(
+        success=True,
+        message=f"Message UID {uid} deleted (no local record found).",
+    )
+
+
 def _coerce_form_value(value: UploadFile | str | None) -> str:
     if isinstance(value, UploadFile):
         return value.filename or ""
@@ -538,15 +591,17 @@ def _update_env_file(env_path: Path, updates: Mapping[str, str]) -> None:
         key, _, _ = line.partition("=")
         normalized_key = key.strip()
         if normalized_key in updates:
-            updated_lines.append(
-                f"{normalized_key}={_format_env_value(updates[normalized_key])}"
-            )
+            new_value = updates[normalized_key]
+            if new_value == "":
+                written_keys.add(normalized_key)
+                continue
+            updated_lines.append(f"{normalized_key}={_format_env_value(new_value)}")
             written_keys.add(normalized_key)
         else:
             updated_lines.append(line)
 
     for key, value in updates.items():
-        if key not in written_keys:
+        if key not in written_keys and value != "":
             updated_lines.append(f"{key}={_format_env_value(value)}")
 
     content = "\n".join(updated_lines).rstrip("\n") + "\n"

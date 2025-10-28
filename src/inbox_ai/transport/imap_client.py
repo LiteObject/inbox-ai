@@ -114,6 +114,27 @@ class ImapClient(MailboxProvider):
 
         return generator()
 
+    def delete(self, uid: int) -> None:
+        """Delete a message by UID and expunge it from the mailbox."""
+        connection = self._require_connection()
+        uid_str = str(uid)
+        LOGGER.debug("Marking UID %s for deletion", uid_str)
+        try:
+            status, _ = connection.uid(
+                "STORE",
+                uid_str,
+                "+FLAGS.SILENT",
+                r"(\Deleted)",
+            )
+            if status != "OK":
+                raise ImapError(f"Failed to mark message UID {uid_str} for deletion")
+            LOGGER.debug("Expunging deleted messages")
+            status_expunge, _ = connection.expunge()
+            if status_expunge != "OK":
+                raise ImapError(f"Failed to expunge message UID {uid_str}")
+        except imaplib.IMAP4.error as exc:  # pragma: no cover - network dependent
+            raise ImapError(f"IMAP error while deleting UID {uid_str}") from exc
+
     def close(self) -> None:
         """Terminate the IMAP session cleanly."""
         if self._connection is None:
