@@ -252,10 +252,8 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         )
         total_insights = repository.count_insights()
         draft_records = repository.list_recent_drafts(limit=filters.insights_limit)
-        draft_lookup: dict[int, DraftRecord] = {}
-        for draft in draft_records:
-            if draft.email_uid not in draft_lookup:
-                draft_lookup[draft.email_uid] = draft
+        insight_uids = [email.uid for email, _ in insights]
+        draft_lookup = repository.fetch_latest_drafts(insight_uids)
         follow_ups = repository.list_follow_ups(
             status=filters.follow_status_filter, limit=filters.follow_limit
         )
@@ -301,10 +299,8 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         )
         total_insights = repository.count_insights()
         draft_records = repository.list_recent_drafts(limit=filters.insights_limit)
-        draft_lookup: dict[int, DraftRecord] = {}
-        for draft in draft_records:
-            if draft.email_uid not in draft_lookup:
-                draft_lookup[draft.email_uid] = draft
+        insight_uids = [email.uid for email, _ in insights]
+        draft_lookup = repository.fetch_latest_drafts(insight_uids)
         follow_ups = repository.list_follow_ups(
             status=filters.follow_status_filter, limit=filters.follow_limit
         )

@@ -384,6 +384,40 @@ class SqliteEmailRepository(EmailRepository):
             )
         return drafts
 
+    def fetch_latest_drafts(self, uids: Sequence[int]) -> dict[int, DraftRecord]:
+        """Return the most recent draft for each UID in ``uids``."""
+        if not uids:
+            return {}
+        unique_uids = tuple(dict.fromkeys(uids))
+        placeholders = ",".join("?" for _ in unique_uids)
+        query = f"""
+            SELECT d.id, d.email_uid, d.body, d.provider, d.generated_at, d.confidence, d.used_fallback
+            FROM drafts AS d
+            INNER JOIN (
+                SELECT email_uid, MAX(generated_at) AS max_generated_at
+                FROM drafts
+                WHERE email_uid IN ({placeholders})
+                GROUP BY email_uid
+            ) AS latest
+            ON latest.email_uid = d.email_uid AND latest.max_generated_at = d.generated_at
+        """
+        cur = self._connection.execute(query, unique_uids)
+        results: dict[int, DraftRecord] = {}
+        for row in cur.fetchall():
+            uid = row["email_uid"]
+            results[uid] = DraftRecord(
+                id=row["id"],
+                email_uid=uid,
+                body=row["body"],
+                provider=row["provider"],
+                generated_at=cast(
+                    datetime, _parse_datetime(row["generated_at"], assume_utc=True)
+                ),
+                confidence=row["confidence"],
+                used_fallback=bool(row["used_fallback"]),
+            )
+        return results
+
     def replace_follow_ups(self, email_uid: int, tasks: Sequence[FollowUpTask]) -> None:
         """Replace existing follow-ups for the email with the provided sequence."""
         LOGGER.debug("Replacing follow-ups for UID %s", email_uid)

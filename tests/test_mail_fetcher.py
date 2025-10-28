@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Iterable, List
+from typing import Iterable, List, Sequence
 
 from inbox_ai.core.models import (
     DraftRecord,
@@ -116,6 +116,10 @@ class RecordingRepository:
     ):
         del limit, min_priority, max_priority
         return []
+
+    def fetch_latest_drafts(self, uids: Sequence[int]):
+        del uids
+        return {}
 
     def update_follow_up_status(self, follow_up_id: int, status: str) -> None:
         del follow_up_id, status
