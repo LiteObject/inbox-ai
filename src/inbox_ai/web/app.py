@@ -450,6 +450,27 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         target = _append_query_param(target, "delete_message", outcome.message)
         return RedirectResponse(url=target, status_code=http_status.HTTP_303_SEE_OTHER)
 
+    @app.post("/emails/bulk-delete")
+    async def bulk_delete_emails(request: Request) -> RedirectResponse:
+        form = await request.form()
+        redirect_raw = _coerce_form_value(form.get("redirect_to"))
+        redirect_target = _sanitize_redirect(redirect_raw or None) or "/"
+
+        raw_uids = form.getlist("uids") if hasattr(form, "getlist") else []
+        uids: list[int] = []
+        for raw in raw_uids:
+            try:
+                value = int(str(raw))
+            except (TypeError, ValueError):
+                continue
+            uids.append(value)
+
+        outcome = await asyncio.to_thread(_delete_emails, app_settings, tuple(uids))
+        status_value = "ok" if outcome.success else "error"
+        target = _append_query_param(redirect_target, "delete_status", status_value)
+        target = _append_query_param(target, "delete_message", outcome.message)
+        return RedirectResponse(url=target, status_code=http_status.HTTP_303_SEE_OTHER)
+
     @app.post("/follow-ups/{follow_up_id}/status")
     async def update_follow_up_status(
         follow_up_id: int,
@@ -764,6 +785,66 @@ def _delete_email(settings: AppSettings, uid: int) -> DeleteOutcome:
         success=True,
         message=f"Message UID {uid} deleted (no local record found).",
     )
+
+
+def _delete_emails(settings: AppSettings, uids: Sequence[int]) -> DeleteOutcome:
+    unique_uids = tuple(dict.fromkeys(uids))
+    if not unique_uids:
+        return DeleteOutcome(success=True, message="No emails to delete.")
+
+    missing_credentials = not settings.imap.username or not settings.imap.app_password
+    if missing_credentials:
+        return DeleteOutcome(
+            success=False,
+            message="Configure IMAP username and app password before deleting.",
+        )
+
+    try:
+        with (
+            ImapClient(settings.imap) as mailbox,
+            SqliteEmailRepository(settings.storage) as repository,
+        ):
+            successes = 0
+            failures: list[tuple[int, str]] = []
+            for uid in unique_uids:
+                try:
+                    mailbox.delete(uid)
+                except ImapError as exc:
+                    LOGGER.warning("Mailbox delete failed for UID %s: %s", uid, exc)
+                    failures.append((uid, str(exc)))
+                    continue
+                try:
+                    repository.delete_email(uid)
+                except Exception as exc:  # noqa: BLE001 - ensure all errors captured
+                    LOGGER.warning(
+                        "Repository cleanup failed for UID %s: %s",
+                        uid,
+                        exc,
+                    )
+                    failures.append((uid, str(exc)))
+                    continue
+                successes += 1
+    except ImapError as exc:
+        return DeleteOutcome(success=False, message=f"Delete failed: {exc}")
+    except Exception as exc:  # noqa: BLE001 - surface unexpected failure to UI
+        return DeleteOutcome(success=False, message=f"Delete failed: {exc}")
+
+    if successes == 0 and failures:
+        return DeleteOutcome(
+            success=False,
+            message="Unable to delete the selected emails. Check server logs for details.",
+        )
+
+    if failures:
+        failed_count = len(failures)
+        return DeleteOutcome(
+            success=False,
+            message=(
+                f"Deleted {successes} email(s). Failed to delete {failed_count} email(s)."
+            ),
+        )
+
+    return DeleteOutcome(success=True, message=f"Deleted {successes} email(s).")
 
 
 def _coerce_form_value(value: UploadFile | str | None) -> str:
