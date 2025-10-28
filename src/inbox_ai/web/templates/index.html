@@ -261,10 +261,50 @@
             margin: 0;
         }
 
+        .followup-actions button {
+            padding: 6px 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.82rem;
+        }
+
+        .followup-actions .primary {
+            background: #2563eb;
+            color: #ffffff;
+        }
+
+        .followup-actions .primary:hover,
+        .followup-actions .primary:focus {
+            background: #1d4ed8;
+        }
+
+        .followup-actions .secondary {
+            background: #e5e7eb;
+            color: #1f2937;
+        }
+
+        .followup-actions .secondary:hover,
+        .followup-actions .secondary:focus {
+            background: #d1d5db;
+        }
+
+        .priority-heading {
+            font-size: 0.82rem;
+            font-weight: 700;
+            color: #1f2937;
+            text-transform: uppercase;
+            margin-bottom: 6px;
+        }
+
         .priority-meta {
-            margin-top: 10px;
             font-size: 0.9rem;
             color: #1f2937;
+        }
+
+        .priority-block {
+            margin-top: 10px;
         }
 
         .meta.uid {
@@ -345,6 +385,9 @@
             flex-wrap: wrap;
             align-items: flex-start;
             justify-content: flex-end;
+            margin-left: auto;
+            align-self: flex-start;
+            flex: 0 0 auto;
         }
 
         .insight-actions form {
@@ -444,28 +487,6 @@
             height: auto;
         }
 
-        .card-actions button {
-            padding: 8px 12px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-weight: 600;
-        }
-
-        .card-actions .primary {
-            background: #059669;
-            color: white;
-        }
-
-        .card-actions .secondary {
-            background: #d1d5db;
-            color: #1f2937;
-        }
-
-        .card-actions button:hover {
-            opacity: 0.9;
-        }
-
         .sync-section {
             display: flex;
             align-items: flex-end;
@@ -475,6 +496,18 @@
         }
 
         .sync-section form {
+            margin: 0;
+        }
+
+        .sync-actions {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: flex-start;
+        }
+
+        .sync-actions form {
             margin: 0;
         }
 
@@ -666,27 +699,36 @@
 
     <div id="sync-spinner" class="spinner-overlay" hidden>
         <div class="spinner" role="status" aria-live="assertive"></div>
-        <p>Sync in progress&hellip;</p>
+        <p id="spinner-message">Processing request&hellip;</p>
     </div>
 
     <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
     <div id="toast-data" hidden aria-hidden="true" data-sync-status="{{ sync_status | default('', true) }}"
         data-sync-message="{{ sync_message | default('', true) | e }}"
         data-delete-status="{{ delete_status | default('', true) }}"
-        data-delete-message="{{ delete_message | default('', true) | e }}">
+        data-delete-message="{{ delete_message | default('', true) | e }}"
+        data-categorize-status="{{ categorize_status | default('', true) }}"
+        data-categorize-message="{{ categorize_message | default('', true) | e }}">
     </div>
 
     <div class="section">
         <div class="sync-section">
             <div>
-                <h2>Sync Mailbox</h2>
-                <p class="description">Trigger a manual sync to fetch new emails, refresh insights, drafts, and
-                    follow-ups.</p>
+                <h2>Data Maintenance</h2>
+                <p class="description">Trigger a manual sync to fetch new emails or rebuild stored categories with the
+                    controls on the right.</p>
             </div>
-            <form method="post" action="/sync" data-sync>
-                <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-                <button type="submit">Sync Now</button>
-            </form>
+            <div class="sync-actions">
+                <form method="post" action="/sync" data-spinner data-spinner-label="Sync in progress&hellip;">
+                    <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
+                    <button type="submit">Sync Now</button>
+                </form>
+                <form method="post" action="/categories/regenerate" data-spinner
+                    data-spinner-label="Regenerating categories&hellip;">
+                    <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
+                    <button type="submit">Rebuild Categories</button>
+                </form>
+            </div>
         </div>
     </div>
 
@@ -818,9 +860,11 @@
                                     <span class="empty">Not categorized</span>
                                     {% endif %}
                                 </div>
-                                <div class="priority-meta">
-                                    <strong>{{ item.priorityLabel }}</strong>
-                                    <span class="meta">({{ item.priority }})</span>
+                                <div class="priority-block">
+                                    <div class="priority-heading">Priority</div>
+                                    <div class="priority-meta">
+                                        <span class="meta">{{ item.priorityLabel }} ({{ item.priority }})</span>
+                                    </div>
                                 </div>
                                 {% set display_date = item.generatedAtDisplay or item.generatedAt %}
                                 {% if display_date %}
@@ -907,37 +951,56 @@
 
     <script>
         document.addEventListener("DOMContentLoaded", function () {
-            var syncForm = document.querySelector("form[data-sync]");
             var spinner = document.getElementById("sync-spinner");
-            var syncButton = syncForm ? syncForm.querySelector("button[type='submit']") : null;
+            var spinnerMessage = document.getElementById("spinner-message");
+            var defaultSpinnerMessage = spinnerMessage ? spinnerMessage.textContent : "";
+            var spinnerButtons = [];
 
             function hideSpinner() {
                 if (spinner) {
                     spinner.hidden = true;
                 }
-                if (syncButton) {
-                    syncButton.disabled = false;
+                spinnerButtons.forEach(function (button) {
+                    if (button) {
+                        button.disabled = false;
+                    }
+                });
+                if (spinnerMessage) {
+                    spinnerMessage.textContent = defaultSpinnerMessage;
                 }
             }
 
             hideSpinner();
 
-            if (syncForm && spinner) {
-                syncForm.addEventListener("submit", async function (event) {
+            var asyncForms = document.querySelectorAll("form[data-spinner]");
+            asyncForms.forEach(function (form) {
+                var submitButton = form.querySelector("button[type='submit']");
+                spinnerButtons.push(submitButton);
+
+                form.addEventListener("submit", async function (event) {
                     if (!window.fetch) {
-                        return; // fall back to normal form submission
+                        return;
                     }
 
                     event.preventDefault();
-                    spinner.hidden = false;
-                    if (syncButton) {
-                        syncButton.disabled = true;
+                    if (spinner) {
+                        spinner.hidden = false;
                     }
+                    if (spinnerMessage) {
+                        var label = form.dataset.spinnerLabel || defaultSpinnerMessage;
+                        spinnerMessage.textContent = label;
+                    }
+                    spinnerButtons.forEach(function (button) {
+                        if (button) {
+                            button.disabled = true;
+                        }
+                    });
 
                     try {
-                        var formData = new FormData(syncForm);
-                        var response = await fetch(syncForm.action, {
-                            method: "POST",
+                        var formData = new FormData(form);
+                        var method = (form.method || "post").toUpperCase();
+                        var response = await fetch(form.action, {
+                            method: method,
                             body: formData,
                             redirect: "follow",
                         });
@@ -946,10 +1009,10 @@
                         window.location.href = targetUrl;
                     } catch (error) {
                         hideSpinner();
-                        alert("Sync request failed. Please try again.");
+                        alert("Request failed. Please try again.");
                     }
                 });
-            }
+            });
 
             // Hide the spinner if the page is restored from the browser cache.
             window.addEventListener("pageshow", function (event) {
@@ -1035,6 +1098,8 @@
                     "sync_message",
                     "delete_status",
                     "delete_message",
+                    "categorize_status",
+                    "categorize_message",
                     "config_status",
                 ];
 
@@ -1070,6 +1135,14 @@
                     pendingToasts.push({
                         message: deleteMessage,
                         variant: deleteStatus === "ok" ? "success" : "error",
+                    });
+                }
+                var categorizeStatus = (toastData.dataset.categorizeStatus || "").trim();
+                var categorizeMessage = (toastData.dataset.categorizeMessage || "").trim();
+                if (categorizeStatus && categorizeMessage) {
+                    pendingToasts.push({
+                        message: categorizeMessage,
+                        variant: categorizeStatus === "ok" ? "success" : "error",
                     });
                 }
                 if (pendingToasts.length > 0) {

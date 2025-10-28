@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
@@ -78,8 +79,13 @@ _STATUS_QUERY_KEYS: tuple[str, ...] = (
     "sync_message",
     "delete_status",
     "delete_message",
+    "categorize_status",
+    "categorize_message",
     "config_status",
 )
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -125,6 +131,14 @@ class SyncOutcome:
 @dataclass(frozen=True)
 class DeleteOutcome:
     """Result of a mailbox deletion request."""
+
+    success: bool
+    message: str
+
+
+@dataclass(frozen=True)
+class CategoryRefreshOutcome:
+    """Result of a recategorisation request."""
 
     success: bool
     message: str
@@ -303,6 +317,8 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                 "sync_message": request.query_params.get("sync_message"),
                 "delete_status": request.query_params.get("delete_status"),
                 "delete_message": request.query_params.get("delete_message"),
+                "categorize_status": request.query_params.get("categorize_status"),
+                "categorize_message": request.query_params.get("categorize_message"),
             },
         )
 
@@ -408,6 +424,18 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         status_value = "ok" if outcome.success else "error"
         target = _append_query_param(redirect_target, "sync_status", status_value)
         target = _append_query_param(target, "sync_message", outcome.message)
+        return RedirectResponse(url=target, status_code=http_status.HTTP_303_SEE_OTHER)
+
+    @app.post("/categories/regenerate")
+    async def regenerate_categories(request: Request) -> RedirectResponse:
+        form = await request.form()
+        redirect_raw = _coerce_form_value(form.get("redirect_to"))
+        redirect_target = _sanitize_redirect(redirect_raw or None) or "/"
+
+        outcome = await asyncio.to_thread(_regenerate_categories, app_settings)
+        status_value = "ok" if outcome.success else "error"
+        target = _append_query_param(redirect_target, "categorize_status", status_value)
+        target = _append_query_param(target, "categorize_message", outcome.message)
         return RedirectResponse(url=target, status_code=http_status.HTTP_303_SEE_OTHER)
 
     @app.post("/emails/{email_uid}/delete")
@@ -661,6 +689,53 @@ def _run_sync_cycle(settings: AppSettings) -> SyncOutcome:
         success=True,
         message=f"Sync complete. Processed {processed} message(s).",
     )
+
+
+def _regenerate_categories(settings: AppSettings) -> CategoryRefreshOutcome:
+    categorizer = KeywordCategoryService()
+    try:
+        with SqliteEmailRepository(settings.storage) as repository:
+            total = repository.count_insights()
+            if total == 0:
+                return CategoryRefreshOutcome(
+                    success=True,
+                    message="No stored insights available to categorize.",
+                )
+
+            updated = 0
+            failures = 0
+            for email, insight in repository.list_recent_insights(limit=total):
+                try:
+                    categories = tuple(categorizer.categorize(email, insight))
+                    repository.replace_categories(email.uid, categories)
+                    updated += 1
+                except Exception as exc:  # pylint: disable=broad-except
+                    failures += 1
+                    LOGGER.warning(
+                        "Failed to regenerate categories for UID %s: %s",
+                        email.uid,
+                        exc,
+                    )
+
+            if failures:
+                return CategoryRefreshOutcome(
+                    success=False,
+                    message=(
+                        f"Updated categories for {updated} emails with "
+                        f"{failures} failures. Check logs for details."
+                    ),
+                )
+
+            return CategoryRefreshOutcome(
+                success=True,
+                message=f"Updated categories for {updated} emails.",
+            )
+    except Exception as exc:  # pylint: disable=broad-except
+        LOGGER.exception("Category regeneration failed: %s", exc)
+        return CategoryRefreshOutcome(
+            success=False,
+            message="Category regeneration failed. Check server logs for details.",
+        )
 
 
 def _delete_email(settings: AppSettings, uid: int) -> DeleteOutcome:
