@@ -839,12 +839,12 @@
                     {% endfor %}
                 </select>
             </div>
-            <div class="filter-group checkbox-group">
-                <label class="checkbox-label" for="follow_only">
-                    <input type="checkbox" id="follow_only" name="follow_only" value="1" {% if filters.follow_only
-                        %}checked{% endif %} />
-                    Only show emails with follow-ups
-                </label>
+            <div class="filter-group">
+                <label for="follow_only">Follow-ups</label>
+                <select id="follow_only" name="follow_only">
+                    <option value="" {% if not filters.follow_only %}selected{% endif %}>All</option>
+                    <option value="1" {% if filters.follow_only %}selected{% endif %}>Only Followups</option>
+                </select>
             </div>
             <button type="submit">Apply Filters</button>
         </form>
