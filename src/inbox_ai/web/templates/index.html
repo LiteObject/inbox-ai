@@ -871,11 +871,34 @@
         {% if insights %}
         <div class="insights-controls">
             <input type="search" id="insights-search" class="insights-search" placeholder="Search insights"
-                aria-label="Search insights" />
+                aria-label="Search insights"
+                title="Supports filters like from:, subject:, category:, priority:7+, provider:, is:fallback" />
         </div>
         <div class="insights-grid" id="insights-grid">
             {% for item in insights %}
-            <article class="insight-card" data-uid="{{ item.uid }}">
+            {% set category_labels = item.categories | map(attribute='label') | join(' ') %}
+            {% set action_text = item.actionItems | join(' ') %}
+            {% set follow_actions = item.followUps | map(attribute='action') | join(' ') %}
+            {% set follow_statuses = item.followUps | map(attribute='status') | join(' ') %}
+            {% set follow_text = (follow_actions ~ ' ' ~ follow_statuses) | trim %}
+            {% set draft_body = item.draft.body if item.draft else '' %}
+            {% set draft_provider = item.draft.provider if item.draft else '' %}
+            {% set draft_fallback = 'true' if item.draft and item.draft.usedFallback else 'false' %}
+            <article class="insight-card" data-uid="{{ item.uid }}"
+                data-thread-id="{{ item.threadId | default('', true) | e }}"
+                data-subject="{{ item.subject | default('', true) | replace('\n', ' ') | replace('\r', ' ') | e }}"
+                data-sender="{{ item.sender | default('', true) | e }}"
+                data-summary="{{ item.summary | default('', true) | replace('\n', ' ') | replace('\r', ' ') | e }}"
+                data-actions="{{ action_text | default('', true) | e }}"
+                data-categories="{{ category_labels | default('', true) | e }}"
+                data-priority="{{ ((item.priorityLabel | default('', true)) ~ ' ' ~ item.priority) | trim | e }}"
+                data-priority-value="{{ item.priority }}" data-provider="{{ item.provider | default('', true) | e }}"
+                data-follow="{{ follow_text | default('', true) | e }}"
+                data-has-followups="{{ 'true' if item.followUps else 'false' }}"
+                data-has-draft="{{ 'true' if item.draft else 'false' }}"
+                data-draft="{{ draft_body | default('', true) | replace('\n', ' ') | replace('\r', ' ') | e }}"
+                data-draft-provider="{{ draft_provider | default('', true) | e }}"
+                data-draft-fallback="{{ draft_fallback }}">
                 <div class="subject-summary">
                     <div class="subject-summary-top">
                         <div class="subject-details">
