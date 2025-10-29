@@ -14,6 +14,7 @@ from typing import Any
 from fastapi import Depends, FastAPI, Form, Request, status as http_status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.routing import APIRoute
+from fastapi.staticfiles import StaticFiles
 from dotenv import dotenv_values
 from starlette.datastructures import UploadFile
 from starlette.templating import Jinja2Templates
@@ -145,6 +146,7 @@ class CategoryRefreshOutcome:
 
 
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_ENV_FILE = _PROJECT_ROOT / ".env"
 _ENV_FILE_OVERRIDE_VAR = "INBOX_AI_DASHBOARD_ENV_FILE"
@@ -253,6 +255,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
     app_settings = settings or load_app_settings(env_file=env_file)
     templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
     app = FastAPI(title="Inbox AI Dashboard")
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
     def get_repository() -> Iterator[SqliteEmailRepository]:
         repository = SqliteEmailRepository(app_settings.storage)
