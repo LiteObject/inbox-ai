@@ -182,14 +182,51 @@ document.addEventListener("DOMContentLoaded", () => {
                 try {
                     const formData = new FormData(form);
                     const method = (form.method || "post").toUpperCase();
-                    const response = await fetch(form.action, {
-                        method,
-                        body: formData,
-                        redirect: "follow",
-                    });
 
-                    const targetUrl = response.url || formData.get("redirect_to") || "/";
-                    window.location.href = targetUrl;
+                    if (form.action.endsWith('/sync')) {
+                        // Handle sync with Server-Sent Events
+                        const response = await fetch(form.action, {
+                            method,
+                            body: formData,
+                        });
+
+                        if (!response.ok) {
+                            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                        }
+
+                        const reader = response.body.getReader();
+                        const decoder = new TextDecoder();
+                        let buffer = '';
+
+                        while (true) {
+                            const { done, value } = await reader.read();
+                            if (done) break;
+                            buffer += decoder.decode(value, { stream: true });
+                            const lines = buffer.split('\n');
+                            buffer = lines.pop();
+                            for (const line of lines) {
+                                if (line.startsWith('data: ')) {
+                                    const data = line.slice(6);
+                                    if (data.startsWith('redirect:')) {
+                                        window.location.href = data.slice(9);
+                                        return;
+                                    } else {
+                                        showSpinner(data);
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // Normal form submission
+                        const response = await fetch(form.action, {
+                            method,
+                            body: formData,
+                            redirect: "follow",
+                        });
+
+                        const targetUrl = response.url || formData.get("redirect_to") || "/";
+                        window.location.href = targetUrl;
+                    }
                 } catch (error) {
                     console.error("Request failed", error);
                     hideSpinner();

@@ -690,6 +690,18 @@ class SqliteEmailRepository(EmailRepository):
                 (checkpoint.mailbox, checkpoint.last_uid),
             )
 
+    def clear_all_tables(self) -> None:
+        """Delete all data from all tables."""
+        LOGGER.info("Clearing all database tables")
+        with self._connection:
+            self._connection.execute("DELETE FROM sync_state")
+            self._connection.execute("DELETE FROM follow_ups")
+            self._connection.execute("DELETE FROM email_categories")
+            self._connection.execute("DELETE FROM attachments")
+            self._connection.execute("DELETE FROM drafts")
+            self._connection.execute("DELETE FROM email_insights")
+            self._connection.execute("DELETE FROM emails")
+
     def close(self) -> None:
         """Close the underlying SQLite connection."""
         self._connection.close()
