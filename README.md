@@ -96,10 +96,12 @@ ruff check src && pylint src/inbox_ai && mypy src/inbox_ai && pytest
 - Configuration fields are grouped by domain and editable in place. Saving updates writes to the
    ``.env`` file while preserving blank entries, and success/error states also appear as toasts.
 - Recent Insights now show inline UID labels, a running ``visible / total`` counter, friendly
-   timestamps, action-item summaries, an inline search box for instant filtering, and a priority
-   dropdown on the filter bar so you can focus on urgent, high, or low items.
+   timestamps, action-item summaries, an advanced search box for instant filtering with field
+   queries (e.g., ``from:alice``, ``priority:>=7``, ``is:followups``), and a priority dropdown on the
+   filter bar so you can focus on urgent, high, or low items.
 - Delete buttons beside each insight remove the underlying email from both IMAP and storage. Upon
-   completion a toast confirms success (or failure) and the table preserves scroll position.
+   completion a toast confirms success (or failure) and the page preserves scroll position after all
+   actions.
 - Follow-up cards mirror repository data with inline status toggles, while draft content now lives
    inside each insight so context stays in one place.
 
