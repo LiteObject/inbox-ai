@@ -906,6 +906,9 @@
                             <div class="meta uid">UID {{ item.uid }}</div>
                             <strong>{{ item.subject or "(no subject)" }}</strong><br />
                             <span class="meta">From: {{ item.sender or "Unknown" }}</span>
+                            {% if item.receivedAtDisplay %}
+                            <span class="meta">Received: {{ item.receivedAtDisplay }}</span>
+                            {% endif %}
                             {% if item.summary %}
                             <div class="summary-text">{{ item.summary }}</div>
                             {% endif %}

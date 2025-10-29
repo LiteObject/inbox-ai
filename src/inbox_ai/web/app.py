@@ -513,6 +513,8 @@ def _serialize_insight(
         "subject": email.subject,
         "sender": email.sender,
         "threadId": email.thread_id,
+        "receivedAt": _isoformat(email.received_at),
+        "receivedAtDisplay": _friendly_datetime(email.received_at),
         "summary": insight.summary,
         "actionItems": list(insight.action_items),
         "categories": [
