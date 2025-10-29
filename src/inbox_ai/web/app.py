@@ -14,11 +14,12 @@ from typing import Any
 from urllib.parse import parse_qsl, urlencode
 
 from fastapi import Depends, FastAPI, Form, Request, status as http_status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
 from dotenv import dotenv_values
 from starlette.datastructures import UploadFile
+from starlette.responses import Response
 from starlette.templating import Jinja2Templates
 
 from inbox_ai.core import AppSettings, load_app_settings
@@ -34,6 +35,7 @@ from inbox_ai.intelligence import (
     DraftingService,
     FollowUpPlannerService,
     KeywordCategoryService,
+    LLMCategoryService,
     OllamaClient,
     SummarizationService,
 )
@@ -140,6 +142,14 @@ class DeleteOutcome:
 @dataclass(frozen=True)
 class CategoryRefreshOutcome:
     """Result of a recategorisation request."""
+
+    success: bool
+    message: str
+
+
+@dataclass(frozen=True)
+class ClearDatabaseOutcome:
+    """Result of a database clear request."""
 
     success: bool
     message: str
@@ -323,6 +333,8 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                 "delete_message": request.query_params.get("delete_message"),
                 "categorize_status": request.query_params.get("categorize_status"),
                 "categorize_message": request.query_params.get("categorize_message"),
+                "clear_status": request.query_params.get("clear_status"),
+                "clear_message": request.query_params.get("clear_message"),
             },
         )
 
@@ -419,16 +431,43 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         )
 
     @app.post("/sync")
-    async def trigger_sync(request: Request) -> RedirectResponse:
+    async def trigger_sync(request: Request) -> Response:
         form = await request.form()
         redirect_raw = _coerce_form_value(form.get("redirect_to"))
         redirect_target = _sanitize_redirect(redirect_raw or None) or "/"
 
-        outcome = await asyncio.to_thread(_run_sync_cycle, app_settings)
-        status_value = "ok" if outcome.success else "error"
-        target = _append_query_param(redirect_target, "sync_status", status_value)
-        target = _append_query_param(target, "sync_message", outcome.message)
-        return RedirectResponse(url=target, status_code=http_status.HTTP_303_SEE_OTHER)
+        # Check credentials before starting sync
+        if not app_settings.imap.username or not app_settings.imap.app_password:
+            target = _append_query_param(redirect_target, "sync_status", "error")
+            target = _append_query_param(
+                target,
+                "sync_message",
+                "Configure IMAP username and app password before syncing.",
+            )
+            return RedirectResponse(
+                url=target, status_code=http_status.HTTP_303_SEE_OTHER
+            )
+
+        queue: asyncio.Queue[str] = asyncio.Queue()
+
+        async def run_sync():
+            outcome = await asyncio.to_thread(_run_sync_cycle, app_settings, queue)
+            status_value = "ok" if outcome.success else "error"
+            target = _append_query_param(redirect_target, "sync_status", status_value)
+            target = _append_query_param(target, "sync_message", outcome.message)
+            queue.put_nowait(f"redirect:{target}")
+
+        asyncio.create_task(run_sync())
+
+        async def generate():
+            while True:
+                message = await queue.get()
+                if message.startswith("redirect:"):
+                    yield f"data: {message}\n\n"
+                    break
+                yield f"data: {message}\n\n"
+
+        return StreamingResponse(generate(), media_type="text/event-stream")
 
     @app.post("/categories/regenerate")
     async def regenerate_categories(request: Request) -> RedirectResponse:
@@ -440,6 +479,18 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         status_value = "ok" if outcome.success else "error"
         target = _append_query_param(redirect_target, "categorize_status", status_value)
         target = _append_query_param(target, "categorize_message", outcome.message)
+        return RedirectResponse(url=target, status_code=http_status.HTTP_303_SEE_OTHER)
+
+    @app.post("/clear-database")
+    async def clear_database(request: Request) -> RedirectResponse:
+        form = await request.form()
+        redirect_raw = _coerce_form_value(form.get("redirect_to"))
+        redirect_target = _sanitize_redirect(redirect_raw or None) or "/"
+
+        outcome = await asyncio.to_thread(_clear_database, app_settings)
+        status_value = "ok" if outcome.success else "error"
+        target = _append_query_param(redirect_target, "clear_status", status_value)
+        target = _append_query_param(target, "clear_message", outcome.message)
         return RedirectResponse(url=target, status_code=http_status.HTTP_303_SEE_OTHER)
 
     @app.post("/emails/{email_uid}/delete")
@@ -661,13 +712,18 @@ def _build_redirect_target(
     return f"{base}?{urlencode(filtered)}"
 
 
-def _run_sync_cycle(settings: AppSettings) -> SyncOutcome:
+def _run_sync_cycle(
+    settings: AppSettings, progress_queue: asyncio.Queue[str] | None = None
+) -> SyncOutcome:
     missing_credentials = not settings.imap.username or not settings.imap.app_password
     if missing_credentials:
         return SyncOutcome(
             success=False,
             message="Configure IMAP username and app password before syncing.",
         )
+
+    if progress_queue:
+        progress_queue.put_nowait("Connecting to mailbox...")
 
     email_parser = EmailParser()
     llm_client = (
@@ -682,13 +738,17 @@ def _run_sync_cycle(settings: AppSettings) -> SyncOutcome:
     insight_service = SummarizationService(
         llm_client, fallback_enabled=settings.llm.fallback_enabled
     )
-    category_service = KeywordCategoryService()
+    category_service = (
+        LLMCategoryService(llm_client) if llm_client else KeywordCategoryService()
+    )
 
     try:
         with (
             ImapClient(settings.imap) as mailbox,
             SqliteEmailRepository(settings.storage) as repository,
         ):
+            if progress_queue:
+                progress_queue.put_nowait("Fetching messages...")
             fetcher = MailFetcher(
                 mailbox=mailbox,
                 repository=repository,
@@ -699,20 +759,32 @@ def _run_sync_cycle(settings: AppSettings) -> SyncOutcome:
                 drafting_service=drafting_service,
                 follow_up_planner=follow_up_planner,
                 category_service=category_service,
+                progress_callback=progress_queue.put_nowait if progress_queue else None,
+                user_email=settings.imap.username,
             )
             result = fetcher.run()
+            if progress_queue:
+                progress_queue.put_nowait(f"Processed {result.processed} messages")
     except ImapError as exc:
+        if progress_queue:
+            progress_queue.put_nowait(f"Error: {exc}")
         return SyncOutcome(success=False, message=f"Sync failed: {exc}")
     except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-exception-caught
         LOGGER.exception("Unexpected error during sync: %s", exc)
+        if progress_queue:
+            progress_queue.put_nowait(f"Error: {exc}")
         return SyncOutcome(success=False, message=f"Sync failed: {exc}")
 
     processed = result.processed
     if processed == 0:
+        if progress_queue:
+            progress_queue.put_nowait("Sync complete. No new messages processed.")
         return SyncOutcome(
             success=True,
             message="Sync complete. No new messages processed.",
         )
+    if progress_queue:
+        progress_queue.put_nowait("Sync complete")
     return SyncOutcome(
         success=True,
         message=f"Sync complete. Processed {processed} message(s).",
@@ -763,6 +835,22 @@ def _regenerate_categories(settings: AppSettings) -> CategoryRefreshOutcome:
         return CategoryRefreshOutcome(
             success=False,
             message="Category regeneration failed. Check server logs for details.",
+        )
+
+
+def _clear_database(settings: AppSettings) -> ClearDatabaseOutcome:
+    try:
+        with SqliteEmailRepository(settings.storage) as repository:
+            repository.clear_all_tables()
+        return ClearDatabaseOutcome(
+            success=True,
+            message="Database cleared successfully.",
+        )
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        LOGGER.exception("Database clear failed: %s", exc)
+        return ClearDatabaseOutcome(
+            success=False,
+            message="Database clear failed. Check server logs for details.",
         )
 
 

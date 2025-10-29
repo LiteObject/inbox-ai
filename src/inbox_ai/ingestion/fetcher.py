@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Protocol
+from typing import Callable, Protocol
 
 from ..core.interfaces import (
     CategoryService,
@@ -44,6 +44,8 @@ class MailFetcher:
         drafting_service: DraftingService | None = None,
         follow_up_planner: FollowUpPlanner | None = None,
         category_service: CategoryService | None = None,
+        progress_callback: Callable[[str], None] | None = None,
+        user_email: str | None = None,
     ) -> None:
         # pylint: disable=too-many-arguments
         """Initialise the fetcher with mailbox, storage, and parser."""
@@ -58,6 +60,8 @@ class MailFetcher:
         self._drafting_service = drafting_service
         self._follow_up_planner = follow_up_planner
         self._category_service = category_service
+        self._progress_callback = progress_callback
+        self._user_email = user_email
 
     def run(self) -> MailFetcherResult:
         """Execute a synchronization cycle and return a summary."""
@@ -75,6 +79,11 @@ class MailFetcher:
             envelope = self._parser.parse(chunk.uid, chunk.raw)
             self._repository.persist_email(envelope)
 
+            if self._progress_callback:
+                self._progress_callback(
+                    f"Processing message {processed + 1}: UID {envelope.uid}, Subject: {envelope.subject}"
+                )
+
             insight: EmailInsight | None = None
             if self._insight_service is not None:
                 try:
@@ -90,7 +99,35 @@ class MailFetcher:
             if insight is None:
                 insight = self._repository.fetch_insight(envelope.uid)
 
-            if self._drafting_service is not None and insight is not None:
+            categories = ()
+            if self._category_service is not None:
+                try:
+                    categories = tuple(
+                        self._category_service.categorize(envelope, insight)
+                    )
+                    self._repository.replace_categories(envelope.uid, categories)
+                except Exception as exc:  # pylint: disable=broad-except
+                    LOGGER.warning(
+                        "Failed to assign categories for UID %s: %s",
+                        envelope.uid,
+                        exc,
+                    )
+
+            # Check if draft should be skipped
+            excluded_categories = {"marketing", "notification", "spam"}
+            is_personal = self._user_email and (
+                self._user_email in envelope.to or self._user_email in envelope.cc
+            )
+            skip_draft = (
+                any(cat.key in excluded_categories for cat in categories)
+                or not is_personal
+            )
+
+            if (
+                self._drafting_service is not None
+                and insight is not None
+                and not skip_draft
+            ):
                 try:
                     draft = self._drafting_service.generate_draft(envelope, insight)
                     self._repository.persist_draft(draft)
@@ -112,18 +149,6 @@ class MailFetcher:
                         exc,
                     )
 
-            if self._category_service is not None:
-                try:
-                    categories = tuple(
-                        self._category_service.categorize(envelope, insight)
-                    )
-                    self._repository.replace_categories(envelope.uid, categories)
-                except Exception as exc:  # pylint: disable=broad-except
-                    LOGGER.warning(
-                        "Failed to assign categories for UID %s: %s",
-                        envelope.uid,
-                        exc,
-                    )
             new_last_uid = chunk.uid
             self._repository.upsert_checkpoint(
                 SyncCheckpoint(mailbox=mailbox_name, last_uid=new_last_uid)
