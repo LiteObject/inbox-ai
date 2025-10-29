@@ -7,7 +7,7 @@
     <title>Inbox AI Dashboard</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
             max-width: 960px;
             margin: 40px auto;
             padding: 20px;
@@ -15,11 +15,11 @@
         }
 
         h1 {
-            color: #007bff;
+            color: #1e40af;
         }
 
         h2 {
-            color: #0056b3;
+            color: #1d4ed8;
             margin-top: 0;
         }
 
@@ -28,7 +28,7 @@
             padding: 20px;
             margin: 20px 0;
             border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            border: 1px solid #e5e7eb;
         }
 
         .section p.description {
@@ -95,10 +95,9 @@
 
         .insight-card {
             background: #ffffff;
-            border: 1px solid #e0e0e0;
+            border: 1px solid #e5e7eb;
             border-radius: 8px;
             padding: 18px;
-            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
             display: flex;
             flex-direction: column;
             gap: 16px;
@@ -840,12 +839,12 @@
                     {% endfor %}
                 </select>
             </div>
-            <div class="filter-group checkbox-group">
-                <label class="checkbox-label" for="follow_only">
-                    <input type="checkbox" id="follow_only" name="follow_only" value="1" {% if filters.follow_only
-                        %}checked{% endif %} />
-                    Only show emails with follow-ups
-                </label>
+            <div class="filter-group">
+                <label for="follow_only">Follow-ups</label>
+                <select id="follow_only" name="follow_only">
+                    <option value="" {% if not filters.follow_only %}selected{% endif %}>All</option>
+                    <option value="1" {% if filters.follow_only %}selected{% endif %}>Only Followups</option>
+                </select>
             </div>
             <button type="submit">Apply Filters</button>
         </form>
@@ -907,7 +906,11 @@
                             <strong>{{ item.subject or "(no subject)" }}</strong><br />
                             <span class="meta">From: {{ item.sender or "Unknown" }}</span>
                             {% if item.receivedAtDisplay %}
-                            <span class="meta">Received: {{ item.receivedAtDisplay }}</span>
+                            <span class="meta">• Received: {{ item.receivedAtDisplay }}</span>
+                            {% endif %}
+                            {% set display_date = item.generatedAtDisplay or item.geneatedAt %}
+                            {% if display_date %}
+                            <span class="meta">• Generate: {{ display_date }}</span>
                             {% endif %}
                             {% if item.summary %}
                             <div class="summary-text">{{ item.summary }}</div>
@@ -941,10 +944,6 @@
                                         <span class="meta">{{ item.priorityLabel }} ({{ item.priority }})</span>
                                     </div>
                                 </div>
-                                {% set display_date = item.generatedAtDisplay or item.generatedAt %}
-                                {% if display_date %}
-                                <div class="generated-meta">Generated {{ display_date }}</div>
-                                {% endif %}
                                 {% if item.draft %}
                                 <div class="draft-preview">
                                     <div class="draft-heading">Latest Draft</div>
