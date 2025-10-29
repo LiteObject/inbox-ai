@@ -11,6 +11,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from urllib.parse import parse_qsl, urlencode
+
 from fastapi import Depends, FastAPI, Form, Request, status as http_status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.routing import APIRoute
@@ -18,8 +20,6 @@ from fastapi.staticfiles import StaticFiles
 from dotenv import dotenv_values
 from starlette.datastructures import UploadFile
 from starlette.templating import Jinja2Templates
-
-from urllib.parse import parse_qsl, urlencode
 
 from inbox_ai.core import AppSettings, load_app_settings
 from inbox_ai.core.models import (
@@ -162,6 +162,7 @@ CONFIG_SECTIONS: tuple[ConfigSection, ...] = (
             ConfigField("INBOX_AI_IMAP__USERNAME", "Username"),
             ConfigField("INBOX_AI_IMAP__APP_PASSWORD", "App Password"),
             ConfigField("INBOX_AI_IMAP__MAILBOX", "Mailbox"),
+            ConfigField("INBOX_AI_IMAP__TRASH_FOLDER", "Trash Folder"),
             ConfigField(
                 "INBOX_AI_IMAP__USE_SSL",
                 "Use SSL",
@@ -477,7 +478,6 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
     @app.post("/follow-ups/{follow_up_id}/status")
     async def update_follow_up_status(
         follow_up_id: int,
-        request: Request,
         status_value: str = Form(..., alias="status"),
         redirect_to: str | None = Form(None),
         repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
@@ -512,6 +512,7 @@ def _serialize_insight(
         "uid": email.uid,
         "subject": email.subject,
         "sender": email.sender,
+        "threadId": email.thread_id,
         "summary": insight.summary,
         "actionItems": list(insight.action_items),
         "categories": [
@@ -700,7 +701,8 @@ def _run_sync_cycle(settings: AppSettings) -> SyncOutcome:
             result = fetcher.run()
     except ImapError as exc:
         return SyncOutcome(success=False, message=f"Sync failed: {exc}")
-    except Exception as exc:  # noqa: BLE001 - surface unexpected failure to UI
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-exception-caught
+        LOGGER.exception("Unexpected error during sync: %s", exc)
         return SyncOutcome(success=False, message=f"Sync failed: {exc}")
 
     processed = result.processed
@@ -733,7 +735,7 @@ def _regenerate_categories(settings: AppSettings) -> CategoryRefreshOutcome:
                     categories = tuple(categorizer.categorize(email, insight))
                     repository.replace_categories(email.uid, categories)
                     updated += 1
-                except Exception as exc:  # pylint: disable=broad-except
+                except Exception as exc:  # pylint: disable=broad-exception-caught
                     failures += 1
                     LOGGER.warning(
                         "Failed to regenerate categories for UID %s: %s",
@@ -754,7 +756,7 @@ def _regenerate_categories(settings: AppSettings) -> CategoryRefreshOutcome:
                 success=True,
                 message=f"Updated categories for {updated} emails.",
             )
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:  # pylint: disable=broad-exception-caught
         LOGGER.exception("Category regeneration failed: %s", exc)
         return CategoryRefreshOutcome(
             success=False,
@@ -775,11 +777,12 @@ def _delete_email(settings: AppSettings, uid: int) -> DeleteOutcome:
             ImapClient(settings.imap) as mailbox,
             SqliteEmailRepository(settings.storage) as repository,
         ):
-            mailbox.delete(uid)
+            mailbox.move_to_trash(uid, settings.imap.trash_folder)
             removed = repository.delete_email(uid)
     except ImapError as exc:
         return DeleteOutcome(success=False, message=f"Delete failed: {exc}")
-    except Exception as exc:  # noqa: BLE001 - surface unexpected failure to UI
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-exception-caught
+        LOGGER.exception("Unexpected error deleting UID %s: %s", uid, exc)
         return DeleteOutcome(success=False, message=f"Delete failed: {exc}")
 
     if removed:
@@ -811,14 +814,16 @@ def _delete_emails(settings: AppSettings, uids: Sequence[int]) -> DeleteOutcome:
             failures: list[tuple[int, str]] = []
             for uid in unique_uids:
                 try:
-                    mailbox.delete(uid)
+                    mailbox.move_to_trash(uid, settings.imap.trash_folder)
                 except ImapError as exc:
                     LOGGER.warning("Mailbox delete failed for UID %s: %s", uid, exc)
                     failures.append((uid, str(exc)))
                     continue
                 try:
                     repository.delete_email(uid)
-                except Exception as exc:  # noqa: BLE001 - ensure all errors captured
+                except (
+                    Exception
+                ) as exc:  # noqa: BLE001  # pylint: disable=broad-exception-caught
                     LOGGER.warning(
                         "Repository cleanup failed for UID %s: %s",
                         uid,
@@ -829,7 +834,8 @@ def _delete_emails(settings: AppSettings, uids: Sequence[int]) -> DeleteOutcome:
                 successes += 1
     except ImapError as exc:
         return DeleteOutcome(success=False, message=f"Delete failed: {exc}")
-    except Exception as exc:  # noqa: BLE001 - surface unexpected failure to UI
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-exception-caught
+        LOGGER.exception("Unexpected error during bulk delete: %s", exc)
         return DeleteOutcome(success=False, message=f"Delete failed: {exc}")
 
     if successes == 0 and failures:
@@ -840,10 +846,12 @@ def _delete_emails(settings: AppSettings, uids: Sequence[int]) -> DeleteOutcome:
 
     if failures:
         failed_count = len(failures)
+        failed_uids = ", ".join(str(uid) for uid, _ in failures)
         return DeleteOutcome(
             success=False,
             message=(
-                f"Deleted {successes} email(s). Failed to delete {failed_count} email(s)."
+                f"Deleted {successes} email(s). Failed to delete {failed_count} "
+                f"email(s): {failed_uids}. Check logs for details."
             ),
         )
 

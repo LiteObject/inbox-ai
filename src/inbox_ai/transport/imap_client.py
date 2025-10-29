@@ -135,6 +135,19 @@ class ImapClient(MailboxProvider):
         except imaplib.IMAP4.error as exc:  # pragma: no cover - network dependent
             raise ImapError(f"IMAP error while deleting UID {uid_str}") from exc
 
+    def move_to_trash(self, uid: int, trash_folder: str) -> None:
+        """Move a message to the trash folder by UID using the MOVE command."""
+        connection = self._require_connection()
+        uid_str = str(uid)
+        LOGGER.debug("Moving UID %s to trash folder '%s'", uid_str, trash_folder)
+        try:
+            # The MOVE command is an IMAP extension supported by Gmail.
+            status, _ = connection.uid("MOVE", uid_str, f'"{trash_folder}"')
+            if status != "OK":
+                raise ImapError(f"Failed to move message UID {uid_str} to trash")
+        except imaplib.IMAP4.error as exc:
+            raise ImapError(f"IMAP error while moving UID {uid_str} to trash") from exc
+
     def close(self) -> None:
         """Terminate the IMAP session cleanly."""
         if self._connection is None:

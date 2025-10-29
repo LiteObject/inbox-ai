@@ -20,6 +20,9 @@ class ImapSettings(BaseModel):
     app_password: str | None = Field(default=None, description="Gmail app password")
     mailbox: str = Field(default="INBOX", description="Mailbox to monitor")
     use_ssl: bool = Field(default=True, description="Whether to enforce SSL")
+    trash_folder: str = Field(
+        default="[Gmail]/Trash", description="Folder for deleted messages"
+    )
 
 
 class LlmSettings(BaseModel):
