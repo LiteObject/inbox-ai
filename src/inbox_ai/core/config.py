@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from dotenv import dotenv_values
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ImapSettings(BaseModel):
@@ -18,11 +18,18 @@ class ImapSettings(BaseModel):
     port: int = Field(default=993, description="IMAP port, typically 993 for SSL")
     username: str | None = Field(default=None, description="Account username")
     app_password: str | None = Field(default=None, description="Gmail app password")
-    mailbox: str = Field(default="INBOX", description="Mailbox to monitor")
+    mailboxes: list[str] = Field(default=["INBOX"], description="Mailboxes to monitor")
     use_ssl: bool = Field(default=True, description="Whether to enforce SSL")
     trash_folder: str = Field(
         default="[Gmail]/Trash", description="Folder for deleted messages"
     )
+
+    @field_validator("mailboxes", mode="before")
+    @classmethod
+    def parse_mailboxes(cls, v: Any) -> list[str]:
+        if isinstance(v, str):
+            return [mb.strip() for mb in v.split(",") if mb.strip()]
+        return v
 
 
 class LlmSettings(BaseModel):

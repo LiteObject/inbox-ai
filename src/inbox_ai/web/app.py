@@ -743,28 +743,35 @@ def _run_sync_cycle(
     )
 
     try:
-        with (
-            ImapClient(settings.imap) as mailbox,
-            SqliteEmailRepository(settings.storage) as repository,
-        ):
+        processed_total = 0
+        for mailbox_name in settings.imap.mailboxes:
             if progress_queue:
-                progress_queue.put_nowait("Fetching messages...")
-            fetcher = MailFetcher(
-                mailbox=mailbox,
-                repository=repository,
-                parser=email_parser,
-                batch_size=settings.sync.batch_size,
-                max_messages=settings.sync.max_messages,
-                insight_service=insight_service,
-                drafting_service=drafting_service,
-                follow_up_planner=follow_up_planner,
-                category_service=category_service,
-                progress_callback=progress_queue.put_nowait if progress_queue else None,
-                user_email=settings.imap.username,
-            )
-            result = fetcher.run()
-            if progress_queue:
-                progress_queue.put_nowait(f"Processed {result.processed} messages")
+                progress_queue.put_nowait(f"Processing mailbox: {mailbox_name}")
+            with (
+                ImapClient(settings.imap, mailbox_name) as mailbox,
+                SqliteEmailRepository(settings.storage) as repository,
+            ):
+                checkpoint = repository.get_checkpoint(mailbox_name)
+                last_uid = checkpoint.last_uid if checkpoint else None
+                fetcher = MailFetcher(
+                    mailbox=mailbox,
+                    repository=repository,
+                    parser=email_parser,
+                    batch_size=settings.sync.batch_size,
+                    max_messages=settings.sync.max_messages,
+                    insight_service=insight_service,
+                    drafting_service=drafting_service,
+                    follow_up_planner=follow_up_planner,
+                    category_service=category_service,
+                    progress_callback=(
+                        progress_queue.put_nowait if progress_queue else None
+                    ),
+                    user_email=settings.imap.username,
+                )
+                result = fetcher.run()
+                processed_total += result.processed
+        if progress_queue:
+            progress_queue.put_nowait(f"Processed {processed_total} messages")
     except ImapError as exc:
         if progress_queue:
             progress_queue.put_nowait(f"Error: {exc}")
@@ -775,8 +782,7 @@ def _run_sync_cycle(
             progress_queue.put_nowait(f"Error: {exc}")
         return SyncOutcome(success=False, message=f"Sync failed: {exc}")
 
-    processed = result.processed
-    if processed == 0:
+    if processed_total == 0:
         if progress_queue:
             progress_queue.put_nowait("Sync complete. No new messages processed.")
         return SyncOutcome(
@@ -787,7 +793,7 @@ def _run_sync_cycle(
         progress_queue.put_nowait("Sync complete")
     return SyncOutcome(
         success=True,
-        message=f"Sync complete. Processed {processed} message(s).",
+        message=f"Sync complete. Processed {processed_total} message(s).",
     )
 
 
@@ -863,8 +869,16 @@ def _delete_email(settings: AppSettings, uid: int) -> DeleteOutcome:
         )
 
     try:
+        with SqliteEmailRepository(settings.storage) as repository:
+            email = repository.fetch_email(uid)
+            if email is None:
+                return DeleteOutcome(
+                    success=True, message=f"Message UID {uid} not found."
+                )
+            mailbox_name = email.mailbox
+
         with (
-            ImapClient(settings.imap) as mailbox,
+            ImapClient(settings.imap, mailbox_name) as mailbox,
             SqliteEmailRepository(settings.storage) as repository,
         ):
             mailbox.move_to_trash(uid, settings.imap.trash_folder)
@@ -896,32 +910,50 @@ def _delete_emails(settings: AppSettings, uids: Sequence[int]) -> DeleteOutcome:
         )
 
     try:
-        with (
-            ImapClient(settings.imap) as mailbox,
-            SqliteEmailRepository(settings.storage) as repository,
-        ):
-            successes = 0
-            failures: list[tuple[int, str]] = []
+        with SqliteEmailRepository(settings.storage) as repository:
+            emails = []
             for uid in unique_uids:
-                try:
-                    mailbox.move_to_trash(uid, settings.imap.trash_folder)
-                except ImapError as exc:
-                    LOGGER.warning("Mailbox delete failed for UID %s: %s", uid, exc)
+                email = repository.fetch_email(uid)
+                if email:
+                    emails.append(email)
+            if not emails:
+                return DeleteOutcome(success=True, message="No emails found to delete.")
+
+            # Group by mailbox
+            by_mailbox = {}
+            for email in emails:
+                by_mailbox.setdefault(email.mailbox, []).append(email.uid)
+
+        successes = 0
+        failures: list[tuple[int, str]] = []
+        for mailbox_name, mailbox_uids in by_mailbox.items():
+            try:
+                with ImapClient(settings.imap, mailbox_name) as mailbox:
+                    for uid in mailbox_uids:
+                        mailbox.move_to_trash(uid, settings.imap.trash_folder)
+            except ImapError as exc:
+                LOGGER.warning(
+                    "Mailbox delete failed for mailbox %s: %s", mailbox_name, exc
+                )
+                for uid in mailbox_uids:
                     failures.append((uid, str(exc)))
-                    continue
-                try:
-                    repository.delete_email(uid)
-                except (
-                    Exception
-                ) as exc:  # noqa: BLE001  # pylint: disable=broad-exception-caught
-                    LOGGER.warning(
-                        "Repository cleanup failed for UID %s: %s",
-                        uid,
-                        exc,
-                    )
-                    failures.append((uid, str(exc)))
-                    continue
-                successes += 1
+                continue
+
+            with SqliteEmailRepository(settings.storage) as repository:
+                for uid in mailbox_uids:
+                    try:
+                        repository.delete_email(uid)
+                    except (
+                        Exception
+                    ) as exc:  # noqa: BLE001  # pylint: disable=broad-exception-caught
+                        LOGGER.warning(
+                            "Repository cleanup failed for UID %s: %s",
+                            uid,
+                            exc,
+                        )
+                        failures.append((uid, str(exc)))
+                        continue
+                    successes += 1
     except ImapError as exc:
         return DeleteOutcome(success=False, message=f"Delete failed: {exc}")
     except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-exception-caught
