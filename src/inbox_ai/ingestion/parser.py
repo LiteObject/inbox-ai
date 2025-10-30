@@ -19,7 +19,7 @@ class EmailParser:
         """Prepare internal parser instance."""
         self._parser = BytesParser(policy=policy.default)
 
-    def parse(self, uid: int, payload: bytes) -> EmailEnvelope:
+    def parse(self, uid: int, payload: bytes, mailbox: str) -> EmailEnvelope:
         """Parse raw RFC822 bytes into an :class:`EmailEnvelope`."""
         message = self._parser.parsebytes(payload)
         subject = message.get("Subject")
@@ -36,6 +36,7 @@ class EmailParser:
 
         return EmailEnvelope(
             uid=uid,
+            mailbox=mailbox,
             message_id=message_id,
             thread_id=thread_id,
             subject=subject,

@@ -24,7 +24,7 @@ MailFetcherResult = FetchReport
 class EmailParserProtocol(Protocol):
     """Minimal protocol implemented by email parsers."""
 
-    def parse(self, uid: int, payload: bytes) -> EmailEnvelope:
+    def parse(self, uid: int, payload: bytes, mailbox: str) -> EmailEnvelope:
         """Convert raw RFC822 payload into an envelope."""
         raise NotImplementedError
 
@@ -76,7 +76,7 @@ class MailFetcher:
         new_last_uid = last_uid
 
         for chunk in self._mailbox.fetch_since(last_uid, self._batch_size):
-            envelope = self._parser.parse(chunk.uid, chunk.raw)
+            envelope = self._parser.parse(chunk.uid, chunk.raw, mailbox_name)
             self._repository.persist_email(envelope)
 
             if self._progress_callback:

@@ -24,6 +24,7 @@ def _sample_envelope(uid: int) -> EmailEnvelope:
     timestamp = datetime(2025, 10, 24, 15, 0, tzinfo=timezone.utc)
     return EmailEnvelope(
         uid=uid,
+        mailbox="INBOX",
         message_id=f"<{uid}@example.com>",
         thread_id="thread-1",
         subject="Demo",
