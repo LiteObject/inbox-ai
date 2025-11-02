@@ -302,6 +302,9 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         follow_up_lookup = repository.fetch_follow_ups_for_uids(insight_uids)
         category_options = repository.list_categories()
         env_file = _resolve_env_file()
+        # Add total email count for Data Maintenance panel
+        cur = repository._connection.execute("SELECT COUNT(*) FROM emails")
+        total_email_count = cur.fetchone()[0]
         return templates.TemplateResponse(
             request,
             "index.html",
@@ -335,6 +338,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                 "categorize_message": request.query_params.get("categorize_message"),
                 "clear_status": request.query_params.get("clear_status"),
                 "clear_message": request.query_params.get("clear_message"),
+                "total_email_count": total_email_count,
             },
         )
 
