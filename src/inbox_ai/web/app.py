@@ -113,6 +113,7 @@ class ConfigField:
     input_type: str = "text"
     options: tuple[str, ...] | None = None
     description: str | None = None
+    textarea_rows: int | None = None
 
 
 @dataclass(frozen=True)
@@ -171,7 +172,7 @@ CONFIG_SECTIONS: tuple[ConfigSection, ...] = (
             ConfigField("INBOX_AI_IMAP__PORT", "Port", input_type="number"),
             ConfigField("INBOX_AI_IMAP__USERNAME", "Username"),
             ConfigField("INBOX_AI_IMAP__APP_PASSWORD", "App Password"),
-            ConfigField("INBOX_AI_IMAP__MAILBOX", "Mailbox"),
+            ConfigField("INBOX_AI_IMAP__MAILBOXES", "Mailboxes"),
             ConfigField("INBOX_AI_IMAP__TRASH_FOLDER", "Trash Folder"),
             ConfigField(
                 "INBOX_AI_IMAP__USE_SSL",
@@ -250,6 +251,21 @@ CONFIG_SECTIONS: tuple[ConfigSection, ...] = (
                 "INBOX_AI_FOLLOW_UP__PRIORITY_THRESHOLD",
                 "Priority Threshold",
                 input_type="number",
+            ),
+        ),
+    ),
+    ConfigSection(
+        title="User Preferences",
+        fields=(
+            ConfigField(
+                "INBOX_AI_USER__PREFERENCES",
+                "Guidance",
+                input_type="textarea",
+                textarea_rows=6,
+                description=(
+                    "Optional context describing what matters to you. Example: "
+                    "I don't care about Facebook notifications; flag security alerts as urgent."
+                ),
             ),
         ),
     ),

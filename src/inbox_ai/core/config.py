@@ -107,6 +107,17 @@ class FollowUpSettings(BaseModel):
     )
 
 
+class UserSettings(BaseModel):
+    """Settings that capture optional user preferences for personalisation."""
+
+    preferences: str = Field(
+        default="",
+        description=(
+            "Free-form guidance describing personal priorities or items to de-emphasise."
+        ),
+    )
+
+
 class AppSettings(BaseModel):
     """Aggregated application configuration."""
 
@@ -116,6 +127,7 @@ class AppSettings(BaseModel):
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
     sync: SyncSettings = Field(default_factory=SyncSettings)
     follow_up: FollowUpSettings = Field(default_factory=FollowUpSettings)
+    user: UserSettings = Field(default_factory=UserSettings)
 
 
 ENV_PREFIX = "INBOX_AI_"
@@ -195,5 +207,6 @@ __all__ = [
     "StorageSettings",
     "SyncSettings",
     "FollowUpSettings",
+    "UserSettings",
     "load_app_settings",
 ]
