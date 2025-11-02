@@ -301,10 +301,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         category_lookup = repository.get_categories_for_uids(insight_uids)
         follow_up_lookup = repository.fetch_follow_ups_for_uids(insight_uids)
         category_options = repository.list_categories()
-        env_file = _resolve_env_file()
-        # Add total email count for Data Maintenance panel
-        cur = repository._connection.execute("SELECT COUNT(*) FROM emails")
-        total_email_count = cur.fetchone()[0]
+        total_email_count = repository.count_emails()
         return templates.TemplateResponse(
             request,
             "index.html",
@@ -326,10 +323,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                 "priority_filter_options": _PRIORITY_FILTER_OPTIONS,
                 "category_options": category_options,
                 "redirect_to": _build_redirect_target(request),
-                "config_sections": CONFIG_SECTIONS,
-                "config_values": _load_env_values(env_file),
                 "config_status": request.query_params.get("config_status"),
-                "config_env_path": str(env_file),
                 "sync_status": request.query_params.get("sync_status"),
                 "sync_message": request.query_params.get("sync_message"),
                 "delete_status": request.query_params.get("delete_status"),
@@ -339,6 +333,24 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                 "clear_status": request.query_params.get("clear_status"),
                 "clear_message": request.query_params.get("clear_message"),
                 "total_email_count": total_email_count,
+            },
+        )
+
+    @app.get("/settings", response_class=HTMLResponse)
+    async def settings_page(request: Request) -> HTMLResponse:
+        env_file = _resolve_env_file()
+        config_values = _load_env_values(env_file)
+        redirect_target = _build_redirect_target(request)
+        return templates.TemplateResponse(
+            request,
+            "settings.html",
+            {
+                "request": request,
+                "config_sections": CONFIG_SECTIONS,
+                "config_values": config_values,
+                "config_status": request.query_params.get("config_status"),
+                "config_env_path": str(env_file),
+                "redirect_to": redirect_target,
             },
         )
 
