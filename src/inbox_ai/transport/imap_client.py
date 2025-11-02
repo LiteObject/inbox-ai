@@ -21,11 +21,11 @@ class ImapError(RuntimeError):
 class ImapClient(MailboxProvider):
     """Thin wrapper around ``imaplib`` offering typed fetch helpers."""
 
-    def __init__(self, settings: ImapSettings) -> None:
-        """Initialise the client with configuration settings."""
+    def __init__(self, settings: ImapSettings, mailbox: str) -> None:
+        """Initialise the client with configuration settings and mailbox."""
         self._settings = settings
         self._connection: imaplib.IMAP4 | imaplib.IMAP4_SSL | None = None
-        self.mailbox = settings.mailbox
+        self.mailbox = mailbox
 
     # Context manager helpers -------------------------------------------------
     def __enter__(self) -> ImapClient:

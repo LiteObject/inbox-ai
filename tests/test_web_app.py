@@ -23,6 +23,7 @@ from inbox_ai.web.app import CONFIG_FIELD_KEYS
 def _seed_data(repository: SqliteEmailRepository) -> int:
     envelope = EmailEnvelope(
         uid=1,
+        mailbox="INBOX",
         message_id="<1@example.com>",
         thread_id=None,
         subject="Status update",

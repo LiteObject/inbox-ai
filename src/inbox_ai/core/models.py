@@ -29,6 +29,7 @@ class EmailEnvelope:
     """Normalized email representation ready for persistence."""
 
     uid: int
+    mailbox: str
     message_id: str | None
     thread_id: str | None
     subject: str | None

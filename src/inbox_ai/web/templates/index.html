@@ -196,7 +196,7 @@
             align-items: flex-start;
             justify-content: space-between;
             gap: 16px;
-            flex-wrap: wrap;
+            /* flex-wrap: wrap; */
         }
 
         .subject-details {
@@ -740,15 +740,20 @@
         data-delete-status="{{ delete_status | default('', true) }}"
         data-delete-message="{{ delete_message | default('', true) | e }}"
         data-categorize-status="{{ categorize_status | default('', true) }}"
-        data-categorize-message="{{ categorize_message | default('', true) | e }}">
+        data-categorize-message="{{ categorize_message | default('', true) | e }}"
+        data-clear-status="{{ clear_status | default('', true) }}"
+        data-clear-message="{{ clear_message | default('', true) | e }}">
     </div>
 
     <div class="section">
         <div class="sync-section">
             <div>
                 <h2>Data Maintenance</h2>
-                <p class="description">Trigger a manual sync to fetch new emails or rebuild stored categories with the
-                    controls on the right.</p>
+                <p class="description">Trigger a manual sync to fetch new emails, rebuild stored categories, or clear
+                    all database data with the controls on the right.</p>
+                <div style="margin-top: 8px; font-weight: 600; color: #1e40af;">
+                    Total emails in database: <span id="total-email-count">{{ total_email_count }}</span>
+                </div>
             </div>
             <div class="sync-actions">
                 <form method="post" action="/sync" data-spinner data-scroll-restore
@@ -760,6 +765,12 @@
                     data-spinner-label="Regenerating categories&hellip;">
                     <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
                     <button type="submit" class="button button-primary">Rebuild Categories</button>
+                </form>
+                <form method="post" action="/clear-database" data-spinner data-scroll-restore
+                    data-spinner-label="Clearing database&hellip;"
+                    data-confirm="This will permanently delete all emails, insights, drafts, and follow-ups. Are you sure?">
+                    <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
+                    <button type="submit" class="button button-danger">Clear Database</button>
                 </form>
             </div>
         </div>

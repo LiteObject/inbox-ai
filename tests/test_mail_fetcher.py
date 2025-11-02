@@ -131,11 +131,12 @@ class RecordingRepository:
 class StubParser:
     """Parser returning fixed envelopes without inspecting payload."""
 
-    def parse(self, uid: int, payload: bytes) -> EmailEnvelope:
+    def parse(self, uid: int, payload: bytes, mailbox: str) -> EmailEnvelope:
         body = EmailBody(text="stub", html=None)
         del payload
         return EmailEnvelope(
             uid=uid,
+            mailbox=mailbox,
             message_id=f"<{uid}@example.com>",
             thread_id=None,
             subject=f"Message {uid}",

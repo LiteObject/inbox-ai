@@ -14,11 +14,12 @@ from typing import Any
 from urllib.parse import parse_qsl, urlencode
 
 from fastapi import Depends, FastAPI, Form, Request, status as http_status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
 from dotenv import dotenv_values
 from starlette.datastructures import UploadFile
+from starlette.responses import Response
 from starlette.templating import Jinja2Templates
 
 from inbox_ai.core import AppSettings, load_app_settings
@@ -34,6 +35,7 @@ from inbox_ai.intelligence import (
     DraftingService,
     FollowUpPlannerService,
     KeywordCategoryService,
+    LLMCategoryService,
     OllamaClient,
     SummarizationService,
 )
@@ -140,6 +142,14 @@ class DeleteOutcome:
 @dataclass(frozen=True)
 class CategoryRefreshOutcome:
     """Result of a recategorisation request."""
+
+    success: bool
+    message: str
+
+
+@dataclass(frozen=True)
+class ClearDatabaseOutcome:
+    """Result of a database clear request."""
 
     success: bool
     message: str
@@ -292,6 +302,9 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         follow_up_lookup = repository.fetch_follow_ups_for_uids(insight_uids)
         category_options = repository.list_categories()
         env_file = _resolve_env_file()
+        # Add total email count for Data Maintenance panel
+        cur = repository._connection.execute("SELECT COUNT(*) FROM emails")
+        total_email_count = cur.fetchone()[0]
         return templates.TemplateResponse(
             request,
             "index.html",
@@ -323,6 +336,9 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                 "delete_message": request.query_params.get("delete_message"),
                 "categorize_status": request.query_params.get("categorize_status"),
                 "categorize_message": request.query_params.get("categorize_message"),
+                "clear_status": request.query_params.get("clear_status"),
+                "clear_message": request.query_params.get("clear_message"),
+                "total_email_count": total_email_count,
             },
         )
 
@@ -419,16 +435,43 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         )
 
     @app.post("/sync")
-    async def trigger_sync(request: Request) -> RedirectResponse:
+    async def trigger_sync(request: Request) -> Response:
         form = await request.form()
         redirect_raw = _coerce_form_value(form.get("redirect_to"))
         redirect_target = _sanitize_redirect(redirect_raw or None) or "/"
 
-        outcome = await asyncio.to_thread(_run_sync_cycle, app_settings)
-        status_value = "ok" if outcome.success else "error"
-        target = _append_query_param(redirect_target, "sync_status", status_value)
-        target = _append_query_param(target, "sync_message", outcome.message)
-        return RedirectResponse(url=target, status_code=http_status.HTTP_303_SEE_OTHER)
+        # Check credentials before starting sync
+        if not app_settings.imap.username or not app_settings.imap.app_password:
+            target = _append_query_param(redirect_target, "sync_status", "error")
+            target = _append_query_param(
+                target,
+                "sync_message",
+                "Configure IMAP username and app password before syncing.",
+            )
+            return RedirectResponse(
+                url=target, status_code=http_status.HTTP_303_SEE_OTHER
+            )
+
+        queue: asyncio.Queue[str] = asyncio.Queue()
+
+        async def run_sync():
+            outcome = await asyncio.to_thread(_run_sync_cycle, app_settings, queue)
+            status_value = "ok" if outcome.success else "error"
+            target = _append_query_param(redirect_target, "sync_status", status_value)
+            target = _append_query_param(target, "sync_message", outcome.message)
+            queue.put_nowait(f"redirect:{target}")
+
+        asyncio.create_task(run_sync())
+
+        async def generate():
+            while True:
+                message = await queue.get()
+                if message.startswith("redirect:"):
+                    yield f"data: {message}\n\n"
+                    break
+                yield f"data: {message}\n\n"
+
+        return StreamingResponse(generate(), media_type="text/event-stream")
 
     @app.post("/categories/regenerate")
     async def regenerate_categories(request: Request) -> RedirectResponse:
@@ -440,6 +483,18 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         status_value = "ok" if outcome.success else "error"
         target = _append_query_param(redirect_target, "categorize_status", status_value)
         target = _append_query_param(target, "categorize_message", outcome.message)
+        return RedirectResponse(url=target, status_code=http_status.HTTP_303_SEE_OTHER)
+
+    @app.post("/clear-database")
+    async def clear_database(request: Request) -> RedirectResponse:
+        form = await request.form()
+        redirect_raw = _coerce_form_value(form.get("redirect_to"))
+        redirect_target = _sanitize_redirect(redirect_raw or None) or "/"
+
+        outcome = await asyncio.to_thread(_clear_database, app_settings)
+        status_value = "ok" if outcome.success else "error"
+        target = _append_query_param(redirect_target, "clear_status", status_value)
+        target = _append_query_param(target, "clear_message", outcome.message)
         return RedirectResponse(url=target, status_code=http_status.HTTP_303_SEE_OTHER)
 
     @app.post("/emails/{email_uid}/delete")
@@ -661,13 +716,18 @@ def _build_redirect_target(
     return f"{base}?{urlencode(filtered)}"
 
 
-def _run_sync_cycle(settings: AppSettings) -> SyncOutcome:
+def _run_sync_cycle(
+    settings: AppSettings, progress_queue: asyncio.Queue[str] | None = None
+) -> SyncOutcome:
     missing_credentials = not settings.imap.username or not settings.imap.app_password
     if missing_credentials:
         return SyncOutcome(
             success=False,
             message="Configure IMAP username and app password before syncing.",
         )
+
+    if progress_queue:
+        progress_queue.put_nowait("Connecting to mailbox...")
 
     email_parser = EmailParser()
     llm_client = (
@@ -682,40 +742,62 @@ def _run_sync_cycle(settings: AppSettings) -> SyncOutcome:
     insight_service = SummarizationService(
         llm_client, fallback_enabled=settings.llm.fallback_enabled
     )
-    category_service = KeywordCategoryService()
+    category_service = (
+        LLMCategoryService(llm_client) if llm_client else KeywordCategoryService()
+    )
 
     try:
-        with (
-            ImapClient(settings.imap) as mailbox,
-            SqliteEmailRepository(settings.storage) as repository,
-        ):
-            fetcher = MailFetcher(
-                mailbox=mailbox,
-                repository=repository,
-                parser=email_parser,
-                batch_size=settings.sync.batch_size,
-                max_messages=settings.sync.max_messages,
-                insight_service=insight_service,
-                drafting_service=drafting_service,
-                follow_up_planner=follow_up_planner,
-                category_service=category_service,
-            )
-            result = fetcher.run()
+        processed_total = 0
+        for mailbox_name in settings.imap.mailboxes:
+            if progress_queue:
+                progress_queue.put_nowait(f"Processing mailbox: {mailbox_name}")
+            with (
+                ImapClient(settings.imap, mailbox_name) as mailbox,
+                SqliteEmailRepository(settings.storage) as repository,
+            ):
+                checkpoint = repository.get_checkpoint(mailbox_name)
+                last_uid = checkpoint.last_uid if checkpoint else None
+                fetcher = MailFetcher(
+                    mailbox=mailbox,
+                    repository=repository,
+                    parser=email_parser,
+                    batch_size=settings.sync.batch_size,
+                    max_messages=settings.sync.max_messages,
+                    insight_service=insight_service,
+                    drafting_service=drafting_service,
+                    follow_up_planner=follow_up_planner,
+                    category_service=category_service,
+                    progress_callback=(
+                        progress_queue.put_nowait if progress_queue else None
+                    ),
+                    user_email=settings.imap.username,
+                )
+                result = fetcher.run()
+                processed_total += result.processed
+        if progress_queue:
+            progress_queue.put_nowait(f"Processed {processed_total} messages")
     except ImapError as exc:
+        if progress_queue:
+            progress_queue.put_nowait(f"Error: {exc}")
         return SyncOutcome(success=False, message=f"Sync failed: {exc}")
     except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-exception-caught
         LOGGER.exception("Unexpected error during sync: %s", exc)
+        if progress_queue:
+            progress_queue.put_nowait(f"Error: {exc}")
         return SyncOutcome(success=False, message=f"Sync failed: {exc}")
 
-    processed = result.processed
-    if processed == 0:
+    if processed_total == 0:
+        if progress_queue:
+            progress_queue.put_nowait("Sync complete. No new messages processed.")
         return SyncOutcome(
             success=True,
             message="Sync complete. No new messages processed.",
         )
+    if progress_queue:
+        progress_queue.put_nowait("Sync complete")
     return SyncOutcome(
         success=True,
-        message=f"Sync complete. Processed {processed} message(s).",
+        message=f"Sync complete. Processed {processed_total} message(s).",
     )
 
 
@@ -766,6 +848,22 @@ def _regenerate_categories(settings: AppSettings) -> CategoryRefreshOutcome:
         )
 
 
+def _clear_database(settings: AppSettings) -> ClearDatabaseOutcome:
+    try:
+        with SqliteEmailRepository(settings.storage) as repository:
+            repository.clear_all_tables()
+        return ClearDatabaseOutcome(
+            success=True,
+            message="Database cleared successfully.",
+        )
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        LOGGER.exception("Database clear failed: %s", exc)
+        return ClearDatabaseOutcome(
+            success=False,
+            message="Database clear failed. Check server logs for details.",
+        )
+
+
 def _delete_email(settings: AppSettings, uid: int) -> DeleteOutcome:
     missing_credentials = not settings.imap.username or not settings.imap.app_password
     if missing_credentials:
@@ -775,8 +873,16 @@ def _delete_email(settings: AppSettings, uid: int) -> DeleteOutcome:
         )
 
     try:
+        with SqliteEmailRepository(settings.storage) as repository:
+            email = repository.fetch_email(uid)
+            if email is None:
+                return DeleteOutcome(
+                    success=True, message=f"Message UID {uid} not found."
+                )
+            mailbox_name = email.mailbox
+
         with (
-            ImapClient(settings.imap) as mailbox,
+            ImapClient(settings.imap, mailbox_name) as mailbox,
             SqliteEmailRepository(settings.storage) as repository,
         ):
             mailbox.move_to_trash(uid, settings.imap.trash_folder)
@@ -808,32 +914,50 @@ def _delete_emails(settings: AppSettings, uids: Sequence[int]) -> DeleteOutcome:
         )
 
     try:
-        with (
-            ImapClient(settings.imap) as mailbox,
-            SqliteEmailRepository(settings.storage) as repository,
-        ):
-            successes = 0
-            failures: list[tuple[int, str]] = []
+        with SqliteEmailRepository(settings.storage) as repository:
+            emails = []
             for uid in unique_uids:
-                try:
-                    mailbox.move_to_trash(uid, settings.imap.trash_folder)
-                except ImapError as exc:
-                    LOGGER.warning("Mailbox delete failed for UID %s: %s", uid, exc)
+                email = repository.fetch_email(uid)
+                if email:
+                    emails.append(email)
+            if not emails:
+                return DeleteOutcome(success=True, message="No emails found to delete.")
+
+            # Group by mailbox
+            by_mailbox = {}
+            for email in emails:
+                by_mailbox.setdefault(email.mailbox, []).append(email.uid)
+
+        successes = 0
+        failures: list[tuple[int, str]] = []
+        for mailbox_name, mailbox_uids in by_mailbox.items():
+            try:
+                with ImapClient(settings.imap, mailbox_name) as mailbox:
+                    for uid in mailbox_uids:
+                        mailbox.move_to_trash(uid, settings.imap.trash_folder)
+            except ImapError as exc:
+                LOGGER.warning(
+                    "Mailbox delete failed for mailbox %s: %s", mailbox_name, exc
+                )
+                for uid in mailbox_uids:
                     failures.append((uid, str(exc)))
-                    continue
-                try:
-                    repository.delete_email(uid)
-                except (
-                    Exception
-                ) as exc:  # noqa: BLE001  # pylint: disable=broad-exception-caught
-                    LOGGER.warning(
-                        "Repository cleanup failed for UID %s: %s",
-                        uid,
-                        exc,
-                    )
-                    failures.append((uid, str(exc)))
-                    continue
-                successes += 1
+                continue
+
+            with SqliteEmailRepository(settings.storage) as repository:
+                for uid in mailbox_uids:
+                    try:
+                        repository.delete_email(uid)
+                    except (
+                        Exception
+                    ) as exc:  # noqa: BLE001  # pylint: disable=broad-exception-caught
+                        LOGGER.warning(
+                            "Repository cleanup failed for UID %s: %s",
+                            uid,
+                            exc,
+                        )
+                        failures.append((uid, str(exc)))
+                        continue
+                    successes += 1
     except ImapError as exc:
         return DeleteOutcome(success=False, message=f"Delete failed: {exc}")
     except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-exception-caught
