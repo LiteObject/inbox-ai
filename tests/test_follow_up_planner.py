@@ -12,6 +12,7 @@ from inbox_ai.intelligence.follow_up import FollowUpPlannerService
 def _email() -> EmailEnvelope:
     return EmailEnvelope(
         uid=202,
+        mailbox="INBOX",
         message_id="<202@example.com>",
         thread_id=None,
         subject="Quarterly planning",

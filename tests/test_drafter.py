@@ -37,6 +37,7 @@ class FailingLLM:
 def _sample_email() -> EmailEnvelope:
     return EmailEnvelope(
         uid=101,
+        mailbox="INBOX",
         message_id="<101@example.com>",
         thread_id=None,
         subject="Project update",

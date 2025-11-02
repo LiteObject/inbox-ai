@@ -16,10 +16,10 @@ def test_fetch_since_returns_message_chunks() -> None:
         port=993,
         username="user",
         app_password="password",
-        mailbox="INBOX",
+        mailboxes=["INBOX"],
         use_ssl=False,
     )
-    client = ImapClient(settings)
+    client = ImapClient(settings, "INBOX")
 
     mock_connection = MagicMock()
 

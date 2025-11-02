@@ -34,6 +34,7 @@ class StubLLM:
 def _envelope() -> EmailEnvelope:
     return EmailEnvelope(
         uid=1,
+        mailbox="INBOX",
         message_id="<1@example.com>",
         thread_id=None,
         subject="Quarterly update",

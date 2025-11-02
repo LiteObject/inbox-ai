@@ -13,7 +13,7 @@ def test_email_parser_extracts_headers_and_bodies() -> None:
     payload = FIXTURE_PATH.read_bytes()
     parser = EmailParser()
 
-    envelope = parser.parse(uid=101, payload=payload)
+    envelope = parser.parse(uid=101, payload=payload, mailbox="INBOX")
 
     assert envelope.uid == 101
     assert envelope.subject == "Test Email"

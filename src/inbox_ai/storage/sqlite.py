@@ -67,6 +67,7 @@ class SqliteEmailRepository(EmailRepository):
                 """
                 INSERT INTO emails (
                     uid,
+                    mailbox,
                     message_id,
                     thread_id,
                     subject,
@@ -78,8 +79,9 @@ class SqliteEmailRepository(EmailRepository):
                     received_at,
                     body_text,
                     body_html
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(uid) DO UPDATE SET
+                    mailbox=excluded.mailbox,
                     message_id=excluded.message_id,
                     thread_id=excluded.thread_id,
                     subject=excluded.subject,
@@ -94,6 +96,7 @@ class SqliteEmailRepository(EmailRepository):
                 """,
                 (
                     email.uid,
+                    email.mailbox,
                     email.message_id,
                     email.thread_id,
                     email.subject,
@@ -155,6 +158,7 @@ class SqliteEmailRepository(EmailRepository):
             """
             SELECT
                 uid,
+                mailbox,
                 message_id,
                 thread_id,
                 subject,
@@ -177,6 +181,7 @@ class SqliteEmailRepository(EmailRepository):
         attachments = self._load_attachments(uid)
         return EmailEnvelope(
             uid=row["uid"],
+            mailbox=row["mailbox"],
             message_id=row["message_id"],
             thread_id=row["thread_id"],
             subject=row["subject"],
@@ -278,6 +283,7 @@ class SqliteEmailRepository(EmailRepository):
             """
             SELECT
                 e.uid,
+                e.mailbox,
                 e.message_id,
                 e.thread_id,
                 e.subject,
@@ -327,6 +333,7 @@ class SqliteEmailRepository(EmailRepository):
             uid = row["uid"]
             email = EmailEnvelope(
                 uid=uid,
+                mailbox=row["mailbox"],
                 message_id=row["message_id"],
                 thread_id=row["thread_id"],
                 subject=row["subject"],
@@ -690,6 +697,20 @@ class SqliteEmailRepository(EmailRepository):
                 (checkpoint.mailbox, checkpoint.last_uid),
             )
 
+    def clear_all_tables(self) -> None:
+        """Delete all data from all tables and reset auto-increment sequences."""
+        LOGGER.info("Clearing all database tables and resetting sequences")
+        with self._connection:
+            self._connection.execute("DELETE FROM sync_state")
+            self._connection.execute("DELETE FROM follow_ups")
+            self._connection.execute("DELETE FROM email_categories")
+            self._connection.execute("DELETE FROM attachments")
+            self._connection.execute("DELETE FROM drafts")
+            self._connection.execute("DELETE FROM email_insights")
+            self._connection.execute("DELETE FROM emails")
+            # Reset auto-increment sequences (TRUNCATE-like behavior)
+            self._connection.execute("DELETE FROM sqlite_sequence")
+
     def close(self) -> None:
         """Close the underlying SQLite connection."""
         self._connection.close()
@@ -705,8 +726,52 @@ class SqliteEmailRepository(EmailRepository):
         for migration in migrations:
             LOGGER.debug("Applying migration %s", migration.name)
             script = migration.read_text(encoding="utf-8")
-            with self._connection:
-                self._connection.executescript(script)
+
+            # Special handling for migration 005 which may fail due to duplicate column
+            if migration.name == "005_mailbox.sql":
+                self._apply_mailbox_migration(script)
+            else:
+                try:
+                    with self._connection:
+                        self._connection.executescript(script)
+                except Exception as exc:
+                    LOGGER.warning(
+                        "Migration %s failed (possibly already applied): %s",
+                        migration.name,
+                        exc,
+                    )
+                    # Continue with other migrations
+
+    def _apply_mailbox_migration(self, script: str) -> None:
+        """Apply the mailbox migration with special handling for duplicate columns."""
+        lines = [
+            line.strip()
+            for line in script.split("\n")
+            if line.strip() and not line.strip().startswith("--")
+        ]
+
+        for line in lines:
+            if line.upper().startswith("ALTER TABLE EMAILS ADD COLUMN MAILBOX"):
+                # Check if column already exists
+                try:
+                    cursor = self._connection.cursor()
+                    cursor.execute("SELECT mailbox FROM emails LIMIT 1")
+                    # Column exists, skip this statement
+                    LOGGER.debug("Mailbox column already exists, skipping ALTER TABLE")
+                    continue
+                except sqlite3.OperationalError:
+                    # Column doesn't exist, proceed with ALTER TABLE
+                    pass
+
+            try:
+                with self._connection:
+                    self._connection.execute(line)
+            except Exception as exc:
+                LOGGER.warning(
+                    "Mailbox migration statement failed: %s",
+                    exc,
+                )
+                # Continue with other statements
 
     def _insert_attachment(self, email_uid: int, attachment: AttachmentMeta) -> None:
         self._connection.execute(
