@@ -177,7 +177,8 @@
     <h1>Configuration</h1>
     <p class="description">Adjust IMAP, storage, and intelligence settings. Changes are written to your
         <code>.env</code>
-        file and applied after the server restarts.</p>
+        file and applied after the server restarts.
+    </p>
 
     <div class="section">
         {% if config_status == "saved" %}
@@ -204,6 +205,9 @@
                             </option>
                             {% endfor %}
                         </select>
+                        {% elif field.input_type == "textarea" %}
+                        <textarea id="{{ field.key }}" name="{{ field.key }}"
+                            rows="{{ field.textarea_rows or 6 }}">{{ config_values.get(field.key, '') }}</textarea>
                         {% else %}
                         <input type="{{ field.input_type }}" id="{{ field.key }}" name="{{ field.key }}"
                             value="{{ config_values.get(field.key, '') }}" />
