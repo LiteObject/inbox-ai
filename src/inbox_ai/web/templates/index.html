@@ -67,6 +67,10 @@
             margin: 0;
         }
 
+        a.button {
+            text-decoration: none;
+        }
+
         .button-primary {
             background: #2563eb;
             color: #ffffff;
@@ -727,7 +731,13 @@
 </head>
 
 <body>
-    <h1>Inbox AI Dashboard</h1>
+    <header style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+        <h1 style="margin: 0;">Inbox AI Dashboard</h1>
+        <a href="/settings" title="Open configuration"
+            style="color: #1e40af; text-decoration: none; font-size: 1.5rem; line-height: 1;">
+            &#9881;
+        </a>
+    </header>
 
     <div id="sync-spinner" class="spinner-overlay" hidden>
         <div class="spinner" role="status" aria-live="assertive"></div>
@@ -775,52 +785,6 @@
             </div>
         </div>
     </div>
-
-    <div class="section">
-        <details class="config-details">
-            <summary>Configuration</summary>
-            {% if config_status == "saved" %}
-            <div class="flash success">Configuration saved. Restart the server to apply changes.</div>
-            {% elif config_status == "error" %}
-            <div class="flash error">Unable to update {{ config_env_path }}. Check file permissions.</div>
-            {% endif %}
-            <form class="config-form" method="post" action="/config" data-scroll-restore>
-                <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-                {% for section in config_sections %}
-                <fieldset class="config-group">
-                    <legend>{{ section.title }}</legend>
-                    <div class="config-grid">
-                        {% for field in section.fields %}
-                        <label class="config-label" for="{{ field.key }}">
-                            <span>{{ field.label }}</span>
-                            {% if field.input_type == "select" %}
-                            <select id="{{ field.key }}" name="{{ field.key }}">
-                                {% for option in field.options %}
-                                <option value="{{ option }}" {% if config_values.get(field.key, '' )==option
-                                    %}selected{% endif %}>{{ option | capitalize }}</option>
-                                {% endfor %}
-                            </select>
-                            {% else %}
-                            <input type="{{ field.input_type }}" id="{{ field.key }}" name="{{ field.key }}"
-                                value="{{ config_values.get(field.key, '') }}" />
-                            {% endif %}
-                            {% if field.description %}
-                            <span class="config-help">{{ field.description }}</span>
-                            {% endif %}
-                        </label>
-                        {% endfor %}
-                    </div>
-                </fieldset>
-                {% endfor %}
-                <div class="config-actions">
-                    <button type="submit">Save Changes</button>
-                    <span class="note">Restart the server after saving to ensure new values are used.</span>
-                </div>
-            </form>
-            <div class="config-meta">Editing <code>{{ config_env_path }}</code></div>
-        </details>
-    </div>
-
     <div class="section">
         <h2>Filters</h2>
         <form class="filter-form" method="get" data-scroll-restore>
