@@ -18,6 +18,7 @@ from inbox_ai.core.models import (
 from inbox_ai.storage import SqliteEmailRepository
 from inbox_ai.web import create_app
 from inbox_ai.web.app import CONFIG_FIELD_KEYS
+from inbox_ai.web.security import CSRF_COOKIE_NAME, CSRF_FIELD_NAME
 
 
 def _seed_data(repository: SqliteEmailRepository) -> int:
@@ -116,9 +117,17 @@ def test_follow_up_actions_and_filters(tmp_path) -> None:
     app = create_app(app_settings)
     client = TestClient(app)
 
+    client.get("/")
+    csrf_token = client.cookies.get(CSRF_COOKIE_NAME)
+    assert csrf_token is not None
+
     response = client.post(
         f"/follow-ups/{follow_up_id}/status",
-        data={"status": "done", "redirect_to": "/?follow_status=done"},
+        data={
+            "status": "done",
+            "redirect_to": "/?follow_status=done",
+            CSRF_FIELD_NAME: csrf_token,
+        },
         follow_redirects=False,
     )
     assert response.status_code == 303
@@ -150,9 +159,13 @@ def test_manual_sync_endpoint_handles_missing_credentials(tmp_path) -> None:
     app = create_app(app_settings)
     client = TestClient(app)
 
+    client.get("/")
+    csrf_token = client.cookies.get(CSRF_COOKIE_NAME)
+    assert csrf_token is not None
+
     response = client.post(
         "/sync",
-        data={"redirect_to": "/"},
+        data={"redirect_to": "/", CSRF_FIELD_NAME: csrf_token},
         follow_redirects=False,
     )
     assert response.status_code == 303
@@ -187,6 +200,8 @@ def test_config_editor_updates_env_file(tmp_path) -> None:
         get_response = client.get("/")
         assert get_response.status_code == 200
         assert "Configuration" in get_response.text
+        csrf_token = client.cookies.get(CSRF_COOKIE_NAME)
+        assert csrf_token is not None
 
         payload = {
             "redirect_to": "/",
@@ -211,6 +226,7 @@ def test_config_editor_updates_env_file(tmp_path) -> None:
             "INBOX_AI_FOLLOW_UP__PRIORITY_DUE_DAYS": "1",
             "INBOX_AI_FOLLOW_UP__PRIORITY_THRESHOLD": "6",
         }
+        payload[CSRF_FIELD_NAME] = csrf_token
 
         response = client.post("/config", data=payload, follow_redirects=False)
         assert response.status_code == 303
