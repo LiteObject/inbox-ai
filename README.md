@@ -105,4 +105,7 @@ ruff check src && pylint src/inbox_ai && mypy src/inbox_ai && pytest
 - Follow-up cards mirror repository data with inline status toggles, while draft content now lives
    inside each insight so context stays in one place.
 
+## License
+
+This project is licensed under the [Creative Commons Attribution-NonCommercial 4.0 International License](LICENSE). You are free to share and adapt the material for non-commercial purposes, provided you give appropriate credit.
 
