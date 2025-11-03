@@ -412,6 +412,96 @@
             line-height: 1.45;
         }
 
+        .draft-preview form {
+            margin: 0;
+        }
+
+        .draft-editor {
+            width: 100%;
+            min-height: 140px;
+            padding: 10px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-family: inherit;
+            font-size: 0.95rem;
+            line-height: 1.4;
+            resize: vertical;
+            box-sizing: border-box;
+            max-width: 100%;
+        }
+
+        .draft-editor:focus {
+            outline: 2px solid #2563eb;
+            outline-offset: 2px;
+        }
+
+        .draft-actions {
+            margin-top: 10px;
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .draft-actions button {
+            margin: 0;
+        }
+
+        .draft-action-button {
+            min-width: 0;
+            height: 34px;
+            border: none;
+            border-radius: 18px;
+            padding: 0 14px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.56rem;
+            font-weight: 600;
+            cursor: pointer;
+            color: #ffffff;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            transition: background 0.15s ease-in-out;
+        }
+
+        .draft-action-button .label {
+            pointer-events: none;
+        }
+
+        .draft-action-button.save {
+            background: #2563eb;
+        }
+
+        .draft-action-button.save:hover,
+        .draft-action-button.save:focus {
+            background: #1e3a8a;
+        }
+
+        .draft-action-button.regenerate {
+            background: #6b7280;
+        }
+
+        .draft-action-button.regenerate:hover,
+        .draft-action-button.regenerate:focus {
+            background: #4b5563;
+        }
+
+        .draft-action-button.delete {
+            background: #dc2626;
+        }
+
+        .draft-action-button.delete:hover,
+        .draft-action-button.delete:focus {
+            background: #b91c1c;
+        }
+
+        .draft-action-button:focus {
+            outline: 2px solid rgba(59, 130, 246, 0.55);
+            outline-offset: 2px;
+        }
+
         .draft-meta {
             margin-top: 10px;
             font-size: 0.82rem;
@@ -773,6 +863,8 @@
         data-delete-message="{{ delete_message | default('', true) | e }}"
         data-categorize-status="{{ categorize_status | default('', true) }}"
         data-categorize-message="{{ categorize_message | default('', true) | e }}"
+        data-draft-status="{{ draft_status | default('', true) }}"
+        data-draft-message="{{ draft_message | default('', true) | e }}"
         data-clear-status="{{ clear_status | default('', true) }}"
         data-clear-message="{{ clear_message | default('', true) | e }}">
     </div>
@@ -914,7 +1006,41 @@
                                 {% if item.draft %}
                                 <div class="draft-preview">
                                     <div class="draft-heading">Latest Draft</div>
-                                    <div class="draft-body">{{ item.draft.body }}</div>
+                                    <form method="post" action="/emails/{{ item.uid }}/draft" data-scroll-restore
+                                        data-spinner data-spinner-label="Saving draft&hellip;">
+                                        <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
+                                        <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
+                                        {% if item.draft.id is not none %}
+                                        <input type="hidden" name="draft_id" value="{{ item.draft.id }}" />
+                                        {% endif %}
+                                        <input type="hidden" name="provider" value="{{ manual_draft_provider }}" />
+                                        <textarea class="draft-editor" id="draft-body-{{ item.uid }}" name="body"
+                                            aria-label="Edit draft for message {{ item.uid }}">{{ item.draft.body | default('', true) | e }}</textarea>
+                                        <div class="draft-actions">
+                                            <button type="submit" class="draft-action-button save" title="Save draft"
+                                                formaction="/emails/{{ item.uid }}/draft"
+                                                data-spinner-label="Saving draft&hellip;">
+                                                <span aria-hidden="true" class="label">Save</span>
+                                                <span class="visually-hidden">Save draft</span>
+                                            </button>
+                                            <button type="submit" class="draft-action-button regenerate"
+                                                title="Regenerate draft"
+                                                formaction="/emails/{{ item.uid }}/draft/regenerate"
+                                                data-spinner-label="Regenerating draft&hellip;">
+                                                <span aria-hidden="true" class="label">Regenerate</span>
+                                                <span class="visually-hidden">Regenerate draft</span>
+                                            </button>
+                                            {% if item.draft.id is not none %}
+                                            <button type="submit" class="draft-action-button delete"
+                                                title="Delete draft" formaction="/emails/{{ item.uid }}/draft/delete"
+                                                data-spinner-label="Deleting draft&hellip;"
+                                                data-confirm="Delete this draft? This cannot be undone.">
+                                                <span aria-hidden="true" class="label">Delete</span>
+                                                <span class="visually-hidden">Delete draft</span>
+                                            </button>
+                                            {% endif %}
+                                        </div>
+                                    </form>
                                     <div class="draft-meta">
                                         <span class="meta">Provider: {{ item.draft.provider }}</span>
                                         {% if item.draft.generatedAtDisplay %}

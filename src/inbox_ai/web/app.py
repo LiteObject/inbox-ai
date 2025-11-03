@@ -14,6 +14,8 @@ from typing import Any
 
 from urllib.parse import parse_qsl, urlencode
 
+from datetime import UTC, datetime
+
 from fastapi import Depends, FastAPI, Form, Request, status as http_status
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.routing import APIRoute
@@ -34,6 +36,7 @@ from inbox_ai.core.models import (
 )
 from inbox_ai.ingestion import EmailParser, MailFetcher
 from inbox_ai.intelligence import (
+    DraftingError,
     DraftingService,
     FollowUpPlannerService,
     KeywordCategoryService,
@@ -89,9 +92,14 @@ _STATUS_QUERY_KEYS: tuple[str, ...] = (
     "categorize_status",
     "categorize_message",
     "config_status",
+    "draft_status",
+    "draft_message",
     "clear_status",
     "clear_message",
 )
+
+
+MANUAL_DRAFT_PROVIDER = "manual-edit"
 
 
 LOGGER = logging.getLogger(__name__)
@@ -141,6 +149,14 @@ class SyncOutcome:
 @dataclass(frozen=True)
 class DeleteOutcome:
     """Result of a mailbox deletion request."""
+
+    success: bool
+    message: str
+
+
+@dataclass(frozen=True)
+class DraftRegenerationOutcome:
+    """Result of regenerating a draft using the drafting service."""
 
     success: bool
     message: str
@@ -357,11 +373,14 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             "delete_message": request.query_params.get("delete_message"),
             "categorize_status": request.query_params.get("categorize_status"),
             "categorize_message": request.query_params.get("categorize_message"),
+            "draft_status": request.query_params.get("draft_status"),
+            "draft_message": request.query_params.get("draft_message"),
             "clear_status": request.query_params.get("clear_status"),
             "clear_message": request.query_params.get("clear_message"),
             "total_email_count": total_email_count,
             "csrf_token": csrf_token,
             "csrf_field_name": csrf.field_name,
+            "manual_draft_provider": MANUAL_DRAFT_PROVIDER,
         }
         response = templates.TemplateResponse("index.html", context)
         csrf.set_cookie(response, csrf_token, secure=request.url.scheme == "https")
@@ -610,6 +629,150 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         status_value = "ok" if outcome.success else "error"
         target = _append_query_param(redirect_target, "delete_status", status_value)
         target = _append_query_param(target, "delete_message", outcome.message)
+        return RedirectResponse(url=target, status_code=http_status.HTTP_303_SEE_OTHER)
+
+    @app.post("/emails/{email_uid}/draft")
+    async def update_draft(
+        email_uid: int,
+        request: Request,
+        repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
+    ) -> RedirectResponse:
+        form = await request.form()
+        raw_token = form.get(csrf.field_name)
+        token = raw_token if isinstance(raw_token, str) else None
+        csrf.validate(request, token)
+
+        redirect_raw = _coerce_form_value(form.get("redirect_to"))
+        redirect_target = _sanitize_redirect(redirect_raw or None) or "/"
+
+        body_raw = _coerce_form_value(form.get("body"))
+        if body_raw.strip() == "":
+            failure_target = _append_query_param(
+                redirect_target, "draft_status", "error"
+            )
+            failure_target = _append_query_param(
+                failure_target, "draft_message", "Draft body cannot be empty."
+            )
+            return RedirectResponse(
+                url=failure_target, status_code=http_status.HTTP_303_SEE_OTHER
+            )
+
+        draft_id_raw = _coerce_form_value(form.get("draft_id")).strip()
+        provider_raw = _coerce_form_value(form.get("provider"))
+        provider = provider_raw.strip() or MANUAL_DRAFT_PROVIDER
+        generated_at = datetime.now(UTC)
+
+        draft_id: int | None = None
+        if draft_id_raw:
+            try:
+                draft_id = int(draft_id_raw)
+            except ValueError:
+                draft_id = None
+
+        updated = False
+        if draft_id is not None:
+            updated_record = repository.update_draft_body(
+                draft_id,
+                email_uid,
+                body=body_raw,
+                provider=provider,
+                generated_at=generated_at,
+                confidence=None,
+                used_fallback=False,
+            )
+            updated = updated_record is not None
+
+        if not updated:
+            repository.persist_draft(
+                DraftRecord(
+                    id=None,
+                    email_uid=email_uid,
+                    body=body_raw,
+                    provider=provider,
+                    generated_at=generated_at,
+                    confidence=None,
+                    used_fallback=False,
+                )
+            )
+
+        success_target = _append_query_param(redirect_target, "draft_status", "ok")
+        success_target = _append_query_param(
+            success_target, "draft_message", "Draft updated successfully."
+        )
+        return RedirectResponse(
+            url=success_target, status_code=http_status.HTTP_303_SEE_OTHER
+        )
+
+    @app.post("/emails/{email_uid}/draft/regenerate")
+    async def regenerate_draft(
+        email_uid: int,
+        request: Request,
+    ) -> RedirectResponse:
+        form = await request.form()
+        raw_token = form.get(csrf.field_name)
+        token = raw_token if isinstance(raw_token, str) else None
+        csrf.validate(request, token)
+
+        redirect_raw = _coerce_form_value(form.get("redirect_to"))
+        redirect_target = _sanitize_redirect(redirect_raw or None) or "/"
+
+        draft_id_raw = _coerce_form_value(form.get("draft_id")).strip()
+        draft_id: int | None = None
+        if draft_id_raw:
+            try:
+                draft_id = int(draft_id_raw)
+            except ValueError:
+                draft_id = None
+
+        outcome = await asyncio.to_thread(
+            _regenerate_draft,
+            app_settings,
+            email_uid,
+            draft_id,
+        )
+        status_value = "ok" if outcome.success else "error"
+        target = _append_query_param(redirect_target, "draft_status", status_value)
+        target = _append_query_param(target, "draft_message", outcome.message)
+        return RedirectResponse(url=target, status_code=http_status.HTTP_303_SEE_OTHER)
+
+    @app.post("/emails/{email_uid}/draft/delete")
+    async def delete_draft(
+        email_uid: int,
+        request: Request,
+        repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
+    ) -> RedirectResponse:
+        form = await request.form()
+        raw_token = form.get(csrf.field_name)
+        token = raw_token if isinstance(raw_token, str) else None
+        csrf.validate(request, token)
+
+        redirect_raw = _coerce_form_value(form.get("redirect_to"))
+        redirect_target = _sanitize_redirect(redirect_raw or None) or "/"
+
+        draft_id_raw = _coerce_form_value(form.get("draft_id")).strip()
+        draft_id: int | None = None
+        if draft_id_raw:
+            try:
+                draft_id = int(draft_id_raw)
+            except ValueError:
+                draft_id = None
+
+        if draft_id is None:
+            failure_target = _append_query_param(
+                redirect_target, "draft_status", "error"
+            )
+            failure_target = _append_query_param(
+                failure_target, "draft_message", "Draft could not be deleted."
+            )
+            return RedirectResponse(
+                url=failure_target, status_code=http_status.HTTP_303_SEE_OTHER
+            )
+
+        deleted = repository.delete_draft(draft_id, email_uid)
+        status_key = "ok" if deleted else "error"
+        message = "Draft deleted." if deleted else "Draft could not be deleted."
+        target = _append_query_param(redirect_target, "draft_status", status_key)
+        target = _append_query_param(target, "draft_message", message)
         return RedirectResponse(url=target, status_code=http_status.HTTP_303_SEE_OTHER)
 
     @app.post("/follow-ups/{follow_up_id}/status")
@@ -977,6 +1140,75 @@ def _clear_database(settings: AppSettings) -> ClearDatabaseOutcome:
         return ClearDatabaseOutcome(
             success=False,
             message="Database clear failed. Check server logs for details.",
+        )
+
+
+def _regenerate_draft(
+    settings: AppSettings, email_uid: int, draft_id: int | None
+) -> DraftRegenerationOutcome:
+    try:
+        with SqliteEmailRepository(settings.storage) as repository:
+            email = repository.fetch_email(email_uid)
+            if email is None:
+                return DraftRegenerationOutcome(
+                    success=False,
+                    message="Draft could not be regenerated. Email data is missing.",
+                )
+
+            insight = repository.fetch_insight(email_uid)
+            if insight is None:
+                return DraftRegenerationOutcome(
+                    success=False,
+                    message="Draft could not be regenerated. Insight data is missing.",
+                )
+
+            llm_client = (
+                OllamaClient(settings.llm)
+                if settings.llm.base_url and settings.llm.model
+                else None
+            )
+            drafting_service = DraftingService(
+                llm_client,
+                fallback_enabled=settings.llm.fallback_enabled,
+            )
+
+            try:
+                generated = drafting_service.generate_draft(email, insight)
+            except DraftingError as exc:
+                LOGGER.warning(
+                    "Draft regeneration failed for UID %s: %s",
+                    email_uid,
+                    exc,
+                )
+                return DraftRegenerationOutcome(
+                    success=False,
+                    message="Draft could not be regenerated.",
+                )
+
+            persisted = False
+            if draft_id is not None:
+                updated = repository.update_draft_body(
+                    draft_id,
+                    email_uid,
+                    body=generated.body,
+                    provider=generated.provider,
+                    generated_at=generated.generated_at,
+                    confidence=generated.confidence,
+                    used_fallback=generated.used_fallback,
+                )
+                persisted = updated is not None
+
+            if not persisted:
+                repository.persist_draft(generated)
+
+        return DraftRegenerationOutcome(success=True, message="Draft regenerated.")
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-exception-caught
+        LOGGER.exception(
+            "Unexpected error regenerating draft for UID %s: %s", email_uid, exc
+        )
+        return DraftRegenerationOutcome(
+            success=False,
+            message="Draft could not be regenerated.",
         )
 
 

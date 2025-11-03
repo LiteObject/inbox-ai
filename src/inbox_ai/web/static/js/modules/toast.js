@@ -6,6 +6,8 @@ const DEFAULT_STATUS_KEYS = [
     "categorize_status",
     "categorize_message",
     "config_status",
+    "draft_status",
+    "draft_message",
     "config_message",
     "clear_status",
     "clear_message",
@@ -77,6 +79,7 @@ export class ToastManager {
             ["syncStatus", "syncMessage"],
             ["deleteStatus", "deleteMessage"],
             ["categorizeStatus", "categorizeMessage"],
+            ["draftStatus", "draftMessage"],
             ["configStatus", "configMessage"],
             ["clearStatus", "clearMessage"],
         ];
