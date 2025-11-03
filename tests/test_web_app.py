@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
 
-from inbox_ai.core.config import AppSettings, StorageSettings
+from inbox_ai.core.config import AppSettings, LlmSettings, StorageSettings
 from inbox_ai.core.models import (
     DraftRecord,
     EmailBody,
@@ -18,6 +18,7 @@ from inbox_ai.core.models import (
 from inbox_ai.storage import SqliteEmailRepository
 from inbox_ai.web import create_app
 from inbox_ai.web.app import CONFIG_FIELD_KEYS
+from inbox_ai.web.security import CSRF_COOKIE_NAME, CSRF_FIELD_NAME
 
 
 def _seed_data(repository: SqliteEmailRepository) -> int:
@@ -116,9 +117,17 @@ def test_follow_up_actions_and_filters(tmp_path) -> None:
     app = create_app(app_settings)
     client = TestClient(app)
 
+    client.get("/")
+    csrf_token = client.cookies.get(CSRF_COOKIE_NAME)
+    assert csrf_token is not None
+
     response = client.post(
         f"/follow-ups/{follow_up_id}/status",
-        data={"status": "done", "redirect_to": "/?follow_status=done"},
+        data={
+            "status": "done",
+            "redirect_to": "/?follow_status=done",
+            CSRF_FIELD_NAME: csrf_token,
+        },
         follow_redirects=False,
     )
     assert response.status_code == 303
@@ -150,9 +159,13 @@ def test_manual_sync_endpoint_handles_missing_credentials(tmp_path) -> None:
     app = create_app(app_settings)
     client = TestClient(app)
 
+    client.get("/")
+    csrf_token = client.cookies.get(CSRF_COOKIE_NAME)
+    assert csrf_token is not None
+
     response = client.post(
         "/sync",
-        data={"redirect_to": "/"},
+        data={"redirect_to": "/", CSRF_FIELD_NAME: csrf_token},
         follow_redirects=False,
     )
     assert response.status_code == 303
@@ -162,6 +175,135 @@ def test_manual_sync_endpoint_handles_missing_credentials(tmp_path) -> None:
     html_response = client.get(location)
     assert html_response.status_code == 200
     assert "Configure IMAP username" in html_response.text
+
+
+def test_dashboard_accepts_manual_draft_edits(tmp_path) -> None:
+    db_path = tmp_path / "web_draft_edit.db"
+    settings = StorageSettings(db_path=db_path)
+    repository = SqliteEmailRepository(settings)
+    _seed_data(repository)
+    drafts = repository.list_recent_drafts(limit=1)
+    assert drafts
+    draft = drafts[0]
+    assert draft.id is not None
+    original_generated = draft.generated_at
+    repository.close()
+
+    app_settings = AppSettings(storage=settings)
+    app = create_app(app_settings)
+    client = TestClient(app)
+
+    client.get("/")
+    csrf_token = client.cookies.get(CSRF_COOKIE_NAME)
+    assert csrf_token is not None
+
+    updated_body = "Appreciate the update. We'll respond soon."
+    response = client.post(
+        "/emails/1/draft",
+        data={
+            "body": updated_body,
+            "draft_id": str(draft.id),
+            "provider": "manual-edit",
+            "redirect_to": "/",
+            CSRF_FIELD_NAME: csrf_token,
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    location = response.headers["location"]
+    assert "draft_status=ok" in location
+
+    with SqliteEmailRepository(settings) as verification_repo:
+        latest = verification_repo.fetch_latest_drafts([1])
+        assert 1 in latest
+        updated = latest[1]
+        assert updated.body == updated_body
+        assert updated.provider == "manual-edit"
+        assert updated.generated_at > original_generated
+
+
+def test_dashboard_deletes_draft(tmp_path) -> None:
+    db_path = tmp_path / "web_draft_delete.db"
+    settings = StorageSettings(db_path=db_path)
+    repository = SqliteEmailRepository(settings)
+    _seed_data(repository)
+    drafts = repository.list_recent_drafts(limit=1)
+    assert drafts
+    draft = drafts[0]
+    assert draft.id is not None
+    repository.close()
+
+    app_settings = AppSettings(storage=settings)
+    app = create_app(app_settings)
+    client = TestClient(app)
+
+    client.get("/")
+    csrf_token = client.cookies.get(CSRF_COOKIE_NAME)
+    assert csrf_token is not None
+
+    response = client.post(
+        "/emails/1/draft/delete",
+        data={
+            "draft_id": str(draft.id),
+            "redirect_to": "/",
+            CSRF_FIELD_NAME: csrf_token,
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    location = response.headers["location"]
+    assert "draft_status=ok" in location
+
+    with SqliteEmailRepository(settings) as verification_repo:
+        drafts_after = verification_repo.fetch_latest_drafts([1])
+        assert 1 not in drafts_after
+
+
+def test_dashboard_regenerates_draft(tmp_path) -> None:
+    db_path = tmp_path / "web_draft_regenerate.db"
+    settings = StorageSettings(db_path=db_path)
+    repository = SqliteEmailRepository(settings)
+    _seed_data(repository)
+    existing = repository.fetch_latest_drafts([1])[1]
+    assert existing.id is not None
+    repository.close()
+
+    app_settings = AppSettings(
+        storage=settings,
+        llm=LlmSettings(base_url="", model=""),
+    )
+    app = create_app(app_settings)
+    client = TestClient(app)
+
+    client.get("/")
+    csrf_token = client.cookies.get(CSRF_COOKIE_NAME)
+    assert csrf_token is not None
+
+    response = client.post(
+        "/emails/1/draft/regenerate",
+        data={
+            "draft_id": str(existing.id),
+            "redirect_to": "/",
+            CSRF_FIELD_NAME: csrf_token,
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    location = response.headers["location"]
+    assert "draft_status=ok" in location
+
+    with SqliteEmailRepository(settings) as verification_repo:
+        drafts_after = verification_repo.fetch_latest_drafts([1])
+        assert 1 in drafts_after
+        regenerated = drafts_after[1]
+        assert regenerated.body != existing.body
+        assert regenerated.provider == "deterministic"
+        assert regenerated.used_fallback is True
+        assert regenerated.body.startswith("Hi team")
+        assert regenerated.generated_at > existing.generated_at
 
 
 def test_config_editor_updates_env_file(tmp_path) -> None:
@@ -187,6 +329,8 @@ def test_config_editor_updates_env_file(tmp_path) -> None:
         get_response = client.get("/")
         assert get_response.status_code == 200
         assert "Configuration" in get_response.text
+        csrf_token = client.cookies.get(CSRF_COOKIE_NAME)
+        assert csrf_token is not None
 
         payload = {
             "redirect_to": "/",
@@ -211,6 +355,7 @@ def test_config_editor_updates_env_file(tmp_path) -> None:
             "INBOX_AI_FOLLOW_UP__PRIORITY_DUE_DAYS": "1",
             "INBOX_AI_FOLLOW_UP__PRIORITY_THRESHOLD": "6",
         }
+        payload[CSRF_FIELD_NAME] = csrf_token
 
         response = client.post("/config", data=payload, follow_redirects=False)
         assert response.status_code == 303
