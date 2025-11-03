@@ -841,7 +841,7 @@
                 style="margin: 0;">
                 <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
                 <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-                <button type="submit" class="button button-primary">Sync Now</button>
+                <button type="submit" class="button button-primary" formaction="/sync">Sync Now</button>
             </form>
             <a href="/settings" title="Open configuration"
                 style="color: #1e40af; text-decoration: none; font-size: 1.5rem; line-height: 1;">
