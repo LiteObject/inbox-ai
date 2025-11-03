@@ -260,3 +260,73 @@ def test_repository_lists_recent_drafts(tmp_path: Path) -> None:
 
     assert [draft.email_uid for draft in drafts] == [2, 1]
     assert drafts[0].generated_at.tzinfo is not None
+
+
+def test_repository_updates_draft_body(tmp_path: Path) -> None:
+    db_path = tmp_path / "drafts_update.db"
+    settings = StorageSettings(db_path=db_path)
+    repository = SqliteEmailRepository(settings)
+    repository.persist_email(_sample_envelope(uid=42))
+
+    original_time = datetime(2025, 10, 26, 13, 0, tzinfo=timezone.utc)
+    stored = repository.persist_draft(
+        DraftRecord(
+            id=None,
+            email_uid=42,
+            body="Initial draft body",
+            provider="llm",
+            generated_at=original_time,
+            confidence=0.75,
+            used_fallback=True,
+        )
+    )
+    assert stored.id is not None
+
+    new_time = original_time + timedelta(minutes=30)
+    updated = repository.update_draft_body(
+        stored.id,
+        42,
+        body="Refined response",
+        provider="manual-edit",
+        generated_at=new_time,
+        confidence=None,
+        used_fallback=False,
+    )
+
+    assert updated is not None
+    assert updated.body == "Refined response"
+    assert updated.provider == "manual-edit"
+    assert updated.generated_at == new_time
+    assert updated.confidence is None
+    assert updated.used_fallback is False
+
+    latest = repository.fetch_latest_drafts([42])
+    assert latest[42].body == "Refined response"
+    repository.close()
+
+
+def test_repository_deletes_draft(tmp_path: Path) -> None:
+    db_path = tmp_path / "drafts_delete.db"
+    settings = StorageSettings(db_path=db_path)
+    repository = SqliteEmailRepository(settings)
+    repository.persist_email(_sample_envelope(uid=5))
+
+    stored = repository.persist_draft(
+        DraftRecord(
+            id=None,
+            email_uid=5,
+            body="Draft to remove",
+            provider="test",
+            generated_at=datetime(2025, 10, 26, 9, 0, tzinfo=timezone.utc),
+            confidence=None,
+            used_fallback=False,
+        )
+    )
+    assert stored.id is not None
+
+    deleted = repository.delete_draft(stored.id, 5)
+    assert deleted is True
+
+    latest = repository.fetch_latest_drafts([5])
+    assert 5 not in latest
+    repository.close()

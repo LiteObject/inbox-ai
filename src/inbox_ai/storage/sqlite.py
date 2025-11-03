@@ -271,6 +271,73 @@ class SqliteEmailRepository(EmailRepository):
             used_fallback=draft.used_fallback,
         )
 
+    def update_draft_body(
+        self,
+        draft_id: int,
+        email_uid: int,
+        *,
+        body: str,
+        provider: str,
+        generated_at: datetime,
+        confidence: float | None = None,
+        used_fallback: bool = False,
+    ) -> DraftRecord | None:
+        """Update the stored draft row, returning the refreshed record."""
+        LOGGER.debug("Updating draft id %s for UID %s", draft_id, email_uid)
+        with self._connection:
+            cur = self._connection.execute(
+                """
+                UPDATE drafts
+                SET body = ?,
+                    provider = ?,
+                    generated_at = ?,
+                    confidence = ?,
+                    used_fallback = ?
+                WHERE id = ? AND email_uid = ?
+                RETURNING id, email_uid, body, provider, generated_at, confidence, used_fallback
+                """,
+                (
+                    body,
+                    provider,
+                    generated_at.isoformat(),
+                    confidence,
+                    1 if used_fallback else 0,
+                    draft_id,
+                    email_uid,
+                ),
+            )
+            row = cur.fetchone()
+
+        if row is None:
+            LOGGER.debug(
+                "Draft id %s for UID %s was not found; skipping update",
+                draft_id,
+                email_uid,
+            )
+            return None
+
+        return DraftRecord(
+            id=row["id"],
+            email_uid=row["email_uid"],
+            body=row["body"],
+            provider=row["provider"],
+            generated_at=cast(
+                datetime, parse_datetime(row["generated_at"], assume_utc=True)
+            ),
+            confidence=row["confidence"],
+            used_fallback=bool(row["used_fallback"]),
+        )
+
+    def delete_draft(self, draft_id: int, email_uid: int) -> bool:
+        """Remove a stored draft. Returns ``True`` if a row was deleted."""
+        LOGGER.debug("Deleting draft id %s for UID %s", draft_id, email_uid)
+        with self._connection:
+            cur = self._connection.execute(
+                "DELETE FROM drafts WHERE id = ? AND email_uid = ?",
+                (draft_id, email_uid),
+            )
+        return cur.rowcount > 0
+
     def list_recent_insights(
         self,
         limit: int,
