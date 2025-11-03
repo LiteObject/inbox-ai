@@ -148,7 +148,9 @@ def _merge_into_tree(tree: dict[str, Any], path: list[str], value: Any) -> None:
     cursor[path[-1]] = value
 
 
-def _collect_env_values(env_file: Path | str | None) -> dict[str, Any]:
+def _collect_env_values(
+    env_file: Path | str | None, include_os_env: bool
+) -> dict[str, Any]:
     """Load configuration values from environment variables and optional file."""
     collected: dict[str, Any] = {}
 
@@ -162,9 +164,15 @@ def _collect_env_values(env_file: Path | str | None) -> dict[str, Any]:
                 if key and key.startswith(ENV_PREFIX)
             }
 
-    env_values = {
-        key: value for key, value in os.environ.items() if key.startswith(ENV_PREFIX)
-    }
+    env_values: dict[str, Any]
+    if include_os_env:
+        env_values = {
+            key: value
+            for key, value in os.environ.items()
+            if key.startswith(ENV_PREFIX)
+        }
+    else:
+        env_values = {}
 
     combined: dict[str, Any] = {**file_values, **env_values}
 
@@ -190,10 +198,13 @@ def _collect_env_values(env_file: Path | str | None) -> dict[str, Any]:
 
 @lru_cache(maxsize=1)
 def load_app_settings(
-    env_file: Path | str | None = None, **overrides: Any
+    env_file: Path | str | None = None,
+    *,
+    include_environment: bool = True,
+    **overrides: Any,
 ) -> AppSettings:
     """Load application settings, applying env files and overrides."""
-    collected = _collect_env_values(env_file)
+    collected = _collect_env_values(env_file, include_environment)
     if overrides:
         collected.update(overrides)
     return AppSettings.model_validate(collected)

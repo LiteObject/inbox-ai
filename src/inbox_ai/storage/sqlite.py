@@ -12,6 +12,7 @@ from types import TracebackType
 from typing import cast
 
 from ..core.config import StorageSettings
+from ..core.datetime_utils import parse_datetime, serialize_datetime
 from ..core.interfaces import EmailRepository
 from ..core.models import (
     AttachmentMeta,
@@ -43,6 +44,7 @@ class SqliteEmailRepository(EmailRepository):
         self._connection.row_factory = sqlite3.Row
         self._enable_foreign_keys()
         self._apply_migrations()
+        self._ensure_indexes()
 
     # Context manager helpers -------------------------------------------------
     def __enter__(self) -> SqliteEmailRepository:
@@ -104,8 +106,8 @@ class SqliteEmailRepository(EmailRepository):
                     ",".join(email.to),
                     ",".join(email.cc),
                     ",".join(email.bcc),
-                    _serialize_datetime(email.sent_at),
-                    _serialize_datetime(email.received_at),
+                    serialize_datetime(email.sent_at),
+                    serialize_datetime(email.received_at),
                     email.body.text,
                     email.body.html,
                 ),
@@ -189,8 +191,8 @@ class SqliteEmailRepository(EmailRepository):
             to=_split_recipients(row["to_recipients"]),
             cc=_split_recipients(row["cc_recipients"]),
             bcc=_split_recipients(row["bcc_recipients"]),
-            sent_at=_parse_datetime(row["sent_at"]),
-            received_at=_parse_datetime(row["received_at"]),
+            sent_at=parse_datetime(row["sent_at"]),
+            received_at=parse_datetime(row["received_at"]),
             body=EmailBody(text=row["body_text"], html=row["body_html"]),
             attachments=attachments,
         )
@@ -227,7 +229,7 @@ class SqliteEmailRepository(EmailRepository):
             priority=row["priority_score"],
             provider=row["provider"],
             generated_at=cast(
-                datetime, _parse_datetime(row["generated_at"], assume_utc=True)
+                datetime, parse_datetime(row["generated_at"], assume_utc=True)
             ),
             used_fallback=bool(row["used_fallback"]),
         )
@@ -341,8 +343,8 @@ class SqliteEmailRepository(EmailRepository):
                 to=_split_recipients(row["to_recipients"]),
                 cc=_split_recipients(row["cc_recipients"]),
                 bcc=_split_recipients(row["bcc_recipients"]),
-                sent_at=_parse_datetime(row["sent_at"]),
-                received_at=_parse_datetime(row["received_at"]),
+                sent_at=parse_datetime(row["sent_at"]),
+                received_at=parse_datetime(row["received_at"]),
                 body=EmailBody(text=row["body_text"], html=row["body_html"]),
                 attachments=self._load_attachments(uid),
             )
@@ -355,7 +357,7 @@ class SqliteEmailRepository(EmailRepository):
                 provider=row["provider"],
                 generated_at=cast(
                     datetime,
-                    _parse_datetime(row["generated_at"], assume_utc=True),
+                    parse_datetime(row["generated_at"], assume_utc=True),
                 ),
                 used_fallback=bool(row["used_fallback"]),
             )
@@ -429,7 +431,7 @@ class SqliteEmailRepository(EmailRepository):
                     body=row["body"],
                     provider=row["provider"],
                     generated_at=cast(
-                        datetime, _parse_datetime(row["generated_at"], assume_utc=True)
+                        datetime, parse_datetime(row["generated_at"], assume_utc=True)
                     ),
                     confidence=row["confidence"],
                     used_fallback=bool(row["used_fallback"]),
@@ -464,7 +466,7 @@ class SqliteEmailRepository(EmailRepository):
                 body=row["body"],
                 provider=row["provider"],
                 generated_at=cast(
-                    datetime, _parse_datetime(row["generated_at"], assume_utc=True)
+                    datetime, parse_datetime(row["generated_at"], assume_utc=True)
                 ),
                 confidence=row["confidence"],
                 used_fallback=bool(row["used_fallback"]),
@@ -543,13 +545,13 @@ class SqliteEmailRepository(EmailRepository):
                     id=row["id"],
                     email_uid=uid,
                     action=row["action"],
-                    due_at=_parse_datetime(row["due_at"]),
+                    due_at=parse_datetime(row["due_at"]),
                     status=row["status"],
                     created_at=cast(
                         datetime,
-                        _parse_datetime(row["created_at"], assume_utc=True),
+                        parse_datetime(row["created_at"], assume_utc=True),
                     ),
-                    completed_at=_parse_datetime(row["completed_at"], assume_utc=True),
+                    completed_at=parse_datetime(row["completed_at"], assume_utc=True),
                 )
             )
         results: dict[int, tuple[FollowUpTask, ...]] = {}
@@ -633,13 +635,13 @@ class SqliteEmailRepository(EmailRepository):
                     id=row["id"],
                     email_uid=row["email_uid"],
                     action=row["action"],
-                    due_at=_parse_datetime(row["due_at"]),
+                    due_at=parse_datetime(row["due_at"]),
                     status=row["status"],
                     created_at=cast(
                         datetime,
-                        _parse_datetime(row["created_at"], assume_utc=True),
+                        parse_datetime(row["created_at"], assume_utc=True),
                     ),
-                    completed_at=_parse_datetime(row["completed_at"], assume_utc=True),
+                    completed_at=parse_datetime(row["completed_at"], assume_utc=True),
                 )
             )
         return items
@@ -730,23 +732,28 @@ class SqliteEmailRepository(EmailRepository):
         schema_dir = Path(__file__).resolve().parent / "schema"
         migrations = sorted(schema_dir.glob("*.sql"))
         for migration in migrations:
+            handler = self._get_migration_handler(migration.stem)
             LOGGER.debug("Applying migration %s", migration.name)
             script = migration.read_text(encoding="utf-8")
+            try:
+                handler(script)
+            except Exception as exc:  # pragma: no cover - logged for visibility
+                LOGGER.warning(
+                    "Migration %s failed (possibly already applied): %s",
+                    migration.name,
+                    exc,
+                )
 
-            # Special handling for migration 005 which may fail due to duplicate column
-            if migration.name == "005_mailbox.sql":
-                self._apply_mailbox_migration(script)
-            else:
-                try:
-                    with self._connection:
-                        self._connection.executescript(script)
-                except Exception as exc:
-                    LOGGER.warning(
-                        "Migration %s failed (possibly already applied): %s",
-                        migration.name,
-                        exc,
-                    )
-                    # Continue with other migrations
+    def _get_migration_handler(self, name: str):
+        """Return a migration handler for the supplied migration stem."""
+        return {
+            "005_mailbox": self._apply_mailbox_migration,
+        }.get(name, self._apply_default_migration)
+
+    def _apply_default_migration(self, script: str) -> None:
+        """Execute the supplied migration script inside a transaction."""
+        with self._connection:
+            self._connection.executescript(script)
 
     def _apply_mailbox_migration(self, script: str) -> None:
         """Apply the mailbox migration with special handling for duplicate columns."""
@@ -769,15 +776,19 @@ class SqliteEmailRepository(EmailRepository):
                     # Column doesn't exist, proceed with ALTER TABLE
                     pass
 
-            try:
-                with self._connection:
-                    self._connection.execute(line)
-            except Exception as exc:
-                LOGGER.warning(
-                    "Mailbox migration statement failed: %s",
-                    exc,
-                )
-                # Continue with other statements
+            with self._connection:
+                self._connection.execute(line)
+
+    def _ensure_indexes(self) -> None:
+        """Create supporting indexes that may be missing from older schemas."""
+        index_statements = (
+            "CREATE INDEX IF NOT EXISTS idx_email_categories_uid ON email_categories(email_uid)",
+            "CREATE INDEX IF NOT EXISTS idx_email_insights_priority_generated ON email_insights(priority_score, generated_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_follow_ups_status_due ON follow_ups(status, due_at, email_uid)",
+        )
+        with self._connection:
+            for statement in index_statements:
+                self._connection.execute(statement)
 
     def _insert_attachment(self, email_uid: int, attachment: AttachmentMeta) -> None:
         self._connection.execute(
@@ -787,23 +798,6 @@ class SqliteEmailRepository(EmailRepository):
             """,
             (email_uid, attachment.filename, attachment.content_type, attachment.size),
         )
-
-
-def _serialize_datetime(value: datetime | None) -> str | None:
-    if value is None:
-        return None
-    if value.tzinfo is not None:
-        return value.astimezone().isoformat()
-    return value.isoformat()
-
-
-def _parse_datetime(value: str | None, *, assume_utc: bool = False) -> datetime | None:
-    if value is None:
-        return None
-    parsed = datetime.fromisoformat(value)
-    if parsed.tzinfo is None and assume_utc:
-        return parsed.replace(tzinfo=UTC)
-    return parsed
 
 
 def _split_recipients(value: str | None) -> tuple[str, ...]:

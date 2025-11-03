@@ -180,6 +180,18 @@
             outline-offset: 2px;
         }
 
+        .visually-hidden {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            border: 0;
+            white-space: nowrap;
+        }
+
         .insights-search {
             flex: 1 1 280px;
             padding: 8px 10px;
@@ -472,7 +484,7 @@
             display: flex;
             flex-wrap: wrap;
             gap: 16px;
-            margin: 16px 0 0;
+            margin: 8px 0 0;
             align-items: flex-end;
         }
 
@@ -483,6 +495,7 @@
 
         .filter-group label {
             font-weight: 600;
+            font-size: 0.75rem;
             margin-bottom: 4px;
             color: #333;
         }
@@ -733,10 +746,19 @@
 <body>
     <header style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
         <h1 style="margin: 0;">Inbox AI Dashboard</h1>
-        <a href="/settings" title="Open configuration"
-            style="color: #1e40af; text-decoration: none; font-size: 1.5rem; line-height: 1;">
-            &#9881;
-        </a>
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <form method="post" action="/sync" data-spinner data-spinner-label="Sync in progress&hellip;"
+                style="margin: 0;">
+                <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
+                <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
+                <button type="submit" class="button button-primary">Sync Now</button>
+            </form>
+            <a href="/settings" title="Open configuration"
+                style="color: #1e40af; text-decoration: none; font-size: 1.5rem; line-height: 1;">
+                &#9881;
+                <span class="visually-hidden">Configuration</span>
+            </a>
+        </div>
     </header>
 
     <div id="sync-spinner" class="spinner-overlay" hidden>
@@ -756,37 +778,6 @@
     </div>
 
     <div class="section">
-        <div class="sync-section">
-            <div>
-                <h2>Data Maintenance</h2>
-                <p class="description">Trigger a manual sync to fetch new emails, rebuild stored categories, or clear
-                    all database data with the controls on the right.</p>
-                <div style="margin-top: 8px; font-weight: 600; color: #1e40af;">
-                    Total emails in database: <span id="total-email-count">{{ total_email_count }}</span>
-                </div>
-            </div>
-            <div class="sync-actions">
-                <form method="post" action="/sync" data-spinner data-scroll-restore
-                    data-spinner-label="Sync in progress&hellip;">
-                    <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-                    <button type="submit" class="button button-primary">Sync Now</button>
-                </form>
-                <form method="post" action="/categories/regenerate" data-spinner data-scroll-restore
-                    data-spinner-label="Regenerating categories&hellip;">
-                    <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-                    <button type="submit" class="button button-primary">Rebuild Categories</button>
-                </form>
-                <form method="post" action="/clear-database" data-spinner data-scroll-restore
-                    data-spinner-label="Clearing database&hellip;"
-                    data-confirm="This will permanently delete all emails, insights, drafts, and follow-ups. Are you sure?">
-                    <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-                    <button type="submit" class="button button-danger">Clear Database</button>
-                </form>
-            </div>
-        </div>
-    </div>
-    <div class="section">
-        <h2>Filters</h2>
         <form class="filter-form" method="get" data-scroll-restore>
             <div class="filter-group">
                 <label for="insights_limit">Insights limit</label>
@@ -833,6 +824,7 @@
             <form method="post" action="/emails/bulk-delete" class="bulk-delete-form" data-spinner data-scroll-restore
                 data-spinner-label="Deleting emails&hellip;"
                 data-confirm="Delete all listed emails and related data? This cannot be undone.">
+                <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
                 <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
                 <div class="hidden-inputs" aria-hidden="true">
                     {% for item in insights %}
@@ -961,6 +953,8 @@
                                                 {% if task.status != "done" %}
                                                 <form method="post" action="/follow-ups/{{ task.id }}/status"
                                                     data-scroll-restore>
+                                                    <input type="hidden" name="{{ csrf_field_name }}"
+                                                        value="{{ csrf_token }}" />
                                                     <input type="hidden" name="status" value="done" />
                                                     <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
                                                     <button class="primary" type="submit">Mark Done</button>
@@ -968,6 +962,8 @@
                                                 {% else %}
                                                 <form method="post" action="/follow-ups/{{ task.id }}/status"
                                                     data-scroll-restore>
+                                                    <input type="hidden" name="{{ csrf_field_name }}"
+                                                        value="{{ csrf_token }}" />
                                                     <input type="hidden" name="status" value="open" />
                                                     <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
                                                     <button class="secondary" type="submit">Reopen</button>
@@ -985,6 +981,7 @@
                         <div class="insight-actions">
                             <form method="post" action="/emails/{{ item.uid }}/delete" data-scroll-restore
                                 onsubmit="return confirm('Delete message UID {{ item.uid }} from the mailbox?');">
+                                <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
                                 <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
                                 <button type="submit" class="button-danger">x</button>
                             </form>
@@ -1000,7 +997,7 @@
         {% endif %}
     </div>
 
-    <script src="{{ url_for('static', path='js/dashboard.js') }}"></script>
+    <script type="module" src="{{ url_for('static', path='js/dashboard.js') }}"></script>
 </body>
 
 </html>

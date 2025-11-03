@@ -163,6 +163,41 @@
             border: 1px solid #fecaca;
         }
 
+        .maintenance-actions {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 16px;
+        }
+
+        .maintenance-actions form {
+            margin: 0;
+        }
+
+        .maintenance-actions button {
+            padding: 10px 18px;
+            background: #2563eb;
+            color: #ffffff;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .maintenance-actions button:hover,
+        .maintenance-actions button:focus {
+            background: #1e40af;
+        }
+
+        .maintenance-actions button.danger {
+            background: #dc2626;
+        }
+
+        .maintenance-actions button.danger:hover,
+        .maintenance-actions button.danger:focus {
+            background: #b91c1c;
+        }
+
         code {
             background: #f4f4f4;
             padding: 2px 6px;
@@ -188,6 +223,7 @@
         {% endif %}
 
         <form class="config-form" method="post" action="/config" data-scroll-restore>
+            <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
             <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
             {% for section in config_sections %}
             <fieldset class="config-group">
@@ -226,6 +262,24 @@
             </div>
         </form>
         <div class="config-meta">Editing <code>{{ config_env_path }}</code></div>
+    </div>
+    <div id="maintenance" class="section">
+        <h2>Maintenance</h2>
+        <p class="description">Run occasional clean-up tasks from here. These actions affect stored data
+            immediately.</p>
+        <div class="maintenance-actions">
+            <form method="post" action="/categories/regenerate">
+                <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
+                <input type="hidden" name="redirect_to" value="{{ redirect_to }}#maintenance" />
+                <button type="submit">Rebuild Categories</button>
+            </form>
+            <form method="post" action="/clear-database"
+                onsubmit="return confirm('This will permanently delete all emails, insights, drafts, and follow-ups. Are you sure?');">
+                <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
+                <input type="hidden" name="redirect_to" value="{{ redirect_to }}#maintenance" />
+                <button type="submit" class="danger">Clear Database</button>
+            </form>
+        </div>
     </div>
 </body>
 
