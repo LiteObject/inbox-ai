@@ -115,13 +115,16 @@ class MailFetcher:
 
             # Check if draft should be skipped
             excluded_categories = {"marketing", "notification", "spam"}
-            is_personal = self._user_email and (
-                self._user_email in envelope.to or self._user_email in envelope.cc
-            )
-            skip_draft = (
-                any(cat.key in excluded_categories for cat in categories)
-                or not is_personal
-            )
+            is_personal = False
+            if self._user_email:
+                is_personal = (
+                    self._user_email in envelope.to or self._user_email in envelope.cc
+                )
+                if not is_personal:
+                    is_personal = self._user_email in envelope.bcc
+            skip_draft = any(cat.key in excluded_categories for cat in categories)
+            if self._user_email is not None:
+                skip_draft = skip_draft or not is_personal
 
             if (
                 self._drafting_service is not None

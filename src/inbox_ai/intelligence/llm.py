@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass
 from typing import Protocol
 from urllib.parse import urljoin
@@ -49,20 +50,29 @@ class OllamaClient:
                 "temperature": self.settings.temperature,
                 "num_predict": self.settings.max_output_tokens,
             }
-        try:
-            response = httpx.post(
-                endpoint,
-                json=payload,
-                timeout=self.settings.timeout_seconds,
-            )
-            response.raise_for_status()
-        except httpx.HTTPError as exc:  # pragma: no cover - network dependent
-            raise LLMError("LLM request failed") from exc
+        data: dict[str, object] | None = None
+        last_error: Exception | None = None
+        for attempt in range(1, 4):
+            try:
+                response = httpx.post(
+                    endpoint,
+                    json=payload,
+                    timeout=self.settings.timeout_seconds,
+                )
+                response.raise_for_status()
+                data = response.json()
+                break
+            except httpx.HTTPError as exc:  # pragma: no cover - network dependent
+                last_error = exc
+            except json.JSONDecodeError as exc:
+                raise LLMError("LLM returned invalid JSON") from exc
 
-        try:
-            data = response.json()
-        except json.JSONDecodeError as exc:
-            raise LLMError("LLM returned invalid JSON") from exc
+            if attempt < 3:
+                delay = min(2**attempt, 8)
+                time.sleep(delay)
+
+        if data is None:
+            raise LLMError("LLM request failed after retries") from last_error
 
         result = data.get("response")
         if not isinstance(result, str):

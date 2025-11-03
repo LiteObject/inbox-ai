@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+from datetime import datetime
 from typing import Protocol
 
 from .models import (
@@ -100,6 +101,24 @@ class EmailRepository(Protocol):
 
     def fetch_latest_drafts(self, uids: Sequence[int]) -> dict[int, DraftRecord]:
         """Return the newest draft for each supplied email UID."""
+        raise NotImplementedError
+
+    def update_draft_body(
+        self,
+        draft_id: int,
+        email_uid: int,
+        *,
+        body: str,
+        provider: str,
+        generated_at: datetime,
+        confidence: float | None = None,
+        used_fallback: bool = False,
+    ) -> DraftRecord | None:
+        """Update the stored draft contents and metadata."""
+        raise NotImplementedError
+
+    def delete_draft(self, draft_id: int, email_uid: int) -> bool:
+        """Delete the stored draft for the given identifiers."""
         raise NotImplementedError
 
     def replace_categories(

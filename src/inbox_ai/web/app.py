@@ -5,13 +5,16 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
+from collections import deque
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from urllib.parse import parse_qsl, urlencode
+
+from datetime import UTC, datetime
 
 from fastapi import Depends, FastAPI, Form, Request, status as http_status
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
@@ -23,6 +26,7 @@ from starlette.responses import Response
 from starlette.templating import Jinja2Templates
 
 from inbox_ai.core import AppSettings, load_app_settings
+from inbox_ai.core.datetime_utils import display_datetime, serialize_datetime
 from inbox_ai.core.models import (
     DraftRecord,
     EmailCategory,
@@ -32,15 +36,18 @@ from inbox_ai.core.models import (
 )
 from inbox_ai.ingestion import EmailParser, MailFetcher
 from inbox_ai.intelligence import (
+    DraftingError,
     DraftingService,
     FollowUpPlannerService,
     KeywordCategoryService,
     LLMCategoryService,
+    LLMError,
     OllamaClient,
     SummarizationService,
 )
 from inbox_ai.storage import SqliteEmailRepository
 from inbox_ai.transport import ImapClient, ImapError
+from .security import CSRF_FIELD_NAME, CsrfProtector
 
 DEFAULT_LIMIT = 20
 MAX_LIMIT = 100
@@ -85,7 +92,14 @@ _STATUS_QUERY_KEYS: tuple[str, ...] = (
     "categorize_status",
     "categorize_message",
     "config_status",
+    "draft_status",
+    "draft_message",
+    "clear_status",
+    "clear_message",
 )
+
+
+MANUAL_DRAFT_PROVIDER = "manual-edit"
 
 
 LOGGER = logging.getLogger(__name__)
@@ -135,6 +149,14 @@ class SyncOutcome:
 @dataclass(frozen=True)
 class DeleteOutcome:
     """Result of a mailbox deletion request."""
+
+    success: bool
+    message: str
+
+
+@dataclass(frozen=True)
+class DraftRegenerationOutcome:
+    """Result of regenerating a draft using the drafting service."""
 
     success: bool
     message: str
@@ -282,7 +304,14 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
     app_settings = settings or load_app_settings(env_file=env_file)
     templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
     app = FastAPI(title="Inbox AI Dashboard")
+    csrf = CsrfProtector()
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+    # Simple in-memory rate limiting for manual sync requests.
+    RATE_LIMIT_MAX_CALLS = 2
+    RATE_LIMIT_WINDOW_SECONDS = 60
+    sync_rate_lock = asyncio.Lock()
+    sync_rate_history: deque[float] = deque()
 
     def get_repository() -> Iterator[SqliteEmailRepository]:
         repository = SqliteEmailRepository(app_settings.storage)
@@ -318,57 +347,64 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         follow_up_lookup = repository.fetch_follow_ups_for_uids(insight_uids)
         category_options = repository.list_categories()
         total_email_count = repository.count_emails()
-        return templates.TemplateResponse(
-            request,
-            "index.html",
-            {
-                "request": request,
-                "insights": [
-                    _serialize_insight(
-                        email,
-                        insight,
-                        draft_lookup.get(email.uid),
-                        category_lookup.get(email.uid, ()),
-                        follow_up_lookup.get(email.uid, ()),
-                    )
-                    for email, insight in insights
-                ],
-                "insights_total": total_insights,
-                "drafts": [_serialize_draft(draft) for draft in draft_records],
-                "filters": filters,
-                "priority_filter_options": _PRIORITY_FILTER_OPTIONS,
-                "category_options": category_options,
-                "redirect_to": _build_redirect_target(request),
-                "config_status": request.query_params.get("config_status"),
-                "sync_status": request.query_params.get("sync_status"),
-                "sync_message": request.query_params.get("sync_message"),
-                "delete_status": request.query_params.get("delete_status"),
-                "delete_message": request.query_params.get("delete_message"),
-                "categorize_status": request.query_params.get("categorize_status"),
-                "categorize_message": request.query_params.get("categorize_message"),
-                "clear_status": request.query_params.get("clear_status"),
-                "clear_message": request.query_params.get("clear_message"),
-                "total_email_count": total_email_count,
-            },
-        )
+        csrf_token = csrf.generate_token()
+        context = {
+            "request": request,
+            "insights": [
+                _serialize_insight(
+                    email,
+                    insight,
+                    draft_lookup.get(email.uid),
+                    category_lookup.get(email.uid, ()),
+                    follow_up_lookup.get(email.uid, ()),
+                )
+                for email, insight in insights
+            ],
+            "insights_total": total_insights,
+            "drafts": [_serialize_draft(draft) for draft in draft_records],
+            "filters": filters,
+            "priority_filter_options": _PRIORITY_FILTER_OPTIONS,
+            "category_options": category_options,
+            "redirect_to": _build_redirect_target(request),
+            "config_status": request.query_params.get("config_status"),
+            "sync_status": request.query_params.get("sync_status"),
+            "sync_message": request.query_params.get("sync_message"),
+            "delete_status": request.query_params.get("delete_status"),
+            "delete_message": request.query_params.get("delete_message"),
+            "categorize_status": request.query_params.get("categorize_status"),
+            "categorize_message": request.query_params.get("categorize_message"),
+            "draft_status": request.query_params.get("draft_status"),
+            "draft_message": request.query_params.get("draft_message"),
+            "clear_status": request.query_params.get("clear_status"),
+            "clear_message": request.query_params.get("clear_message"),
+            "total_email_count": total_email_count,
+            "csrf_token": csrf_token,
+            "csrf_field_name": csrf.field_name,
+            "manual_draft_provider": MANUAL_DRAFT_PROVIDER,
+        }
+        response = templates.TemplateResponse("index.html", context)
+        csrf.set_cookie(response, csrf_token, secure=request.url.scheme == "https")
+        return response
 
     @app.get("/settings", response_class=HTMLResponse)
     async def settings_page(request: Request) -> HTMLResponse:
         env_file = _resolve_env_file()
         config_values = _load_env_values(env_file)
         redirect_target = _build_redirect_target(request)
-        return templates.TemplateResponse(
-            request,
-            "settings.html",
-            {
-                "request": request,
-                "config_sections": CONFIG_SECTIONS,
-                "config_values": config_values,
-                "config_status": request.query_params.get("config_status"),
-                "config_env_path": str(env_file),
-                "redirect_to": redirect_target,
-            },
-        )
+        csrf_token = csrf.generate_token()
+        context = {
+            "request": request,
+            "config_sections": CONFIG_SECTIONS,
+            "config_values": config_values,
+            "config_status": request.query_params.get("config_status"),
+            "config_env_path": str(env_file),
+            "redirect_to": redirect_target,
+            "csrf_token": csrf_token,
+            "csrf_field_name": csrf.field_name,
+        }
+        response = templates.TemplateResponse("settings.html", context)
+        csrf.set_cookie(response, csrf_token, secure=request.url.scheme == "https")
+        return response
 
     @app.get("/api/dashboard")
     async def dashboard(
@@ -433,6 +469,9 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
     async def update_configuration(request: Request) -> RedirectResponse:
         nonlocal app_settings
         form = await request.form()
+        raw_token = form.get(csrf.field_name)
+        token = raw_token if isinstance(raw_token, str) else None
+        csrf.validate(request, token)
         env_file = _resolve_env_file()
         redirect_raw = _coerce_form_value(form.get("redirect_to"))
         redirect_target = _sanitize_redirect(redirect_raw or None) or "/"
@@ -465,8 +504,30 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
     @app.post("/sync")
     async def trigger_sync(request: Request) -> Response:
         form = await request.form()
+        raw_token = form.get(csrf.field_name)
+        token = raw_token if isinstance(raw_token, str) else None
+        csrf.validate(request, token)
         redirect_raw = _coerce_form_value(form.get("redirect_to"))
         redirect_target = _sanitize_redirect(redirect_raw or None) or "/"
+
+        async with sync_rate_lock:
+            now = time.monotonic()
+            while (
+                sync_rate_history
+                and now - sync_rate_history[0] > RATE_LIMIT_WINDOW_SECONDS
+            ):
+                sync_rate_history.popleft()
+            if len(sync_rate_history) >= RATE_LIMIT_MAX_CALLS:
+                target = _append_query_param(redirect_target, "sync_status", "error")
+                target = _append_query_param(
+                    target,
+                    "sync_message",
+                    "Too many sync requests. Please wait before trying again.",
+                )
+                return RedirectResponse(
+                    url=target, status_code=http_status.HTTP_303_SEE_OTHER
+                )
+            sync_rate_history.append(now)
 
         # Check credentials before starting sync
         if not app_settings.imap.username or not app_settings.imap.app_password:
@@ -504,6 +565,9 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
     @app.post("/categories/regenerate")
     async def regenerate_categories(request: Request) -> RedirectResponse:
         form = await request.form()
+        raw_token = form.get(csrf.field_name)
+        token = raw_token if isinstance(raw_token, str) else None
+        csrf.validate(request, token)
         redirect_raw = _coerce_form_value(form.get("redirect_to"))
         redirect_target = _sanitize_redirect(redirect_raw or None) or "/"
 
@@ -516,6 +580,9 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
     @app.post("/clear-database")
     async def clear_database(request: Request) -> RedirectResponse:
         form = await request.form()
+        raw_token = form.get(csrf.field_name)
+        token = raw_token if isinstance(raw_token, str) else None
+        csrf.validate(request, token)
         redirect_raw = _coerce_form_value(form.get("redirect_to"))
         redirect_target = _sanitize_redirect(redirect_raw or None) or "/"
 
@@ -527,9 +594,12 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
 
     @app.post("/emails/{email_uid}/delete")
     async def delete_email(
+        request: Request,
         email_uid: int,
         redirect_to: str | None = Form(None),
+        csrf_token: str = Form(..., alias=CSRF_FIELD_NAME),
     ) -> RedirectResponse:
+        csrf.validate(request, csrf_token)
         redirect_target = _sanitize_redirect(redirect_to) or "/"
         outcome = await asyncio.to_thread(_delete_email, app_settings, email_uid)
         status_value = "ok" if outcome.success else "error"
@@ -540,6 +610,9 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
     @app.post("/emails/bulk-delete")
     async def bulk_delete_emails(request: Request) -> RedirectResponse:
         form = await request.form()
+        raw_token = form.get(csrf.field_name)
+        token = raw_token if isinstance(raw_token, str) else None
+        csrf.validate(request, token)
         redirect_raw = _coerce_form_value(form.get("redirect_to"))
         redirect_target = _sanitize_redirect(redirect_raw or None) or "/"
 
@@ -558,13 +631,160 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         target = _append_query_param(target, "delete_message", outcome.message)
         return RedirectResponse(url=target, status_code=http_status.HTTP_303_SEE_OTHER)
 
+    @app.post("/emails/{email_uid}/draft")
+    async def update_draft(
+        email_uid: int,
+        request: Request,
+        repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
+    ) -> RedirectResponse:
+        form = await request.form()
+        raw_token = form.get(csrf.field_name)
+        token = raw_token if isinstance(raw_token, str) else None
+        csrf.validate(request, token)
+
+        redirect_raw = _coerce_form_value(form.get("redirect_to"))
+        redirect_target = _sanitize_redirect(redirect_raw or None) or "/"
+
+        body_raw = _coerce_form_value(form.get("body"))
+        if body_raw.strip() == "":
+            failure_target = _append_query_param(
+                redirect_target, "draft_status", "error"
+            )
+            failure_target = _append_query_param(
+                failure_target, "draft_message", "Draft body cannot be empty."
+            )
+            return RedirectResponse(
+                url=failure_target, status_code=http_status.HTTP_303_SEE_OTHER
+            )
+
+        draft_id_raw = _coerce_form_value(form.get("draft_id")).strip()
+        provider_raw = _coerce_form_value(form.get("provider"))
+        provider = provider_raw.strip() or MANUAL_DRAFT_PROVIDER
+        generated_at = datetime.now(UTC)
+
+        draft_id: int | None = None
+        if draft_id_raw:
+            try:
+                draft_id = int(draft_id_raw)
+            except ValueError:
+                draft_id = None
+
+        updated = False
+        if draft_id is not None:
+            updated_record = repository.update_draft_body(
+                draft_id,
+                email_uid,
+                body=body_raw,
+                provider=provider,
+                generated_at=generated_at,
+                confidence=None,
+                used_fallback=False,
+            )
+            updated = updated_record is not None
+
+        if not updated:
+            repository.persist_draft(
+                DraftRecord(
+                    id=None,
+                    email_uid=email_uid,
+                    body=body_raw,
+                    provider=provider,
+                    generated_at=generated_at,
+                    confidence=None,
+                    used_fallback=False,
+                )
+            )
+
+        success_target = _append_query_param(redirect_target, "draft_status", "ok")
+        success_target = _append_query_param(
+            success_target, "draft_message", "Draft updated successfully."
+        )
+        return RedirectResponse(
+            url=success_target, status_code=http_status.HTTP_303_SEE_OTHER
+        )
+
+    @app.post("/emails/{email_uid}/draft/regenerate")
+    async def regenerate_draft(
+        email_uid: int,
+        request: Request,
+    ) -> RedirectResponse:
+        form = await request.form()
+        raw_token = form.get(csrf.field_name)
+        token = raw_token if isinstance(raw_token, str) else None
+        csrf.validate(request, token)
+
+        redirect_raw = _coerce_form_value(form.get("redirect_to"))
+        redirect_target = _sanitize_redirect(redirect_raw or None) or "/"
+
+        draft_id_raw = _coerce_form_value(form.get("draft_id")).strip()
+        draft_id: int | None = None
+        if draft_id_raw:
+            try:
+                draft_id = int(draft_id_raw)
+            except ValueError:
+                draft_id = None
+
+        outcome = await asyncio.to_thread(
+            _regenerate_draft,
+            app_settings,
+            email_uid,
+            draft_id,
+        )
+        status_value = "ok" if outcome.success else "error"
+        target = _append_query_param(redirect_target, "draft_status", status_value)
+        target = _append_query_param(target, "draft_message", outcome.message)
+        return RedirectResponse(url=target, status_code=http_status.HTTP_303_SEE_OTHER)
+
+    @app.post("/emails/{email_uid}/draft/delete")
+    async def delete_draft(
+        email_uid: int,
+        request: Request,
+        repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
+    ) -> RedirectResponse:
+        form = await request.form()
+        raw_token = form.get(csrf.field_name)
+        token = raw_token if isinstance(raw_token, str) else None
+        csrf.validate(request, token)
+
+        redirect_raw = _coerce_form_value(form.get("redirect_to"))
+        redirect_target = _sanitize_redirect(redirect_raw or None) or "/"
+
+        draft_id_raw = _coerce_form_value(form.get("draft_id")).strip()
+        draft_id: int | None = None
+        if draft_id_raw:
+            try:
+                draft_id = int(draft_id_raw)
+            except ValueError:
+                draft_id = None
+
+        if draft_id is None:
+            failure_target = _append_query_param(
+                redirect_target, "draft_status", "error"
+            )
+            failure_target = _append_query_param(
+                failure_target, "draft_message", "Draft could not be deleted."
+            )
+            return RedirectResponse(
+                url=failure_target, status_code=http_status.HTTP_303_SEE_OTHER
+            )
+
+        deleted = repository.delete_draft(draft_id, email_uid)
+        status_key = "ok" if deleted else "error"
+        message = "Draft deleted." if deleted else "Draft could not be deleted."
+        target = _append_query_param(redirect_target, "draft_status", status_key)
+        target = _append_query_param(target, "draft_message", message)
+        return RedirectResponse(url=target, status_code=http_status.HTTP_303_SEE_OTHER)
+
     @app.post("/follow-ups/{follow_up_id}/status")
     async def update_follow_up_status(
+        request: Request,
         follow_up_id: int,
         status_value: str = Form(..., alias="status"),
         redirect_to: str | None = Form(None),
+        csrf_token: str = Form(..., alias=CSRF_FIELD_NAME),
         repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
     ) -> RedirectResponse:
+        csrf.validate(request, csrf_token)
         target_status = _normalize_status_update(status_value)
         repository.update_follow_up_status(follow_up_id, target_status)
         redirect_target = _sanitize_redirect(redirect_to) or "/"
@@ -596,8 +816,8 @@ def _serialize_insight(
         "subject": email.subject,
         "sender": email.sender,
         "threadId": email.thread_id,
-        "receivedAt": _isoformat(email.received_at),
-        "receivedAtDisplay": _friendly_datetime(email.received_at),
+        "receivedAt": serialize_datetime(email.received_at),
+        "receivedAtDisplay": display_datetime(email.received_at),
         "summary": insight.summary,
         "actionItems": list(insight.action_items),
         "categories": [
@@ -608,8 +828,8 @@ def _serialize_insight(
         "priority": insight.priority,
         "priorityLabel": _priority_label(insight.priority),
         "provider": insight.provider,
-        "generatedAt": _isoformat(insight.generated_at),
-        "generatedAtDisplay": _friendly_datetime(insight.generated_at),
+        "generatedAt": serialize_datetime(insight.generated_at),
+        "generatedAtDisplay": display_datetime(insight.generated_at),
         "draft": _serialize_draft(draft) if draft is not None else None,
     }
 
@@ -621,8 +841,8 @@ def _serialize_draft(draft: DraftRecord) -> dict[str, Any]:
         "body": draft.body,
         "provider": draft.provider,
         "confidence": draft.confidence,
-        "generatedAt": _isoformat(draft.generated_at),
-        "generatedAtDisplay": _friendly_datetime(draft.generated_at),
+        "generatedAt": serialize_datetime(draft.generated_at),
+        "generatedAtDisplay": display_datetime(draft.generated_at),
         "usedFallback": draft.used_fallback,
     }
 
@@ -632,26 +852,11 @@ def _serialize_follow_up(task: FollowUpTask) -> dict[str, Any]:
         "id": task.id,
         "emailUid": task.email_uid,
         "action": task.action,
-        "dueAt": _isoformat(task.due_at),
+        "dueAt": serialize_datetime(task.due_at),
         "status": task.status,
-        "createdAt": _isoformat(task.created_at),
-        "completedAt": _isoformat(task.completed_at),
+        "createdAt": serialize_datetime(task.created_at),
+        "completedAt": serialize_datetime(task.completed_at),
     }
-
-
-def _isoformat(value: datetime | None) -> str | None:
-    if value is None:
-        return None
-    if value.tzinfo is None:
-        return value.isoformat()
-    return value.astimezone().isoformat()
-
-
-def _friendly_datetime(value: datetime | None) -> str | None:
-    if value is None:
-        return None
-    display = value.astimezone() if value.tzinfo is not None else value
-    return display.strftime("%b %d, %Y %I:%M %p")
 
 
 def _priority_label(score: int) -> str:
@@ -744,6 +949,20 @@ def _build_redirect_target(
     return f"{base}?{urlencode(filtered)}"
 
 
+def _format_sync_error(exc: Exception) -> str:
+    if isinstance(exc, ImapError):
+        return (
+            "Email server error: "
+            f"{exc}. Verify IMAP host, credentials, and network access before retrying."
+        )
+    if isinstance(exc, LLMError):
+        return (
+            "AI service error: "
+            f"{exc}. Check LLM settings or try again with fallback enabled."
+        )
+    return f"Sync failed: {exc}"
+
+
 def _run_sync_cycle(
     settings: AppSettings, progress_queue: asyncio.Queue[str] | None = None
 ) -> SyncOutcome:
@@ -754,8 +973,18 @@ def _run_sync_cycle(
             message="Configure IMAP username and app password before syncing.",
         )
 
-    if progress_queue:
-        progress_queue.put_nowait("Connecting to mailbox...")
+    def _enqueue(message: str) -> None:
+        if progress_queue:
+            progress_queue.put_nowait(message)
+
+    mailbox_total = len(settings.imap.mailboxes)
+    if mailbox_total == 0:
+        _enqueue("No mailboxes configured. Update settings to enable syncing.")
+        return SyncOutcome(
+            success=True, message="Sync skipped. No mailboxes configured."
+        )
+
+    _enqueue("Initialising services and preparing sync...")
 
     email_parser = EmailParser()
     llm_client = (
@@ -776,53 +1005,75 @@ def _run_sync_cycle(
 
     try:
         processed_total = 0
-        for mailbox_name in settings.imap.mailboxes:
-            if progress_queue:
-                progress_queue.put_nowait(f"Processing mailbox: {mailbox_name}")
-            with (
-                ImapClient(settings.imap, mailbox_name) as mailbox,
-                SqliteEmailRepository(settings.storage) as repository,
-            ):
-                checkpoint = repository.get_checkpoint(mailbox_name)
-                last_uid = checkpoint.last_uid if checkpoint else None
-                fetcher = MailFetcher(
-                    mailbox=mailbox,
-                    repository=repository,
-                    parser=email_parser,
-                    batch_size=settings.sync.batch_size,
-                    max_messages=settings.sync.max_messages,
-                    insight_service=insight_service,
-                    drafting_service=drafting_service,
-                    follow_up_planner=follow_up_planner,
-                    category_service=category_service,
-                    progress_callback=(
-                        progress_queue.put_nowait if progress_queue else None
-                    ),
-                    user_email=settings.imap.username,
-                )
-                result = fetcher.run()
-                processed_total += result.processed
+        for index, mailbox_name in enumerate(settings.imap.mailboxes, start=1):
+            _enqueue(f"[{index}/{mailbox_total}] Connecting to {mailbox_name}…")
+            attempt = 1
+            while True:
+                try:
+                    with (
+                        ImapClient(settings.imap, mailbox_name) as mailbox,
+                        SqliteEmailRepository(settings.storage) as repository,
+                    ):
+                        checkpoint = repository.get_checkpoint(mailbox_name)
+                        last_uid = checkpoint.last_uid if checkpoint else None
+                        _enqueue(
+                            f"[{index}/{mailbox_total}] Last synced UID for {mailbox_name}: {last_uid or 'none'}"
+                        )
+                        fetcher = MailFetcher(
+                            mailbox=mailbox,
+                            repository=repository,
+                            parser=email_parser,
+                            batch_size=settings.sync.batch_size,
+                            max_messages=settings.sync.max_messages,
+                            insight_service=insight_service,
+                            drafting_service=drafting_service,
+                            follow_up_planner=follow_up_planner,
+                            category_service=category_service,
+                            progress_callback=(
+                                (
+                                    lambda message, mailbox_name=mailbox_name: _enqueue(
+                                        f"[{mailbox_name}] {message}"
+                                    )
+                                )
+                                if progress_queue
+                                else None
+                            ),
+                            user_email=settings.imap.username,
+                        )
+                        result = fetcher.run()
+                        processed_total += result.processed
+                        _enqueue(
+                            f"[{index}/{mailbox_total}] {mailbox_name}: processed {result.processed} new message(s)."
+                        )
+                    break
+                except ImapError as exc:
+                    if attempt >= 3:
+                        raise
+                    delay = min(2**attempt, 10)
+                    _enqueue(
+                        f"[{index}/{mailbox_total}] {mailbox_name}: {exc}. Retrying in {delay} seconds..."
+                    )
+                    time.sleep(delay)
+                    attempt += 1
         if progress_queue:
-            progress_queue.put_nowait(f"Processed {processed_total} messages")
+            _enqueue(f"Processed {processed_total} message(s) across all mailboxes.")
     except ImapError as exc:
-        if progress_queue:
-            progress_queue.put_nowait(f"Error: {exc}")
-        return SyncOutcome(success=False, message=f"Sync failed: {exc}")
+        message = _format_sync_error(exc)
+        _enqueue(f"Error: {message}")
+        return SyncOutcome(success=False, message=message)
     except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-exception-caught
         LOGGER.exception("Unexpected error during sync: %s", exc)
-        if progress_queue:
-            progress_queue.put_nowait(f"Error: {exc}")
-        return SyncOutcome(success=False, message=f"Sync failed: {exc}")
+        message = _format_sync_error(exc)
+        _enqueue(f"Error: {message}")
+        return SyncOutcome(success=False, message=message)
 
     if processed_total == 0:
-        if progress_queue:
-            progress_queue.put_nowait("Sync complete. No new messages processed.")
+        _enqueue("Sync complete. No new messages processed.")
         return SyncOutcome(
             success=True,
             message="Sync complete. No new messages processed.",
         )
-    if progress_queue:
-        progress_queue.put_nowait("Sync complete")
+    _enqueue("Sync complete")
     return SyncOutcome(
         success=True,
         message=f"Sync complete. Processed {processed_total} message(s).",
@@ -889,6 +1140,75 @@ def _clear_database(settings: AppSettings) -> ClearDatabaseOutcome:
         return ClearDatabaseOutcome(
             success=False,
             message="Database clear failed. Check server logs for details.",
+        )
+
+
+def _regenerate_draft(
+    settings: AppSettings, email_uid: int, draft_id: int | None
+) -> DraftRegenerationOutcome:
+    try:
+        with SqliteEmailRepository(settings.storage) as repository:
+            email = repository.fetch_email(email_uid)
+            if email is None:
+                return DraftRegenerationOutcome(
+                    success=False,
+                    message="Draft could not be regenerated. Email data is missing.",
+                )
+
+            insight = repository.fetch_insight(email_uid)
+            if insight is None:
+                return DraftRegenerationOutcome(
+                    success=False,
+                    message="Draft could not be regenerated. Insight data is missing.",
+                )
+
+            llm_client = (
+                OllamaClient(settings.llm)
+                if settings.llm.base_url and settings.llm.model
+                else None
+            )
+            drafting_service = DraftingService(
+                llm_client,
+                fallback_enabled=settings.llm.fallback_enabled,
+            )
+
+            try:
+                generated = drafting_service.generate_draft(email, insight)
+            except DraftingError as exc:
+                LOGGER.warning(
+                    "Draft regeneration failed for UID %s: %s",
+                    email_uid,
+                    exc,
+                )
+                return DraftRegenerationOutcome(
+                    success=False,
+                    message="Draft could not be regenerated.",
+                )
+
+            persisted = False
+            if draft_id is not None:
+                updated = repository.update_draft_body(
+                    draft_id,
+                    email_uid,
+                    body=generated.body,
+                    provider=generated.provider,
+                    generated_at=generated.generated_at,
+                    confidence=generated.confidence,
+                    used_fallback=generated.used_fallback,
+                )
+                persisted = updated is not None
+
+            if not persisted:
+                repository.persist_draft(generated)
+
+        return DraftRegenerationOutcome(success=True, message="Draft regenerated.")
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-exception-caught
+        LOGGER.exception(
+            "Unexpected error regenerating draft for UID %s: %s", email_uid, exc
+        )
+        return DraftRegenerationOutcome(
+            success=False,
+            message="Draft could not be regenerated.",
         )
 
 
