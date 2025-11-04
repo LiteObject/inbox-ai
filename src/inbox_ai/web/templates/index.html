@@ -137,7 +137,9 @@
                 <div class="subject-summary">
                     <div class="subject-summary-top">
                         <div class="subject-details">
-                            <div class="meta uid">UID {{ item.uid }}</div>
+                            <div class="meta uid">UID {{ item.uid }} <span class="text-muted text-xs"> • Priority {{
+                                    item.priorityLabel }} ({{
+                                    item.priority }}) </span></div>
                             <strong>{{ item.subject or "(no subject)" }}</strong><br />
                             <span class="meta">From: {{ item.sender or "Unknown" }}</span>
                             {% if item.receivedAtDisplay %}
@@ -172,12 +174,6 @@
                                     {% else %}
                                     <span class="empty">Not categorized</span>
                                     {% endif %}
-                                </div>
-                                <div class="priority-block">
-                                    <div class="priority-heading">Priority</div>
-                                    <div class="priority-meta">
-                                        <span class="meta">{{ item.priorityLabel }} ({{ item.priority }})</span>
-                                    </div>
                                 </div>
                                 {% if item.draft %}
                                 <div class="draft-preview">
