@@ -165,7 +165,9 @@ class EmailRepository(Protocol):
 class InsightService(Protocol):
     """Provides summarisation and prioritisation for emails."""
 
-    def generate_insight(self, email: EmailEnvelope) -> EmailInsight:
+    def generate_insight(
+        self, email: EmailEnvelope, categories: Sequence[EmailCategory] | None = None
+    ) -> EmailInsight:
         """Produce an :class:`EmailInsight` for an email."""
         raise NotImplementedError
 

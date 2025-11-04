@@ -151,8 +151,8 @@
                             <div class="summary-text">{{ item.summary }}</div>
                             {% endif %}
                             <div class="actions-block">
-                                {% if item.actionItems %}
                                 <div class="actions-heading">Actions</div>
+                                {% if item.actionItems %}
                                 <ul class="actions-list">
                                     {% for action in item.actionItems %}
                                     <li>{{ action }}</li>
@@ -285,7 +285,7 @@
                                 onsubmit="return confirm('Delete message UID {{ item.uid }} from the mailbox?');">
                                 <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
                                 <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-                                <button type="submit" class="button-danger">x</button>
+                                <button type="submit" class="primary">Delete</button>
                             </form>
                         </div>
                     </div>
