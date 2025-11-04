@@ -113,6 +113,21 @@ class MailFetcher:
                         exc,
                     )
 
+            # Regenerate insight with categories to filter spam actions
+            if insight is not None and self._insight_service is not None:
+                try:
+                    updated_insight = self._insight_service.generate_insight(
+                        envelope, categories
+                    )
+                    self._repository.persist_insight(updated_insight)
+                    insight = updated_insight
+                except InsightError as exc:
+                    LOGGER.warning(
+                        "Failed to update insight for UID %s: %s",
+                        envelope.uid,
+                        exc,
+                    )
+
             # Check if draft should be skipped
             excluded_categories = {"marketing", "notification", "spam"}
             is_personal = False
@@ -142,15 +157,24 @@ class MailFetcher:
                     )
 
             if self._follow_up_planner is not None and insight is not None:
-                try:
-                    tasks = self._follow_up_planner.plan_follow_ups(envelope, insight)
-                    self._repository.replace_follow_ups(envelope.uid, tasks)
-                except Exception as exc:  # pylint: disable=broad-except
-                    LOGGER.warning(
-                        "Failed to derive follow-ups for UID %s: %s",
-                        envelope.uid,
-                        exc,
-                    )
+                # Skip follow-ups for spam emails
+                excluded_categories = {"marketing", "notification", "spam"}
+                skip_follow_ups = any(
+                    cat.key in excluded_categories for cat in categories
+                )
+
+                if not skip_follow_ups:
+                    try:
+                        tasks = self._follow_up_planner.plan_follow_ups(
+                            envelope, insight
+                        )
+                        self._repository.replace_follow_ups(envelope.uid, tasks)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        LOGGER.warning(
+                            "Failed to derive follow-ups for UID %s: %s",
+                            envelope.uid,
+                            exc,
+                        )
 
             new_last_uid = chunk.uid
             self._repository.upsert_checkpoint(
