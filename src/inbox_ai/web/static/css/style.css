@@ -1,4 +1,15 @@
 :root {
+    /* Material Design 3 Theme */
+    --md-sys-color-primary: #2563eb;
+    --md-sys-color-secondary: #64748b;
+    --md-sys-color-tertiary: #7c3aed;
+    --md-sys-color-surface: #ffffff;
+    --md-sys-color-surface-variant: #f8fafc;
+    --md-sys-color-background: #f5f5f5;
+    --md-sys-color-error: #dc2626;
+    --md-sys-color-outline: #e5e7eb;
+
+    /* Legacy color variables (keeping for backward compatibility) */
     --color-background: #f5f5f5;
     --color-surface: #ffffff;
     --color-border: #e5e7eb;
@@ -51,13 +62,14 @@
 
 /* Typography and base styles */
 body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+    font-family: 'Roboto', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
     max-width: 960px;
     margin: 40px auto;
     padding: 20px;
-    background: var(--color-background);
+    background: var(--md-sys-color-background);
     font-size: clamp(0.875rem, 0.8rem + 0.4vw, 1rem);
     line-height: 1.6;
+    color: var(--md-sys-color-primary);
 }
 
 h1 {
@@ -455,18 +467,13 @@ a.button {
 }
 
 .insight-card {
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: 8px;
-    padding: var(--spacing-lg);
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-lg);
+    /* Material Design elevated card handles its own styling */
+    width: 100%;
 }
 
-/* .insight-card:hover {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-} */
+.insight-card::part(elevated) {
+    border-radius: 12px;
+}
 
 .insights-controls {
     display: flex;
@@ -615,38 +622,10 @@ a.button {
     align-items: flex-end;
 }
 
-.filter-group {
-    display: flex;
-    flex-direction: column;
-}
-
-.filter-group label {
-    font-weight: 600;
-    font-size: 0.75rem;
-    margin-bottom: 4px;
-    color: var(--color-label);
-}
-
-.filter-group input,
-.filter-group select {
-    padding: 8px;
-    border: 1px solid var(--color-border-old);
-    border-radius: 4px;
+.filter-form md-outlined-text-field,
+.filter-form md-outlined-select {
     min-width: 120px;
-}
-
-.filter-form button {
-    padding: 10px 16px;
-    background: var(--color-filter-bg);
-    color: var(--color-surface);
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-weight: 600;
-}
-
-.filter-form button:hover {
-    background: var(--color-filter-hover);
+    flex: 1 1 auto;
 }
 
 .checkbox-group {
@@ -741,11 +720,11 @@ a.button {
 
 /* Layout sections */
 .section {
-    background: var(--color-surface);
+    background: var(--md-sys-color-surface);
     padding: var(--spacing-lg);
     margin: var(--spacing-lg) 0;
-    border-radius: 8px;
-    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    border: 1px solid var(--md-sys-color-outline);
 }
 
 .section p.description {
@@ -764,6 +743,7 @@ a.button {
 
 .section-header h2 {
     margin: 0;
+    color: var(--md-sys-color-primary);
 }
 
 table {

@@ -5,6 +5,19 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Inbox AI Dashboard</title>
+
+    <!-- Material Design 3 -->
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <script type="importmap">
+    {
+      "imports": {
+        "@material/web/": "https://esm.run/@material/web/"
+      }
+    }
+    </script>
+
+    <!-- Custom styles -->
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}" />
 </head>
 
@@ -16,13 +29,15 @@
                 style="margin: 0;">
                 <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
                 <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-                <button type="submit" class="button button-primary" formaction="/sync">Sync Now</button>
+                <md-filled-button type="submit" formaction="/sync">
+                    <md-icon slot="icon">sync</md-icon>
+                    Sync Now
+                </md-filled-button>
             </form>
-            <a href="/settings" title="Open configuration"
-                style="color: #1e40af; text-decoration: none; font-size: 1.5rem; line-height: 1;">
-                &#9881;
-                <span class="visually-hidden">Configuration</span>
-            </a>
+            <md-text-button href="/settings" title="Open configuration">
+                <md-icon slot="icon">settings</md-icon>
+                Settings
+            </md-text-button>
         </div>
     </header>
 
@@ -46,40 +61,43 @@
 
     <div class="section">
         <form class="filter-form" method="get" data-scroll-restore>
-            <div class="filter-group">
-                <label for="insights_limit">Insights limit</label>
-                <input type="number" id="insights_limit" name="insights_limit" min="1" max="100"
-                    value="{{ filters.insights_limit }}" />
-            </div>
-            <div class="filter-group">
-                <label for="priority">Priority</label>
-                <select id="priority" name="priority">
-                    {% for value, label in priority_filter_options %}
-                    <option value="{{ value }}" {% if value==filters.priority_filter %}selected{% endif %}>
-                        {{ label }}
-                    </option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="filter-group">
-                <label for="category">Category</label>
-                <select id="category" name="category">
-                    <option value="" {% if not filters.category_key %}selected{% endif %}>All categories</option>
-                    {% for category in category_options %}
-                    <option value="{{ category.key }}" {% if filters.category_key==category.key %}selected{% endif %}>
-                        {{ category.label }}
-                    </option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="filter-group">
-                <label for="follow_only">Follow-ups</label>
-                <select id="follow_only" name="follow_only">
-                    <option value="" {% if not filters.follow_only %}selected{% endif %}>All</option>
-                    <option value="1" {% if filters.follow_only %}selected{% endif %}>Only Followups</option>
-                </select>
-            </div>
-            <button type="submit">Apply Filters</button>
+            <md-outlined-text-field label="Insights limit" type="number" name="insights_limit" min="1" max="100"
+                value="{{ filters.insights_limit }}">
+            </md-outlined-text-field>
+
+            <md-outlined-select label="Priority" name="priority">
+                {% for value, label in priority_filter_options %}
+                <md-select-option value="{{ value }}" {% if value==filters.priority_filter %}selected{% endif %}>
+                    <div slot="headline">{{ label }}</div>
+                </md-select-option>
+                {% endfor %}
+            </md-outlined-select>
+
+            <md-outlined-select label="Category" name="category">
+                <md-select-option value="" {% if not filters.category_key %}selected{% endif %}>
+                    <div slot="headline">All categories</div>
+                </md-select-option>
+                {% for category in category_options %}
+                <md-select-option value="{{ category.key }}" {% if filters.category_key==category.key %}selected{% endif
+                    %}>
+                    <div slot="headline">{{ category.label }}</div>
+                </md-select-option>
+                {% endfor %}
+            </md-outlined-select>
+
+            <md-outlined-select label="Follow-ups" name="follow_only">
+                <md-select-option value="" {% if not filters.follow_only %}selected{% endif %}>
+                    <div slot="headline">All</div>
+                </md-select-option>
+                <md-select-option value="1" {% if filters.follow_only %}selected{% endif %}>
+                    <div slot="headline">Only Followups</div>
+                </md-select-option>
+            </md-outlined-select>
+
+            <md-filled-button type="submit">
+                <md-icon slot="icon">filter_list</md-icon>
+                Apply Filters
+            </md-filled-button>
         </form>
     </div>
 
@@ -98,16 +116,19 @@
                     <input type="hidden" name="uids" value="{{ item.uid }}" />
                     {% endfor %}
                 </div>
-                <button type="submit" class="primary" formaction="/emails/bulk-delete">Delete These
-                    Emails</button>
+                <md-outlined-button type="submit" formaction="/emails/bulk-delete">
+                    <md-icon slot="icon">delete_sweep</md-icon>
+                    Delete These Emails
+                </md-outlined-button>
             </form>
             {% endif %}
         </div>
         {% if insights %}
         <div class="insights-controls">
-            <input type="search" id="insights-search" class="insights-search" placeholder="Search insights"
-                aria-label="Search insights"
-                title="Supports filters like from:, subject:, category:, priority:7+, provider:, is:fallback" />
+            <md-outlined-text-field id="insights-search" class="insights-search" label="Search insights"
+                placeholder="Supports filters like from:, subject:, category:, priority:7+, provider:, is:fallback">
+                <md-icon slot="leading-icon">search</md-icon>
+            </md-outlined-text-field>
         </div>
         <div class="insights-grid" id="insights-grid">
             {% for item in insights %}
@@ -119,7 +140,7 @@
             {% set draft_body = item.draft.body if item.draft else '' %}
             {% set draft_provider = item.draft.provider if item.draft else '' %}
             {% set draft_fallback = 'true' if item.draft and item.draft.usedFallback else 'false' %}
-            <article class="insight-card" data-uid="{{ item.uid }}"
+            <md-elevated-card class="insight-card" data-uid="{{ item.uid }}"
                 data-thread-id="{{ item.threadId | default('', true) | e }}"
                 data-subject="{{ item.subject | default('', true) | replace('\n', ' ') | replace('\r', ' ') | e }}"
                 data-sender="{{ item.sender | default('', true) | e }}"
@@ -286,7 +307,7 @@
                         </div>
                     </div>
                 </div>
-            </article>
+            </md-elevated-card>
             {% endfor %}
         </div>
         <p class="empty" id="insights-filter-empty" hidden>No matching insights.</p>
@@ -296,6 +317,19 @@
     </div>
 
     <script type="module" src="{{ url_for('static', path='js/dashboard.js') }}"></script>
+
+    <!-- Material Design 3 Components -->
+    <script type="module">
+        import '@material/web/button/filled-button.js';
+        import '@material/web/button/outlined-button.js';
+        import '@material/web/button/text-button.js';
+        import '@material/web/card/elevated-card.js';
+        import '@material/web/textfield/outlined-text-field.js';
+        import '@material/web/select/outlined-select.js';
+        import '@material/web/select/select-option.js';
+        import '@material/web/icon/icon.js';
+        import '@material/web/progress/linear-progress.js';
+    </script>
 </body>
 
 </html>
