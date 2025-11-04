@@ -377,15 +377,6 @@ a.button {
     margin-bottom: 6px;
 }
 
-.priority-meta {
-    font-size: 0.9rem;
-    color: var(--color-text-primary);
-}
-
-.priority-block {
-    margin-top: 10px;
-}
-
 .meta.uid {
     font-size: 0.85rem;
     font-weight: 700;
@@ -393,12 +384,6 @@ a.button {
     margin-bottom: 6px;
     letter-spacing: 0.02em;
     text-transform: uppercase;
-}
-
-.priority-meta .meta {
-    margin-left: 6px;
-    color: var(--color-text-light);
-    font-weight: 500;
 }
 
 .generated-meta {
@@ -864,6 +849,30 @@ table {
     color: var(--color-text-muted);
     padding: var(--spacing-2xl);
     font-size: smaller;
+}
+
+.text-muted {
+    color: var(--color-text-muted);
+}
+
+.text-xs {
+    font-size: 0.75rem;
+}
+
+.text-sm {
+    font-size: 0.875rem;
+}
+
+.text-base {
+    font-size: 1rem;
+}
+
+.text-lg {
+    font-size: 1.125rem;
+}
+
+.text-xl {
+    font-size: 1.25rem;
 }
 
 /* .empty::before {
