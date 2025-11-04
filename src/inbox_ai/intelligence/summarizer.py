@@ -8,7 +8,7 @@ from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 
 from inbox_ai.core.interfaces import InsightError, InsightService
-from inbox_ai.core.models import EmailBody, EmailEnvelope, EmailInsight
+from inbox_ai.core.models import EmailBody, EmailEnvelope, EmailInsight, EmailCategory
 
 from .fallback import build_deterministic_summary
 from .llm import LLMClient, LLMError
@@ -35,7 +35,9 @@ class SummarizationService(InsightService):
         self._fallback_enabled = fallback_enabled
         self._priority_fn = priority_fn
 
-    def generate_insight(self, email: EmailEnvelope) -> EmailInsight:
+    def generate_insight(
+        self, email: EmailEnvelope, categories: Sequence[EmailCategory] | None = None
+    ) -> EmailInsight:
         """Produce an insight record summarising ``email``."""
         try:
             body_text = _resolve_body_text(email.body)
@@ -43,6 +45,12 @@ class SummarizationService(InsightService):
             action_items: list[str] = []
             provider = "none"
             used_fallback = False
+
+            # Check if email should be treated as spam (skip actions)
+            is_spam = False
+            if categories is not None:
+                excluded_categories = {"marketing", "notification", "spam"}
+                is_spam = any(cat.key in excluded_categories for cat in categories)
 
             if self._llm_client is not None:
                 prompt = build_insight_prompt(email, body_text=body_text)
@@ -66,6 +74,10 @@ class SummarizationService(InsightService):
 
             if summary is None or not summary:
                 summary = "No summary available."
+
+            # Filter out actions for spam emails
+            if is_spam:
+                action_items = []
 
             cleaned_actions = [item.strip() for item in action_items if item.strip()]
             priority = self._priority_fn(email, summary, cleaned_actions)
