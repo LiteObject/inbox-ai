@@ -26,14 +26,70 @@ function dismissToast(element) {
 }
 
 export class ToastManager {
-    constructor({ container, dataset, statusKeys = DEFAULT_STATUS_KEYS } = {}) {
+    constructor({ container, dataset, snackbar, statusKeys = DEFAULT_STATUS_KEYS } = {}) {
         this.container = container ?? null;
+        this.snackbar = snackbar ?? null;
         this.datasetElement = dataset ?? null;
         this.statusKeys = statusKeys;
     }
 
     show(message, variant = "info", duration = 5000) {
-        if (!this.container || !message) {
+        if (!message) {
+            return;
+        }
+
+        const snackbar = this.snackbar;
+        const canUseSnackbar = snackbar && (typeof snackbar.show === "function" || typeof snackbar.close === "function" || "open" in snackbar);
+
+        if (canUseSnackbar) {
+            const trimmed = typeof message === "string" ? message.trim() : "";
+            if (!trimmed) {
+                return;
+            }
+
+            if (typeof snackbar.labelText !== "undefined") {
+                snackbar.labelText = trimmed;
+            } else {
+                snackbar.textContent = trimmed;
+            }
+
+            if (typeof snackbar.timeoutMs !== "undefined" && Number.isFinite(duration)) {
+                snackbar.timeoutMs = duration;
+            }
+
+            if (snackbar.dataset) {
+                if (variant && variant !== "info") {
+                    snackbar.dataset.variant = variant;
+                } else {
+                    delete snackbar.dataset.variant;
+                }
+            }
+
+            const reopen = () => {
+                if (typeof snackbar.show === "function") {
+                    snackbar.show();
+                } else {
+                    snackbar.open = true;
+                }
+            };
+
+            if (typeof snackbar.close === "function") {
+                snackbar.close();
+            } else {
+                snackbar.open = false;
+            }
+
+            const maybeWait = snackbar.updateComplete;
+            if (maybeWait && typeof maybeWait.then === "function") {
+                maybeWait.then(() => window.requestAnimationFrame(reopen));
+            } else {
+                window.requestAnimationFrame(reopen);
+            }
+
+            return;
+        }
+
+        if (!this.container) {
             return;
         }
 

@@ -195,6 +195,11 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
+# Frontend build artifacts
+src/inbox_ai/web/static/node_modules/
+src/inbox_ai/web/static/frontend/node_modules/
+node_modules/
+
 # Cursor
 #  Cursor is an AI-powered code editor. `.cursorignore` specifies files/directories to
 #  exclude from AI features like autocomplete and code analysis. Recommended for sensitive data
