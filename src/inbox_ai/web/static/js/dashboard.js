@@ -3,6 +3,72 @@ import { ToastManager } from "./modules/toast.js";
 import { installScrollRestore } from "./modules/scroll.js";
 import { installInsightSearch } from "./modules/search.js";
 
+// Material Design component fallback handling
+function setupMaterialDesignFallbacks() {
+    function checkAndSetupFallbacks() {
+        // Check if Material Design components loaded properly
+        const testElement = document.createElement('md-outlined-select');
+        const isMDLoaded = testElement.constructor !== HTMLElement;
+
+        document.body.classList.toggle('md-fallback', !isMDLoaded);
+
+        const fallbackGroups = document.querySelectorAll('[data-md-fallback-group]');
+        fallbackGroups.forEach((group) => {
+            const mdElement = group.querySelector('[data-md-element]');
+            const fallbackControl = group.querySelector('[data-fallback-control]');
+
+            if (!mdElement || !fallbackControl) {
+                return;
+            }
+
+            if (isMDLoaded) {
+                // Sync any value entered in the fallback control back to the MD component.
+                if (!fallbackControl.hidden && typeof mdElement.value !== "undefined" && fallbackControl.value !== undefined) {
+                    try {
+                        mdElement.value = fallbackControl.value;
+                    } catch (error) {
+                        console.warn("Unable to sync fallback value to Material component", error);
+                    }
+                }
+
+                mdElement.hidden = false;
+                fallbackControl.hidden = true;
+                fallbackControl.disabled = true;
+            } else {
+                // Copy existing value from the MD element (if any) to the fallback control.
+                let mdValue = typeof mdElement.value !== "undefined" ? mdElement.value : null;
+                if (!mdValue) {
+                    mdValue = mdElement.getAttribute("value");
+                }
+                if (mdValue !== null && mdValue !== undefined && fallbackControl.value !== undefined) {
+                    fallbackControl.value = mdValue;
+                }
+
+                mdElement.hidden = true;
+                fallbackControl.hidden = false;
+                fallbackControl.disabled = false;
+            }
+        });
+    }
+
+    // Check immediately
+    checkAndSetupFallbacks();
+
+    // Also check after a delay in case components load asynchronously
+    window.setTimeout(checkAndSetupFallbacks, 1000);
+
+    if (window.customElements && typeof window.customElements.whenDefined === "function") {
+        const definitions = [
+            window.customElements.whenDefined("md-outlined-select"),
+            window.customElements.whenDefined("md-outlined-text-field"),
+            window.customElements.whenDefined("md-filled-button"),
+        ];
+        Promise.allSettled(definitions).then(() => {
+            checkAndSetupFallbacks();
+        });
+    }
+}
+
 const TOAST_STORAGE_KEY = "dashboard.pendingToasts";
 const STATUS_PARAM_PAIRS = [
     ["sync_status", "sync_message"],
@@ -198,7 +264,40 @@ function installSpinnerForms(spinner, toastManager) {
     });
 }
 
+function installSettingsNavigation() {
+    const settingsButton = document.getElementById("settings-button");
+    if (!settingsButton) {
+        return;
+    }
+
+    const target = settingsButton.dataset.href || "/settings";
+
+    const navigateToSettings = (event) => {
+        if (event?.metaKey || event?.ctrlKey || event?.shiftKey) {
+            window.open(target, "_blank", "noopener,noreferrer");
+            return;
+        }
+
+        event?.preventDefault?.();
+        queueToastsForNavigation(target);
+        window.location.href = target;
+    };
+
+    settingsButton.addEventListener("click", (event) => {
+        navigateToSettings(event);
+    });
+
+    settingsButton.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " " || event.key === "Spacebar" || event.key === "Space") {
+            navigateToSettings(event);
+        }
+    });
+}
+
 document.addEventListener("DOMContentLoaded", () => {
+    // Setup Material Design component fallbacks
+    setupMaterialDesignFallbacks();
+
     const spinner = new SpinnerController({
         overlay: document.getElementById("sync-spinner"),
         messageElement: document.getElementById("spinner-message"),
@@ -210,6 +309,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const toastManager = new ToastManager({
         container: document.getElementById("toast-container"),
+        snackbar: document.getElementById("global-snackbar"),
         dataset: document.getElementById("toast-data"),
     });
     toastManager.hydrateFromDataset();
@@ -234,4 +334,6 @@ document.addEventListener("DOMContentLoaded", () => {
         visibleCount: document.getElementById("insights-visible-count"),
         emptyNotice: document.getElementById("insights-filter-empty"),
     });
+
+    installSettingsNavigation();
 });

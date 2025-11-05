@@ -1,0 +1,15 @@
+{
+  "name": "inbox-ai-material-bundle",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/material.js --bundle --format=esm --target=es2020 --outdir=../dist --sourcemap"
+  },
+  "devDependencies": {
+    "esbuild": "^0.21.0"
+  },
+  "dependencies": {
+    "@material/web": "^2.2.0"
+  }
+}
