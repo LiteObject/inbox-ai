@@ -184,6 +184,161 @@ a {
     display: flex;
     flex-direction: column;
     min-height: 100vh;
+    position: relative;
+    overflow-x: hidden;
+}
+
+/* ============================================
+   ORGANIC BACKGROUND SHAPES
+   ============================================ */
+
+.organic-background {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 0;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+.shape {
+    position: absolute;
+    pointer-events: none;
+}
+
+/* Shape 1: Large yellow triangle-like shape (top left) */
+.shape-1 {
+    top: -10%;
+    left: -5%;
+    width: 45vw;
+    height: 50vh;
+    background: linear-gradient(135deg, 
+        var(--theme-secondary, #f9e784) 0%, 
+        rgba(249, 231, 132, 0.3) 100%);
+    clip-path: polygon(0 0, 80% 0, 30% 100%, 0 70%);
+    opacity: 0.85;
+    animation: float 25s ease-in-out infinite;
+}
+
+/* Shape 2: Organic blob (top right) */
+.shape-2 {
+    top: 5%;
+    right: 10%;
+    width: 25vw;
+    height: 25vh;
+    background: radial-gradient(circle at 30% 30%, 
+        var(--theme-accent, #f5b971) 0%, 
+        transparent 70%);
+    border-radius: 63% 37% 54% 46% / 55% 48% 52% 45%;
+    opacity: 0.4;
+    animation: float 20s ease-in-out infinite reverse;
+}
+
+/* Shape 3: Green organic shape (bottom) */
+.shape-3 {
+    bottom: -5%;
+    right: 15%;
+    width: 60vw;
+    height: 35vh;
+    background: linear-gradient(100deg,
+        rgba(92, 124, 84, 0.2) 0%,
+        transparent 50%);
+    border-radius: 77% 23% 0 100% / 85% 38% 62% 15%;
+    opacity: 0.3;
+}
+
+/* Shape 4: Small accent circles */
+.shape-4 {
+    top: 40%;
+    left: 8%;
+    width: 120px;
+    height: 120px;
+    background: radial-gradient(circle,
+        var(--theme-secondary, #f9e784) 0%,
+        transparent 60%);
+    border-radius: 50%;
+    opacity: 0.5;
+    animation: pulse 8s ease-in-out infinite;
+}
+
+/* Shape 5: Flowing mid-section shape */
+.shape-5 {
+    top: 30%;
+    right: -10%;
+    width: 40vw;
+    height: 40vh;
+    background: linear-gradient(180deg,
+        transparent 0%,
+        rgba(245, 185, 113, 0.15) 50%,
+        transparent 100%);
+    border-radius: 40% 60% 60% 40% / 60% 30% 70% 40%;
+    opacity: 0.4;
+    transform: rotate(-15deg);
+    animation: float 30s ease-in-out infinite;
+}
+
+/* Shape 6: Bottom left organic accent */
+.shape-6 {
+    bottom: 10%;
+    left: -8%;
+    width: 25vw;
+    height: 30vh;
+    background: linear-gradient(45deg,
+        var(--theme-primary, #5c7c54) 0%,
+        transparent 60%);
+    clip-path: ellipse(70% 60% at 30% 50%);
+    opacity: 0.2;
+}
+
+/* Animations for organic movement */
+@keyframes float {
+    0%, 100% {
+        transform: translateY(0) scale(1);
+    }
+    33% {
+        transform: translateY(-20px) scale(1.05);
+    }
+    66% {
+        transform: translateY(10px) scale(0.95);
+    }
+}
+
+@keyframes pulse {
+    0%, 100% {
+        transform: scale(1);
+        opacity: 0.5;
+    }
+    50% {
+        transform: scale(1.2);
+        opacity: 0.3;
+    }
+}
+
+/* Theme-specific shape adjustments */
+:root[data-theme="dark"] .organic-background {
+    opacity: 0.3;
+}
+
+:root[data-theme="high-contrast"] .organic-background {
+    display: none;
+}
+
+/* Give cards subtle backdrop effect for depth */
+.md3-list-pane,
+.md3-detail-pane,
+.md3-navigation-rail {
+    backdrop-filter: blur(20px);
+    background: color-mix(in srgb, var(--md3-color-surface) 95%, transparent);
+}
+
+/* Ensure main content sits above shapes */
+.md3-top-app-bar,
+.md3-layout,
+.theme-switcher {
+    position: relative;
+    z-index: 10;
 }
 
 .md3-top-app-bar {
@@ -203,6 +358,7 @@ a {
     font-size: 22px;
     font-weight: 500;
     letter-spacing: 0.2px;
+    color: var(--theme-primary);
 }
 
 .md3-top-app-bar-actions {
@@ -926,5 +1082,53 @@ a {
 
     .md3-detail-pane {
         inset: 72px var(--md3-spacing-8) var(--md3-spacing-8);
+    }
+
+    /* Mobile adjustments for shapes */
+    .shape-1 {
+        width: 70vw;
+        height: 40vh;
+    }
+    
+    .shape-2 {
+        width: 40vw;
+        height: 20vh;
+    }
+    
+    .shape-3 {
+        width: 80vw;
+        height: 25vh;
+    }
+    
+    .shape-5 {
+        width: 50vw;
+        height: 30vh;
+    }
+}
+
+/* Reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+    @keyframes float {
+        0%, 100% {
+            transform: none;
+        }
+    }
+    
+    @keyframes pulse {
+        0%, 100% {
+            transform: none;
+            opacity: 0.5;
+        }
+        50% {
+            transform: none;
+            opacity: 0.5;
+        }
+    }
+
+    .shape-1,
+    .shape-2,
+    .shape-4,
+    .shape-5 {
+        animation: none !important;
     }
 }
