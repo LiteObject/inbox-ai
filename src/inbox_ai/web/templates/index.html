@@ -5,33 +5,52 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Inbox AI Dashboard</title>
+
+    <!-- Material Design 3 -->
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,400,0,0" />
+    <!-- Custom styles -->
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}" />
 </head>
 
 <body>
-    <header style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
-        <h1 style="margin: 0;">Inbox AI Dashboard</h1>
-        <div style="display: flex; align-items: center; gap: 12px;">
-            <form method="post" action="/sync" data-spinner data-spinner-label="Sync in progress&hellip;"
-                style="margin: 0;">
+    <div class="organic-backdrop" aria-hidden="true">
+        <div class="organic-backdrop__shape organic-backdrop__shape--yellow-triangle"></div>
+        <div class="organic-backdrop__shape organic-backdrop__shape--orange-blob"></div>
+        <div class="organic-backdrop__shape organic-backdrop__shape--green-flow"></div>
+        <div class="organic-backdrop__shape organic-backdrop__shape--yellow-circle"></div>
+        <div class="organic-backdrop__shape organic-backdrop__shape--beige-wave"></div>
+        <div class="organic-backdrop__shape organic-backdrop__shape--dots"></div>
+        <div class="organic-backdrop__shape organic-backdrop__shape--curve-1"></div>
+        <div class="organic-backdrop__shape organic-backdrop__shape--curve-2"></div>
+        <div class="organic-backdrop__shape organic-backdrop__shape--top"></div>
+        <div class="organic-backdrop__shape organic-backdrop__shape--bottom"></div>
+    </div>
+
+    <md-top-app-bar id="dashboard-app-bar" variant="center-aligned">
+        <div slot="headline">Inbox AI Dashboard</div>
+        <div slot="actions" class="app-bar-actions">
+            <md-icon-button id="settings-button" aria-label="Open settings" data-href="/settings" type="button">
+                <md-icon>settings</md-icon>
+            </md-icon-button>
+            <form method="post" action="/sync" data-spinner data-scroll-restore
+                data-spinner-label="Sync in progress&hellip;">
                 <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
                 <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-                <button type="submit" class="button button-primary" formaction="/sync">Sync Now</button>
+                <md-icon-button type="submit" class="app-bar-sync" aria-label="Sync now">
+                    <md-icon>sync</md-icon>
+                </md-icon-button>
             </form>
-            <a href="/settings" title="Open configuration"
-                style="color: #1e40af; text-decoration: none; font-size: 1.5rem; line-height: 1;">
-                &#9881;
-                <span class="visually-hidden">Configuration</span>
-            </a>
         </div>
-    </header>
+    </md-top-app-bar>
 
     <div id="sync-spinner" class="spinner-overlay" hidden>
-        <div class="spinner" role="status" aria-live="assertive"></div>
+        <md-circular-progress indeterminate></md-circular-progress>
         <p id="spinner-message">Processing request&hellip;</p>
     </div>
 
-    <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
     <div id="toast-data" hidden aria-hidden="true" data-sync-status="{{ sync_status | default('', true) }}"
         data-sync-message="{{ sync_message | default('', true) | e }}"
         data-delete-status="{{ delete_status | default('', true) }}"
@@ -43,263 +62,340 @@
         data-clear-status="{{ clear_status | default('', true) }}"
         data-clear-message="{{ clear_message | default('', true) | e }}">
     </div>
+    <md-snackbar id="global-snackbar"></md-snackbar>
+    <div id="toast-container" class="toast-container" aria-live="assertive" aria-atomic="true"></div>
 
-    <div class="section">
-        <form class="filter-form" method="get" data-scroll-restore>
-            <div class="filter-group">
-                <label for="insights_limit">Insights limit</label>
-                <input type="number" id="insights_limit" name="insights_limit" min="1" max="100"
-                    value="{{ filters.insights_limit }}" />
-            </div>
-            <div class="filter-group">
-                <label for="priority">Priority</label>
-                <select id="priority" name="priority">
-                    {% for value, label in priority_filter_options %}
-                    <option value="{{ value }}" {% if value==filters.priority_filter %}selected{% endif %}>
-                        {{ label }}
-                    </option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="filter-group">
-                <label for="category">Category</label>
-                <select id="category" name="category">
-                    <option value="" {% if not filters.category_key %}selected{% endif %}>All categories</option>
-                    {% for category in category_options %}
-                    <option value="{{ category.key }}" {% if filters.category_key==category.key %}selected{% endif %}>
-                        {{ category.label }}
-                    </option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="filter-group">
-                <label for="follow_only">Follow-ups</label>
-                <select id="follow_only" name="follow_only">
-                    <option value="" {% if not filters.follow_only %}selected{% endif %}>All</option>
-                    <option value="1" {% if filters.follow_only %}selected{% endif %}>Only Followups</option>
-                </select>
-            </div>
-            <button type="submit">Apply Filters</button>
-        </form>
-    </div>
-
-    <div class="section">
-        <div class="section-header">
-            <h2>Recent Insights (<span id="insights-visible-count">{{ insights | length }}</span> / {{ insights_total |
-                default(0) }})</h2>
-            {% if insights %}
-            <form method="post" action="/emails/bulk-delete" class="bulk-delete-form" data-spinner data-scroll-restore
-                data-spinner-label="Deleting emails&hellip;"
-                data-confirm="Delete all listed emails and related data? This cannot be undone.">
-                <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
-                <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-                <div class="hidden-inputs" aria-hidden="true">
-                    {% for item in insights %}
-                    <input type="hidden" name="uids" value="{{ item.uid }}" />
-                    {% endfor %}
-                </div>
-                <button type="submit" class="primary" formaction="/emails/bulk-delete">Delete These
-                    Emails</button>
-            </form>
-            {% endif %}
-        </div>
-        {% if insights %}
-        <div class="insights-controls">
-            <input type="search" id="insights-search" class="insights-search" placeholder="Search insights"
-                aria-label="Search insights"
-                title="Supports filters like from:, subject:, category:, priority:7+, provider:, is:fallback" />
-        </div>
-        <div class="insights-grid" id="insights-grid">
-            {% for item in insights %}
-            {% set category_labels = item.categories | map(attribute='label') | join(' ') %}
-            {% set action_text = item.actionItems | join(' ') %}
-            {% set follow_actions = item.followUps | map(attribute='action') | join(' ') %}
-            {% set follow_statuses = item.followUps | map(attribute='status') | join(' ') %}
-            {% set follow_text = (follow_actions ~ ' ' ~ follow_statuses) | trim %}
-            {% set draft_body = item.draft.body if item.draft else '' %}
-            {% set draft_provider = item.draft.provider if item.draft else '' %}
-            {% set draft_fallback = 'true' if item.draft and item.draft.usedFallback else 'false' %}
-            <article class="insight-card" data-uid="{{ item.uid }}"
-                data-thread-id="{{ item.threadId | default('', true) | e }}"
-                data-subject="{{ item.subject | default('', true) | replace('\n', ' ') | replace('\r', ' ') | e }}"
-                data-sender="{{ item.sender | default('', true) | e }}"
-                data-summary="{{ item.summary | default('', true) | replace('\n', ' ') | replace('\r', ' ') | e }}"
-                data-actions="{{ action_text | default('', true) | e }}"
-                data-categories="{{ category_labels | default('', true) | e }}"
-                data-priority="{{ ((item.priorityLabel | default('', true)) ~ ' ' ~ item.priority) | trim | e }}"
-                data-priority-value="{{ item.priority }}" data-provider="{{ item.provider | default('', true) | e }}"
-                data-follow="{{ follow_text | default('', true) | e }}"
-                data-has-followups="{{ 'true' if item.followUps else 'false' }}"
-                data-has-draft="{{ 'true' if item.draft else 'false' }}"
-                data-draft="{{ draft_body | default('', true) | replace('\n', ' ') | replace('\r', ' ') | e }}"
-                data-draft-provider="{{ draft_provider | default('', true) | e }}"
-                data-draft-fallback="{{ draft_fallback }}">
-                <div class="subject-summary">
-                    <div class="subject-summary-top">
-                        <div class="subject-details">
-                            <div class="meta uid">UID {{ item.uid }}</div>
-                            <strong>{{ item.subject or "(no subject)" }}</strong><br />
-                            <span class="meta">From: {{ item.sender or "Unknown" }}</span>
-                            {% if item.receivedAtDisplay %}
-                            <span class="meta">• Received: {{ item.receivedAtDisplay }}</span>
-                            {% endif %}
-                            {% set display_date = item.generatedAtDisplay or item.geneatedAt %}
-                            {% if display_date %}
-                            <span class="meta">• Generate: {{ display_date }}</span>
-                            {% endif %}
-                            {% if item.summary %}
-                            <div class="summary-text">{{ item.summary }}</div>
-                            {% endif %}
-                            <div class="actions-block">
-                                <div class="actions-heading">Actions</div>
-                                {% if item.actionItems %}
-                                <ul class="actions-list">
-                                    {% for action in item.actionItems %}
-                                    <li>{{ action }}</li>
-                                    {% endfor %}
-                                </ul>
-                                {% else %}
-                                <span class="empty">No action items</span>
-                                {% endif %}
-                                <div class="categories-block">
-                                    <div class="categories-heading">Categories</div>
-                                    {% if item.categories %}
-                                    <ul class="categories-list">
-                                        {% for category in item.categories %}
-                                        <li>{{ category.label }}</li>
-                                        {% endfor %}
-                                    </ul>
-                                    {% else %}
-                                    <span class="empty">Not categorized</span>
-                                    {% endif %}
-                                </div>
-                                <div class="priority-block">
-                                    <div class="priority-heading">Priority</div>
-                                    <div class="priority-meta">
-                                        <span class="meta">{{ item.priorityLabel }} ({{ item.priority }})</span>
-                                    </div>
-                                </div>
-                                {% if item.draft %}
-                                <div class="draft-preview">
-                                    <div class="draft-heading">Latest Draft</div>
-                                    <form method="post" action="/emails/{{ item.uid }}/draft" data-scroll-restore
-                                        data-spinner data-spinner-label="Saving draft&hellip;">
-                                        <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
-                                        <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-                                        {% if item.draft.id is not none %}
-                                        <input type="hidden" name="draft_id" value="{{ item.draft.id }}" />
-                                        {% endif %}
-                                        <input type="hidden" name="provider" value="{{ manual_draft_provider }}" />
-                                        <textarea class="draft-editor" id="draft-body-{{ item.uid }}" name="body"
-                                            aria-label="Edit draft for message {{ item.uid }}">{{ item.draft.body | default('', true) | e }}</textarea>
-                                        <div class="draft-actions">
-                                            <button type="submit" class="draft-action-button save" title="Save draft"
-                                                formaction="/emails/{{ item.uid }}/draft"
-                                                data-spinner-label="Saving draft&hellip;">
-                                                <span aria-hidden="true" class="label">Save</span>
-                                                <span class="visually-hidden">Save draft</span>
-                                            </button>
-                                            <button type="submit" class="draft-action-button regenerate"
-                                                title="Regenerate draft"
-                                                formaction="/emails/{{ item.uid }}/draft/regenerate"
-                                                data-spinner-label="Regenerating draft&hellip;">
-                                                <span aria-hidden="true" class="label">Regenerate</span>
-                                                <span class="visually-hidden">Regenerate draft</span>
-                                            </button>
-                                            {% if item.draft.id is not none %}
-                                            <button type="submit" class="draft-action-button delete"
-                                                title="Delete draft" formaction="/emails/{{ item.uid }}/draft/delete"
-                                                data-spinner-label="Deleting draft&hellip;"
-                                                data-confirm="Delete this draft? This cannot be undone.">
-                                                <span aria-hidden="true" class="label">Delete</span>
-                                                <span class="visually-hidden">Delete draft</span>
-                                            </button>
-                                            {% endif %}
-                                        </div>
-                                    </form>
-                                    <div class="draft-meta">
-                                        <span class="meta">Provider: {{ item.draft.provider }}</span>
-                                        {% if item.draft.generatedAtDisplay %}
-                                        <span class="meta">Generated {{ item.draft.generatedAtDisplay }}</span>
-                                        {% endif %}
-                                        {% if item.draft.confidence is not none %}
-                                        <span class="meta">Confidence {{ '%.2f' | format(item.draft.confidence)
-                                            }}</span>
-                                        {% endif %}
-                                        {% if item.draft.usedFallback %}
-                                        <span class="meta">Fallback used</span>
-                                        {% endif %}
-                                    </div>
-                                </div>
-                                {% endif %}
-                                {% if item.followUps %}
-                                <div class="followups-block">
-                                    <div class="followups-heading">Follow-Ups</div>
-                                    <ul class="followups-list">
-                                        {% for task in item.followUps %}
-                                        <li class="followup-item">
-                                            <div class="followup-action">{{ task.action }}</div>
-                                            <div class="followup-meta">
-                                                {% if task.dueAt %}
-                                                <span class="meta">Due: {{ task.dueAt }}</span>
-                                                {% endif %}
-                                                <span class="meta status-{{ task.status }}">Status: {{ task.status
-                                                    }}</span>
-                                                <span class="meta">Created: {{ task.createdAt }}</span>
-                                                {% if task.completedAt %}
-                                                <span class="meta">Completed: {{ task.completedAt }}</span>
-                                                {% endif %}
-                                            </div>
-                                            {% if task.id is not none %}
-                                            <div class="followup-actions">
-                                                {% if task.status != "done" %}
-                                                <form method="post" action="/follow-ups/{{ task.id }}/status"
-                                                    data-scroll-restore>
-                                                    <input type="hidden" name="{{ csrf_field_name }}"
-                                                        value="{{ csrf_token }}" />
-                                                    <input type="hidden" name="status" value="done" />
-                                                    <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-                                                    <button class="primary" type="submit">Mark Done</button>
-                                                </form>
-                                                {% else %}
-                                                <form method="post" action="/follow-ups/{{ task.id }}/status"
-                                                    data-scroll-restore>
-                                                    <input type="hidden" name="{{ csrf_field_name }}"
-                                                        value="{{ csrf_token }}" />
-                                                    <input type="hidden" name="status" value="open" />
-                                                    <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-                                                    <button class="secondary" type="submit">Reopen</button>
-                                                </form>
-                                                {% endif %}
-                                            </div>
-                                            {% endif %}
-                                        </li>
-                                        {% endfor %}
-                                    </ul>
-                                </div>
-                                {% endif %}
-                            </div>
+    <main class="dashboard-layout">
+        <section class="filters-panel">
+            <md-elevated-card class="surface-card filter-card">
+                <div slot="headline">Filters</div>
+                <form class="filter-form" method="get" data-scroll-restore>
+                    <div class="filter-row">
+                        <div class="md-fallback-group" data-md-fallback-group>
+                            <md-outlined-text-field label="Insights limit" type="number" name="insights_limit" min="1"
+                                max="100" value="{{ filters.insights_limit }}" data-md-element>
+                            </md-outlined-text-field>
+                            <input type="number" name="insights_limit" min="1" max="100"
+                                value="{{ filters.insights_limit }}" class="fallback-control" data-fallback-control
+                                data-fallback-type="text-field" placeholder="Insights limit" aria-label="Insights limit"
+                                hidden disabled />
                         </div>
-                        <div class="insight-actions">
-                            <form method="post" action="/emails/{{ item.uid }}/delete" data-scroll-restore
-                                onsubmit="return confirm('Delete message UID {{ item.uid }} from the mailbox?');">
-                                <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
-                                <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-                                <button type="submit" class="primary">Delete</button>
-                            </form>
+
+                        <div class="md-fallback-group" data-md-fallback-group>
+                            <md-outlined-select label="Priority" name="priority" data-md-element>
+                                {% for value, label in priority_filter_options %}
+                                <md-select-option value="{{ value }}" {% if value==filters.priority_filter %}selected{%
+                                    endif %}>
+                                    <div slot="headline">{{ label }}</div>
+                                </md-select-option>
+                                {% endfor %}
+                            </md-outlined-select>
+                            <select name="priority" class="fallback-control" data-fallback-control
+                                data-fallback-type="select" aria-label="Filter by priority" hidden disabled>
+                                {% for value, label in priority_filter_options %}
+                                <option value="{{ value }}" {% if value==filters.priority_filter %}selected{% endif %}>
+                                    {{ label }}</option>
+                                {% endfor %}
+                            </select>
                         </div>
                     </div>
-                </div>
-            </article>
-            {% endfor %}
-        </div>
-        <p class="empty" id="insights-filter-empty" hidden>No matching insights.</p>
-        {% else %}
-        <p class="empty">No insights found. Run a sync to populate data.</p>
-        {% endif %}
-    </div>
+
+                    <div class="filter-row">
+                        <div class="md-fallback-group" data-md-fallback-group>
+                            <md-outlined-select label="Category" name="category" data-md-element>
+                                <md-select-option value="" {% if not filters.category_key %}selected{% endif %}>
+                                    <div slot="headline">All categories</div>
+                                </md-select-option>
+                                {% for category in category_options %}
+                                <md-select-option value="{{ category.key }}" {% if filters.category_key==category.key
+                                    %}selected{% endif %}>
+                                    <div slot="headline">{{ category.label }}</div>
+                                </md-select-option>
+                                {% endfor %}
+                            </md-outlined-select>
+                            <select name="category" class="fallback-control" data-fallback-control
+                                data-fallback-type="select" aria-label="Filter by category" hidden disabled>
+                                <option value="" {% if not filters.category_key %}selected{% endif %}>All categories
+                                </option>
+                                {% for category in category_options %}
+                                <option value="{{ category.key }}" {% if filters.category_key==category.key %}selected{%
+                                    endif %}>{{ category.label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div class="md-fallback-group" data-md-fallback-group>
+                            <md-outlined-select label="Follow-ups" name="follow_only" data-md-element>
+                                <md-select-option value="" {% if not filters.follow_only %}selected{% endif %}>
+                                    <div slot="headline">All</div>
+                                </md-select-option>
+                                <md-select-option value="1" {% if filters.follow_only %}selected{% endif %}>
+                                    <div slot="headline">Only Followups</div>
+                                </md-select-option>
+                            </md-outlined-select>
+                            <select name="follow_only" class="fallback-control" data-fallback-control
+                                data-fallback-type="select" aria-label="Filter follow-up status" hidden disabled>
+                                <option value="" {% if not filters.follow_only %}selected{% endif %}>All</option>
+                                <option value="1" {% if filters.follow_only %}selected{% endif %}>Only Followups
+                                </option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="filter-actions">
+                        <md-filled-button type="submit">
+                            <md-icon slot="icon">filter_list</md-icon>
+                            Apply Filters
+                        </md-filled-button>
+                    </div>
+                </form>
+            </md-elevated-card>
+        </section>
+
+        <section class="insights-panel">
+            <div class="section-header">
+                <h2>Recent Insights (<span id="insights-visible-count">{{ insights | length }}</span> / {{
+                    insights_total |
+                    default(0) }})</h2>
+                {% if insights %}
+                <form method="post" action="/emails/bulk-delete" class="bulk-delete-form" data-spinner
+                    data-scroll-restore data-spinner-label="Deleting emails&hellip;"
+                    data-confirm="Delete all listed emails and related data? This cannot be undone.">
+                    <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
+                    <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
+                    <div class="hidden-inputs" aria-hidden="true">
+                        {% for item in insights %}
+                        <input type="hidden" name="uids" value="{{ item.uid }}" />
+                        {% endfor %}
+                    </div>
+                    <md-outlined-button type="submit" formaction="/emails/bulk-delete">
+                        <md-icon slot="icon">delete_sweep</md-icon>
+                        Delete These Emails
+                    </md-outlined-button>
+                </form>
+                {% endif %}
+            </div>
+            {% if insights %}
+            <div class="insights-controls">
+                <md-outlined-text-field id="insights-search" class="insights-search" label="Search insights"
+                    placeholder="Supports filters like from:, subject:, category:, priority:7+, provider:, is:fallback">
+                    <md-icon slot="leading-icon">search</md-icon>
+                </md-outlined-text-field>
+            </div>
+            <div class="insights-grid" id="insights-grid">
+                {% for item in insights %}
+                {% set category_labels = item.categories | map(attribute='label') | join(' ') %}
+                {% set action_text = item.actionItems | join(' ') %}
+                {% set follow_actions = item.followUps | map(attribute='action') | join(' ') %}
+                {% set follow_statuses = item.followUps | map(attribute='status') | join(' ') %}
+                {% set follow_text = (follow_actions ~ ' ' ~ follow_statuses) | trim %}
+                {% set draft_body = item.draft.body if item.draft else '' %}
+                {% set draft_provider = item.draft.provider if item.draft else '' %}
+                {% set draft_fallback = 'true' if item.draft and item.draft.usedFallback else 'false' %}
+                <md-elevated-card class="insight-card" data-uid="{{ item.uid }}"
+                    data-thread-id="{{ item.threadId | default('', true) | e }}"
+                    data-subject="{{ item.subject | default('', true) | replace('\n', ' ') | replace('\r', ' ') | e }}"
+                    data-sender="{{ item.sender | default('', true) | e }}"
+                    data-summary="{{ item.summary | default('', true) | replace('\n', ' ') | replace('\r', ' ') | e }}"
+                    data-actions="{{ action_text | default('', true) | e }}"
+                    data-categories="{{ category_labels | default('', true) | e }}"
+                    data-priority="{{ ((item.priorityLabel | default('', true)) ~ ' ' ~ item.priority) | trim | e }}"
+                    data-priority-value="{{ item.priority }}"
+                    data-provider="{{ item.provider | default('', true) | e }}"
+                    data-follow="{{ follow_text | default('', true) | e }}"
+                    data-has-followups="{{ 'true' if item.followUps else 'false' }}"
+                    data-has-draft="{{ 'true' if item.draft else 'false' }}"
+                    data-draft="{{ draft_body | default('', true) | replace('\n', ' ') | replace('\r', ' ') | e }}"
+                    data-draft-provider="{{ draft_provider | default('', true) | e }}"
+                    data-draft-fallback="{{ draft_fallback }}">
+                    <div class="subject-summary">
+                        <div class="subject-summary-top">
+                            <div class="subject-details">
+                                <div class="meta uid">UID {{ item.uid }} <span class="text-muted text-xs"> • Priority {{
+                                        item.priorityLabel }} ({{
+                                        item.priority }}) </span></div>
+                                <strong>{{ item.subject or "(no subject)" }}</strong><br />
+                                <span class="meta">From: {{ item.sender or "Unknown" }}</span>
+                                {% if item.receivedAtDisplay %}
+                                <span class="meta">• Received: {{ item.receivedAtDisplay }}</span>
+                                {% endif %}
+                                {% set display_date = item.generatedAtDisplay or item.geneatedAt %}
+                                {% if display_date %}
+                                <span class="meta">• Generate: {{ display_date }}</span>
+                                {% endif %}
+                                {% if item.summary %}
+                                <div class="summary-text">{{ item.summary }}</div>
+                                {% endif %}
+                                <div class="actions-block">
+                                    <div class="section-subheadline">Actions</div>
+                                    {% if item.actionItems %}
+                                    <md-list class="actions-list">
+                                        {% for action in item.actionItems %}
+                                        <md-list-item>
+                                            <div slot="headline">{{ action }}</div>
+                                        </md-list-item>
+                                        {% endfor %}
+                                    </md-list>
+                                    {% else %}
+                                    <md-assist-chip label="No action items"></md-assist-chip>
+                                    {% endif %}
+                                    <div class="categories-block">
+                                        <div class="section-subheadline">Categories</div>
+                                        {% if item.categories %}
+                                        <md-chip-set class="categories-chip-set">
+                                            {% for category in item.categories %}
+                                            <md-assist-chip label="{{ category.label }}"></md-assist-chip>
+                                            {% endfor %}
+                                        </md-chip-set>
+                                        {% else %}
+                                        <md-assist-chip label="Not categorized"></md-assist-chip>
+                                        {% endif %}
+                                    </div>
+                                    {% if item.draft %}
+                                    <div class="draft-preview">
+                                        <div class="section-subheadline">Latest Draft</div>
+                                        <form method="post" action="/emails/{{ item.uid }}/draft" data-scroll-restore
+                                            data-spinner data-spinner-label="Saving draft&hellip;">
+                                            <input type="hidden" name="{{ csrf_field_name }}"
+                                                value="{{ csrf_token }}" />
+                                            <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
+                                            {% if item.draft.id is not none %}
+                                            <input type="hidden" name="draft_id" value="{{ item.draft.id }}" />
+                                            {% endif %}
+                                            <input type="hidden" name="provider" value="{{ manual_draft_provider }}" />
+                                            <div class="draft-editor-group md-fallback-group" data-md-fallback-group>
+                                                <md-outlined-text-field label="Draft body" name="body" data-md-element
+                                                    textarea rows="6"
+                                                    value="{{ item.draft.body | default('', true) | e }}"
+                                                    aria-label="Edit draft for message {{ item.uid }}">
+                                                </md-outlined-text-field>
+                                                <textarea class="fallback-control fallback-textarea"
+                                                    id="draft-body-{{ item.uid }}" name="body"
+                                                    aria-label="Edit draft for message {{ item.uid }}"
+                                                    data-fallback-control data-fallback-type="text-field" hidden
+                                                    disabled>{{ item.draft.body | default('', true) | e }}</textarea>
+                                            </div>
+                                            <div class="draft-actions">
+                                                <md-filled-button type="submit"
+                                                    formaction="/emails/{{ item.uid }}/draft"
+                                                    data-spinner-label="Saving draft&hellip;">
+                                                    <md-icon slot="icon">save</md-icon>
+                                                    Save
+                                                </md-filled-button>
+                                                <md-outlined-button type="submit"
+                                                    formaction="/emails/{{ item.uid }}/draft/regenerate"
+                                                    data-spinner-label="Regenerating draft&hellip;">
+                                                    <md-icon slot="icon">refresh</md-icon>
+                                                    Regenerate
+                                                </md-outlined-button>
+                                                {% if item.draft.id is not none %}
+                                                <md-text-button type="submit"
+                                                    formaction="/emails/{{ item.uid }}/draft/delete"
+                                                    data-spinner-label="Deleting draft&hellip;"
+                                                    data-confirm="Delete this draft? This cannot be undone.">
+                                                    Delete
+                                                </md-text-button>
+                                                {% endif %}
+                                            </div>
+                                        </form>
+                                        <div class="draft-meta">
+                                            <md-chip-set>
+                                                <md-assist-chip
+                                                    label="Provider: {{ item.draft.provider }}"></md-assist-chip>
+                                                {% if item.draft.generatedAtDisplay %}
+                                                <md-assist-chip
+                                                    label="Generated {{ item.draft.generatedAtDisplay }}"></md-assist-chip>
+                                                {% endif %}
+                                                {% if item.draft.confidence is not none %}
+                                                <md-assist-chip
+                                                    label="Confidence {{ '%.2f' | format(item.draft.confidence) }}"></md-assist-chip>
+                                                {% endif %}
+                                                {% if item.draft.usedFallback %}
+                                                <md-assist-chip label="Fallback used"></md-assist-chip>
+                                                {% endif %}
+                                            </md-chip-set>
+                                        </div>
+                                    </div>
+                                    {% endif %}
+                                    {% if item.followUps %}
+                                    <div class="followups-block">
+                                        <div class="section-subheadline">Follow-Ups</div>
+                                        <md-list class="followups-list">
+                                            {% for task in item.followUps %}
+                                            <md-list-item class="followup-item">
+                                                <div slot="headline">{{ task.action }}</div>
+                                                <div slot="supporting-text" class="followup-meta">
+                                                    {% if task.dueAt %}
+                                                    <span class="meta">Due: {{ task.dueAt }}</span>
+                                                    {% endif %}
+                                                    <span class="meta status-{{ task.status }}">Status: {{ task.status
+                                                        }}</span>
+                                                    <span class="meta">Created: {{ task.createdAt }}</span>
+                                                    {% if task.completedAt %}
+                                                    <span class="meta">Completed: {{ task.completedAt }}</span>
+                                                    {% endif %}
+                                                </div>
+                                                {% if task.id is not none %}
+                                                <div slot="trailing" class="followup-actions">
+                                                    {% if task.status != "done" %}
+                                                    <form method="post" action="/follow-ups/{{ task.id }}/status"
+                                                        data-scroll-restore>
+                                                        <input type="hidden" name="{{ csrf_field_name }}"
+                                                            value="{{ csrf_token }}" />
+                                                        <input type="hidden" name="status" value="done" />
+                                                        <input type="hidden" name="redirect_to"
+                                                            value="{{ redirect_to }}" />
+                                                        <md-filled-tonal-button type="submit">Mark
+                                                            Done</md-filled-tonal-button>
+                                                    </form>
+                                                    {% else %}
+                                                    <form method="post" action="/follow-ups/{{ task.id }}/status"
+                                                        data-scroll-restore>
+                                                        <input type="hidden" name="{{ csrf_field_name }}"
+                                                            value="{{ csrf_token }}" />
+                                                        <input type="hidden" name="status" value="open" />
+                                                        <input type="hidden" name="redirect_to"
+                                                            value="{{ redirect_to }}" />
+                                                        <md-text-button type="submit">Reopen</md-text-button>
+                                                    </form>
+                                                    {% endif %}
+                                                </div>
+                                                {% endif %}
+                                            </md-list-item>
+                                            {% endfor %}
+                                        </md-list>
+                                    </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="insight-actions">
+                                <form method="post" action="/emails/{{ item.uid }}/delete" data-scroll-restore
+                                    data-spinner data-spinner-label="Deleting email&hellip;"
+                                    data-confirm="Delete message UID {{ item.uid }} from the mailbox?">
+                                    <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
+                                    <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
+                                    <md-filled-tonal-button type="submit">
+                                        <md-icon slot="icon">delete</md-icon>
+                                        Delete
+                                    </md-filled-tonal-button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </md-elevated-card>
+                {% endfor %}
+            </div>
+            <p class="empty" id="insights-filter-empty" hidden>No matching insights.</p>
+            {% else %}
+            <p class="empty">No insights found. Run a sync to populate data.</p>
+            {% endif %}
+        </section>
+    </main>
 
     <script type="module" src="{{ url_for('static', path='js/dashboard.js') }}"></script>
+
+    <!-- Material Design 3 bundle -->
+    <script type="module" src="{{ url_for('static', path='dist/material.js') }}"></script>
 </body>
 
 </html>
