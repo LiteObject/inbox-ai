@@ -841,7 +841,7 @@ md-elevated-card.surface-card {
 .insights-grid {
     display: grid;
     gap: 24px;
-    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    grid-template-columns: 1fr;
 }
 
 md-elevated-card.insight-card {
@@ -977,6 +977,34 @@ md-snackbar {
 md-snackbar::part(surface) {
     background: var(--color-text-darker);
     color: #ffffff;
+}
+
+/* Dialog styling */
+md-dialog {
+    --md-dialog-container-color: var(--md-sys-color-surface);
+    --md-dialog-headline-color: var(--color-text-darker);
+    --md-dialog-supporting-text-color: var(--color-text-primary);
+}
+
+md-dialog::part(scrim) {
+    background: rgba(0, 0, 0, 0.32);
+}
+
+#confirm-dialog [slot="headline"] {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+#confirm-dialog [slot="content"] {
+    line-height: 1.5;
+    margin-bottom: 16px;
+}
+
+#confirm-dialog [slot="actions"] {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
 }
 
 .spinner-overlay {

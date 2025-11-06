@@ -4,6 +4,7 @@ import '@material/web/button/outlined-button.js';
 import '@material/web/button/text-button.js';
 import '@material/web/chips/chip-set.js';
 import '@material/web/chips/assist-chip.js';
+import '@material/web/dialog/dialog.js';
 import '@material/web/icon/icon.js';
 import '@material/web/iconbutton/icon-button.js';
 import '@material/web/labs/card/elevated-card.js';
