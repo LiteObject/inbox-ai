@@ -5,68 +5,70 @@ import { installScrollRestore } from "./modules/scroll.js";
 import ListDetailController from "./modules/list-detail.js";
 import { installEmailListSearch } from "./modules/search.js";
 
-// Material Design component fallback handling
-function setupMaterialDesignFallbacks() {
-    function checkAndSetupFallbacks() {
-        // Check if Material Design components loaded properly
-        const testElement = document.createElement('md-outlined-select');
-        const isMDLoaded = testElement.constructor !== HTMLElement;
+const AVAILABLE_THEMES = ["default", "plant", "dark", "high-contrast"];
+const THEME_STORAGE_KEY = "dashboard.theme";
 
-        document.body.classList.toggle('md-fallback', !isMDLoaded);
-
-        const fallbackGroups = document.querySelectorAll('[data-md-fallback-group]');
-        fallbackGroups.forEach((group) => {
-            const mdElement = group.querySelector('[data-md-element]');
-            const fallbackControl = group.querySelector('[data-fallback-control]');
-
-            if (!mdElement || !fallbackControl) {
-                return;
-            }
-
-            if (isMDLoaded) {
-                // Sync any value entered in the fallback control back to the MD component.
-                if (!fallbackControl.hidden && typeof mdElement.value !== "undefined" && fallbackControl.value !== undefined) {
-                    try {
-                        mdElement.value = fallbackControl.value;
-                    } catch (error) {
-                        console.warn("Unable to sync fallback value to Material component", error);
-                    }
-                }
-
-                mdElement.hidden = false;
-                fallbackControl.hidden = true;
-                fallbackControl.disabled = true;
-            } else {
-                // Copy existing value from the MD element (if any) to the fallback control.
-                let mdValue = typeof mdElement.value !== "undefined" ? mdElement.value : null;
-                if (!mdValue) {
-                    mdValue = mdElement.getAttribute("value");
-                }
-                if (mdValue !== null && mdValue !== undefined && fallbackControl.value !== undefined) {
-                    fallbackControl.value = mdValue;
-                }
-
-                mdElement.hidden = true;
-                fallbackControl.hidden = false;
-                fallbackControl.disabled = false;
-            }
-        });
+function resolveInitialTheme() {
+    let storedTheme = null;
+    try {
+        storedTheme = window.localStorage?.getItem(THEME_STORAGE_KEY) ?? null;
+    } catch (error) {
+        storedTheme = null;
     }
 
-    // Check immediately
-    checkAndSetupFallbacks();
+    if (storedTheme && AVAILABLE_THEMES.includes(storedTheme)) {
+        return storedTheme;
+    }
 
-    // Also check after a delay in case components load asynchronously
-    window.setTimeout(checkAndSetupFallbacks, 1000);
+    if (window.matchMedia?.("(prefers-color-scheme: dark)")?.matches) {
+        return "dark";
+    }
 
-    if (window.customElements && typeof window.customElements.whenDefined === "function") {
-        const definitions = [
-            window.customElements.whenDefined("md-outlined-select"),
-            window.customElements.whenDefined("md-outlined-text-field"),
-            window.customElements.whenDefined("md-filled-button"),
-        ];
-        Promise.allSettled(definitions).then(() => {
-            checkAndSetupFallbacks();
+    return "default";
+}
+
+document.documentElement.setAttribute("data-theme", resolveInitialTheme());
+
+class ThemeManager {
+    constructor(initialTheme) {
+        this.validThemes = AVAILABLE_THEMES;
+        this.storageKey = THEME_STORAGE_KEY;
+        this.currentTheme = null;
+        this.applyTheme(initialTheme ?? resolveInitialTheme(), { persist: false });
+    }
+
+    applyTheme(theme, options = {}) {
+        if (!this.validThemes.includes(theme)) {
+            return;
+        }
+
+        document.documentElement.setAttribute("data-theme", theme);
+        this.currentTheme = theme;
+
+        if (options.persist !== false) {
+            try {
+                window.localStorage?.setItem(this.storageKey, theme);
+            } catch (error) {
+                console.warn("Unable to persist theme selection", error);
+            }
+        }
+
+        this.updateActiveControls();
+        window.dispatchEvent(new CustomEvent("themechange", { detail: { theme } }));
+    }
+
+    setTheme(theme) {
+        this.applyTheme(theme);
+    }
+
+    updateActiveControls() {
+        const buttons = document.querySelectorAll("[data-theme-select]");
+        if (!buttons.length) {
+            return;
+        }
+        buttons.forEach((button) => {
+            const isActive = button.dataset.themeSelect === this.currentTheme;
+            button.classList.toggle("active", isActive);
         });
     }
 }
@@ -207,7 +209,19 @@ function installSpinnerForms(spinner, toastManager, dialogManager) {
 
             try {
                 const formData = new FormData(form);
-                const action = submitter?.formAction || form.action || window.location.href;
+
+                // Get the action URL - ensure it's properly resolved to an absolute URL
+                let action = submitter?.formAction || form.action;
+                if (!action || action === window.location.href) {
+                    action = form.getAttribute('action');
+                    if (action) {
+                        // Resolve relative URL to absolute URL
+                        action = new URL(action, window.location.href).href;
+                    } else {
+                        action = window.location.href;
+                    }
+                }
+
                 const method = (submitter?.formMethod || form.method || "post").toUpperCase();
 
                 if (action.endsWith("/sync")) {
@@ -302,8 +316,23 @@ function installSettingsNavigation() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-    // Setup Material Design component fallbacks
-    setupMaterialDesignFallbacks();
+    const themeManager = new ThemeManager(document.documentElement.getAttribute("data-theme"));
+    window.themeManager = themeManager;
+
+    const themeButtons = document.querySelectorAll("[data-theme-select]");
+    themeButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+            themeManager.setTheme(button.dataset.themeSelect);
+        });
+    });
+    themeManager.updateActiveControls();
+
+    const toastManager = new ToastManager({
+        container: document.getElementById("toast-container"),
+        dataset: document.getElementById("toast-data"),
+    });
+    toastManager.hydrateFromDataset();
+    consumeStoredToasts(toastManager);
 
     const spinner = new SpinnerController({
         overlay: document.getElementById("sync-spinner"),
@@ -313,14 +342,6 @@ document.addEventListener("DOMContentLoaded", () => {
         },
     });
     spinner.hide();
-
-    const toastManager = new ToastManager({
-        container: document.getElementById("toast-container"),
-        snackbar: document.getElementById("global-snackbar"),
-        dataset: document.getElementById("toast-data"),
-    });
-    toastManager.hydrateFromDataset();
-    consumeStoredToasts(toastManager);
 
     const dialogManager = new DialogManager();
 
@@ -358,10 +379,12 @@ document.addEventListener("DOMContentLoaded", () => {
             },
         });
 
+        const visibleCountTargets = document.querySelectorAll('#insights-visible-count, #insights-visible-count-2');
+
         installEmailListSearch({
             input: document.getElementById('insights-search'),
             list: emailList,
-            visibleCount: document.getElementById('insights-visible-count'),
+            visibleCount: visibleCountTargets,
             emptyNotice: document.getElementById('insights-filter-empty'),
         });
     }

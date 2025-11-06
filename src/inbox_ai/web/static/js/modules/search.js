@@ -21,6 +21,22 @@ function parseNumeric(value) {
     return Number.isFinite(parsed) ? parsed : null;
 }
 
+function toElementArray(value) {
+    if (!value) {
+        return [];
+    }
+    if (Array.isArray(value)) {
+        return value.filter(Boolean);
+    }
+    if (typeof NodeList !== "undefined" && value instanceof NodeList) {
+        return Array.from(value).filter(Boolean);
+    }
+    if (typeof HTMLCollection !== "undefined" && value instanceof HTMLCollection) {
+        return Array.from(value).filter(Boolean);
+    }
+    return [value].filter(Boolean);
+}
+
 function buildSearchIndex(card) {
     const dataset = card.dataset;
     return {
@@ -336,6 +352,15 @@ export function installEmailListSearch({ input, list, visibleCount, emptyNotice 
         indexMap.set(item, buildSearchIndex(item));
     });
 
+    const counterElements = toElementArray(visibleCount);
+
+    const updateVisibleCount = (value) => {
+        const displayValue = String(value);
+        counterElements.forEach((node) => {
+            node.textContent = displayValue;
+        });
+    };
+
     function applyFilter() {
         const tokens = parseSearchTokens(input.value || "");
         let visible = 0;
@@ -349,9 +374,7 @@ export function installEmailListSearch({ input, list, visibleCount, emptyNotice 
             }
         });
 
-        if (visibleCount) {
-            visibleCount.textContent = String(visible);
-        }
+        updateVisibleCount(visible);
         if (emptyNotice) {
             emptyNotice.hidden = visible !== 0;
         }
