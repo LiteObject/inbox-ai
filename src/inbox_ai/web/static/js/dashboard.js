@@ -5,7 +5,7 @@ import { installScrollRestore } from "./modules/scroll.js";
 import ListDetailController from "./modules/list-detail.js";
 import { installEmailListSearch } from "./modules/search.js";
 
-const AVAILABLE_THEMES = ["default", "plant", "dark", "high-contrast"];
+const AVAILABLE_THEMES = ["default", "plant", "dark", "high-contrast", "vibrant"];
 const THEME_STORAGE_KEY = "dashboard.theme";
 
 function resolveInitialTheme() {
