@@ -201,7 +201,7 @@ export class ListDetailController {
         if (!this.detailHost) {
             return;
         }
-        this.detailHost.innerHTML = '<div class="empty-detail"><md-icon>mail</md-icon><p>Select an email to view details</p></div>';
+        this.detailHost.innerHTML = '<div class="md3-empty-state"><span class="material-icons" aria-hidden="true">mail</span><p>Select an email to view details.</p></div>';
     }
 
     showDetail() {
