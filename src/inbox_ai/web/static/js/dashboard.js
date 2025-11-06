@@ -1,5 +1,6 @@
 import { SpinnerController } from "./modules/spinner.js";
 import { ToastManager } from "./modules/toast.js";
+import { DialogManager } from "./modules/dialog.js";
 import { installScrollRestore } from "./modules/scroll.js";
 import { installInsightSearch } from "./modules/search.js";
 
@@ -163,7 +164,7 @@ function consumeStoredToasts(toastManager) {
     });
 }
 
-function installSpinnerForms(spinner, toastManager) {
+function installSpinnerForms(spinner, toastManager, dialogManager) {
     const forms = document.querySelectorAll("form[data-spinner]");
     forms.forEach((form) => {
         const submitButtons = form.querySelectorAll("button[type='submit'], button:not([type])");
@@ -182,19 +183,23 @@ function installSpinnerForms(spinner, toastManager) {
         });
 
         form.addEventListener("submit", async (event) => {
+            event.preventDefault();
+
             const submitter = event.submitter ?? lastSubmitter ?? submitButtons[0] ?? null;
             lastSubmitter = null;
+
             const confirmMessage = submitter?.dataset.confirm ?? form.dataset.confirm;
-            if (confirmMessage && !window.confirm(confirmMessage)) {
-                event.preventDefault();
-                return;
+            if (confirmMessage) {
+                const confirmed = await dialogManager.confirm(confirmMessage, 'Confirm Action', 'Delete', 'Cancel');
+                if (!confirmed) {
+                    return;
+                }
             }
 
             if (!window.fetch) {
+                form.submit();
                 return;
             }
-
-            event.preventDefault();
             const spinnerLabel = submitter?.dataset.spinnerLabel ?? form.dataset.spinnerLabel;
             spinner.show(spinnerLabel);
 
@@ -315,7 +320,9 @@ document.addEventListener("DOMContentLoaded", () => {
     toastManager.hydrateFromDataset();
     consumeStoredToasts(toastManager);
 
-    installSpinnerForms(spinner, toastManager);
+    const dialogManager = new DialogManager();
+
+    installSpinnerForms(spinner, toastManager, dialogManager);
 
     window.addEventListener("pageshow", (event) => {
         if (event.persisted) {
