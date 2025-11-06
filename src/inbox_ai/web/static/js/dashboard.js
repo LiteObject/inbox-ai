@@ -2,7 +2,8 @@ import { SpinnerController } from "./modules/spinner.js";
 import { ToastManager } from "./modules/toast.js";
 import { DialogManager } from "./modules/dialog.js";
 import { installScrollRestore } from "./modules/scroll.js";
-import { installInsightSearch } from "./modules/search.js";
+import ListDetailController from "./modules/list-detail.js";
+import { installEmailListSearch } from "./modules/search.js";
 
 // Material Design component fallback handling
 function setupMaterialDesignFallbacks() {
@@ -165,8 +166,9 @@ function consumeStoredToasts(toastManager) {
 }
 
 function installSpinnerForms(spinner, toastManager, dialogManager) {
-    const forms = document.querySelectorAll("form[data-spinner]");
+    const forms = document.querySelectorAll("form[data-spinner]:not([data-spinner-bound='true'])");
     forms.forEach((form) => {
+        form.setAttribute("data-spinner-bound", "true");
         const submitButtons = form.querySelectorAll("button[type='submit'], button:not([type])");
         let lastSubmitter = null;
         submitButtons.forEach((button) => {
@@ -322,7 +324,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const dialogManager = new DialogManager();
 
-    installSpinnerForms(spinner, toastManager, dialogManager);
+    const bindInteractiveForms = () => {
+        installSpinnerForms(spinner, toastManager, dialogManager);
+        installScrollRestore({
+            forms: document.querySelectorAll("form[data-scroll-restore]"),
+            storageKey: "dashboard-scroll",
+        });
+    };
+
+    bindInteractiveForms();
 
     window.addEventListener("pageshow", (event) => {
         if (event.persisted) {
@@ -330,17 +340,29 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
-    installScrollRestore({
-        forms: document.querySelectorAll("form[data-scroll-restore]"),
-        storageKey: "dashboard-scroll",
-    });
-
-    installInsightSearch({
-        input: document.getElementById("insights-search"),
-        grid: document.getElementById("insights-grid"),
-        visibleCount: document.getElementById("insights-visible-count"),
-        emptyNotice: document.getElementById("insights-filter-empty"),
-    });
-
     installSettingsNavigation();
+
+    const listDetailContainer = document.querySelector('.list-detail-container');
+    const emailList = document.getElementById('email-list');
+    const detailHost = document.getElementById('detail-content');
+    const templateContainer = document.getElementById('detail-templates');
+
+    if (listDetailContainer && emailList && detailHost && templateContainer) {
+        window.listDetailController = new ListDetailController({
+            container: listDetailContainer,
+            list: emailList,
+            detailHost,
+            templateContainer,
+            onDetailChanged: () => {
+                bindInteractiveForms();
+            },
+        });
+
+        installEmailListSearch({
+            input: document.getElementById('insights-search'),
+            list: emailList,
+            visibleCount: document.getElementById('insights-visible-count'),
+            emptyNotice: document.getElementById('insights-filter-empty'),
+        });
+    }
 });
