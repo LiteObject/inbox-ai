@@ -17,6 +17,7 @@ from urllib.parse import parse_qsl, urlencode
 from datetime import UTC, datetime
 
 from fastapi import Depends, FastAPI, Form, Request, status as http_status
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
@@ -46,7 +47,9 @@ from inbox_ai.intelligence import (
     SummarizationService,
 )
 from inbox_ai.storage import SqliteEmailRepository
+from inbox_ai.storage.connection_pool import ConnectionPool
 from inbox_ai.transport import ImapClient, ImapError
+from .cache import response_cache
 from .security import CSRF_FIELD_NAME, CsrfProtector
 
 DEFAULT_LIMIT = 20
@@ -304,8 +307,15 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
     app_settings = settings or load_app_settings(env_file=env_file)
     templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
     app = FastAPI(title="Inbox AI Dashboard")
+
+    # Add GZip compression middleware (compress responses > 1KB)
+    app.add_middleware(GZipMiddleware, minimum_size=1000)
+
     csrf = CsrfProtector()
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+    # Initialize connection pool
+    connection_pool = ConnectionPool(app_settings.storage, pool_size=5)
 
     # Simple in-memory rate limiting for manual sync requests.
     RATE_LIMIT_MAX_CALLS = 2
@@ -314,11 +324,14 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
     sync_rate_history: deque[float] = deque()
 
     def get_repository() -> Iterator[SqliteEmailRepository]:
-        repository = SqliteEmailRepository(app_settings.storage)
-        try:
+        with connection_pool.acquire(timeout=10.0) as repository:
             yield repository
-        finally:
-            repository.close()
+
+    @app.on_event("shutdown")
+    async def shutdown_event():
+        """Close connection pool on app shutdown."""
+        connection_pool.close()
+        LOGGER.info("Connection pool closed")
 
     @app.get("/", response_class=HTMLResponse)
     async def index(
@@ -326,6 +339,26 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
     ) -> HTMLResponse:
         filters = _parse_dashboard_filters(request.query_params)
+
+        # Generate cache key from filters and query params
+        cache_key = response_cache.make_key(
+            "dashboard",
+            filters.insights_limit,
+            filters.priority_filter,
+            filters.category_key,
+            filters.follow_only,
+            request.query_params.get("config_status"),
+            request.query_params.get("sync_status"),
+            request.query_params.get("delete_status"),
+        )
+
+        # Try to get from cache
+        cached_response = response_cache.get(cache_key)
+        if cached_response is not None:
+            LOGGER.debug("Serving dashboard from cache")
+            return cached_response
+
+        # Cache miss - build response
         min_priority, max_priority = _PRIORITY_FILTER_MAP[filters.priority_filter]
         insights = repository.list_recent_insights(
             limit=filters.insights_limit,
@@ -385,6 +418,21 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         }
         response = templates.TemplateResponse("index.html", context)
         csrf.set_cookie(response, csrf_token, secure=request.url.scheme == "https")
+
+        # Cache for 5 minutes (don't cache responses with status messages)
+        if not any(
+            [
+                request.query_params.get("config_status"),
+                request.query_params.get("sync_status"),
+                request.query_params.get("delete_status"),
+                request.query_params.get("categorize_status"),
+                request.query_params.get("draft_status"),
+                request.query_params.get("clear_status"),
+            ]
+        ):
+            response_cache.set(cache_key, response, ttl_seconds=300)
+            LOGGER.debug("Cached dashboard response")
+
         return response
 
     @app.get("/settings", response_class=HTMLResponse)
@@ -464,6 +512,35 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                 {"key": option.key, "label": option.label}
                 for option in category_options
             ],
+        }
+
+    @app.get("/api/email/{uid}/detail")
+    async def email_detail(
+        uid: int,
+        repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
+    ) -> dict[str, Any]:
+        """Lazy load detailed email content (body, insight, categories, follow-ups, draft)."""
+        email = repository.fetch_email(uid)
+        if not email:
+            return {"error": "Email not found"}
+
+        insight = repository.fetch_insight(uid)
+        if not insight:
+            return {"error": "Insight not found"}
+
+        # Fetch related data
+        categories = repository.get_categories_for_uids([uid]).get(uid, ())
+        follow_ups = repository.fetch_follow_ups_for_uids([uid]).get(uid, ())
+        draft_lookup = repository.fetch_latest_drafts([uid])
+        draft = draft_lookup.get(uid)
+
+        return {
+            "uid": uid,
+            "bodyText": email.body.text,
+            "bodyHtml": email.body.html,
+            "insight": _serialize_insight(
+                email, insight, draft, categories, follow_ups
+            ),
         }
 
     @app.post("/config")
@@ -546,6 +623,13 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
 
         async def run_sync():
             outcome = await asyncio.to_thread(_run_sync_cycle, app_settings, queue)
+
+            # Invalidate cache after sync completes
+            invalidated = response_cache.invalidate("dashboard")
+            LOGGER.info(
+                "Invalidated %d dashboard cache entries after sync", invalidated
+            )
+
             status_value = "ok" if outcome.success else "error"
             target = _append_query_param(redirect_target, "sync_status", status_value)
             target = _append_query_param(target, "sync_message", outcome.message)
@@ -603,6 +687,12 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         csrf.validate(request, csrf_token)
         redirect_target = _sanitize_redirect(redirect_to) or "/"
         outcome = await asyncio.to_thread(_delete_email, app_settings, email_uid)
+
+        # Invalidate cache after delete
+        if outcome.success:
+            response_cache.invalidate("dashboard")
+            LOGGER.info("Invalidated cache after deleting email %s", email_uid)
+
         status_value = "ok" if outcome.success else "error"
         target = _append_query_param(redirect_target, "delete_status", status_value)
         target = _append_query_param(target, "delete_message", outcome.message)
@@ -627,6 +717,12 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             uids.append(value)
 
         outcome = await asyncio.to_thread(_delete_emails, app_settings, tuple(uids))
+
+        # Invalidate cache after bulk delete
+        if outcome.success:
+            response_cache.invalidate("dashboard")
+            LOGGER.info("Invalidated cache after bulk deleting %d emails", len(uids))
+
         status_value = "ok" if outcome.success else "error"
         target = _append_query_param(redirect_target, "delete_status", status_value)
         target = _append_query_param(target, "delete_message", outcome.message)

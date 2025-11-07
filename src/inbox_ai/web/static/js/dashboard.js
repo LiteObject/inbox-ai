@@ -4,6 +4,7 @@ import { DialogManager } from "./modules/dialog.js";
 import { installScrollRestore } from "./modules/scroll.js";
 import ListDetailController from "./modules/list-detail.js";
 import { installEmailListSearch } from "./modules/search.js";
+import { LazyLoadingManager } from "./modules/lazy-loading.js";
 
 let AVAILABLE_THEMES = ["default", "plant", "dark", "high-contrast", "vibrant", "teal", "lavender"];
 const THEME_STORAGE_KEY = "dashboard.theme";
@@ -430,6 +431,38 @@ document.addEventListener("DOMContentLoaded", async () => {
     const templateContainer = document.getElementById('detail-templates');
 
     if (listDetailContainer && emailList && detailHost && templateContainer) {
+        // Initialize lazy loading manager
+        window.lazyLoadingManager = new LazyLoadingManager({
+            onLoadStart: (uid) => {
+                const detailView = detailHost.querySelector('.detail-view');
+                if (detailView) {
+                    detailView.classList.add('loading');
+                }
+            },
+            onLoadSuccess: (uid, data) => {
+                const detailView = detailHost.querySelector('.detail-view');
+                if (detailView) {
+                    detailView.classList.remove('loading');
+                    // Update body content if exists
+                    const bodyText = detailView.querySelector('.email-body-text');
+                    if (bodyText && data.bodyText) {
+                        bodyText.textContent = data.bodyText;
+                    }
+                    const bodyHtml = detailView.querySelector('.email-body-html');
+                    if (bodyHtml && data.bodyHtml) {
+                        bodyHtml.innerHTML = data.bodyHtml;
+                    }
+                }
+            },
+            onLoadError: (uid, error) => {
+                const detailView = detailHost.querySelector('.detail-view');
+                if (detailView) {
+                    detailView.classList.remove('loading');
+                }
+                console.error(`Failed to load email detail for UID ${uid}:`, error);
+            },
+        });
+
         window.listDetailController = new ListDetailController({
             container: listDetailContainer,
             list: emailList,
@@ -437,6 +470,14 @@ document.addEventListener("DOMContentLoaded", async () => {
             templateContainer,
             onDetailChanged: () => {
                 bindInteractiveForms();
+            },
+            onSelect: (uid) => {
+                // Lazy load email detail when selected
+                if (window.lazyLoadingManager) {
+                    window.lazyLoadingManager.loadEmailDetail(uid).catch((error) => {
+                        console.error('Lazy loading failed:', error);
+                    });
+                }
             },
         });
 
