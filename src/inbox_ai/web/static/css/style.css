@@ -1213,9 +1213,10 @@ a {
 }
 
 .md3-detail-meta-extended {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: var(--md3-spacing-12);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--md3-spacing-8) var(--md3-spacing-16);
     margin-top: var(--md3-spacing-16);
     margin-bottom: var(--md3-spacing-8);
 }
@@ -1228,6 +1229,7 @@ a {
     font-size: 14px;
     line-height: 20px;
     min-height: 24px;
+    white-space: nowrap;
 }
 
 .md3-detail-meta-extended .meta-row .material-icons {
@@ -1244,23 +1246,28 @@ a {
 
 .md3-detail-meta-extended .meta-row span:last-child {
     color: var(--md3-color-on-surface);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    /* max-width: 250px; */
 }
 
 @media (max-width: 599px) {
     .md3-detail-meta-extended {
-        grid-template-columns: 1fr;
-        gap: var(--md3-spacing-8);
+        gap: var(--md3-spacing-6) var(--md3-spacing-12);
     }
     
     .md3-detail-meta-extended .meta-row {
         font-size: 13px;
     }
+    
+    .md3-detail-meta-extended .meta-row span:last-child {
+        max-width: 150px;
+    }
 }
 
 @media (min-width: 600px) and (max-width: 839px) {
-    .md3-detail-meta-extended {
-        grid-template-columns: repeat(2, 1fr);
-        gap: var(--md3-spacing-10);
+    .md3-detail-meta-extended .meta-row span:last-child {
+        max-width: 200px;
     }
 }
 

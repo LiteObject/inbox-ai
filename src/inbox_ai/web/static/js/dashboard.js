@@ -478,11 +478,16 @@ document.addEventListener("DOMContentLoaded", async () => {
         };
 
         const sortList = (order) => {
-            const items = Array.from(emailList.querySelectorAll('.email-list-item'));
+            const items = Array.from(emailList.querySelectorAll('li'));
 
             items.sort((a, b) => {
-                const uidA = a.getAttribute('data-uid');
-                const uidB = b.getAttribute('data-uid');
+                const buttonA = a.querySelector('.email-list-item');
+                const buttonB = b.querySelector('.email-list-item');
+
+                if (!buttonA || !buttonB) return 0;
+
+                const uidA = buttonA.getAttribute('data-uid');
+                const uidB = buttonB.getAttribute('data-uid');
 
                 // Parse UIDs as indices (they typically have numeric components)
                 const numA = parseInt(uidA, 36) || 0;
@@ -511,10 +516,13 @@ document.addEventListener("DOMContentLoaded", async () => {
                 const newOrder = currentSortOrder === 'desc' ? 'asc' : 'desc';
                 sortList(newOrder);
             });
-        }
 
-        // Initialize sort state and apply saved preference
-        updateSortButton();
-        sortList(currentSortOrder);
+            // Initialize sort state and apply saved preference
+            updateSortButton();
+            // Only sort if not already in the expected order (server typically sends desc)
+            if (currentSortOrder === 'asc') {
+                sortList('asc');
+            }
+        }
     }
 });
