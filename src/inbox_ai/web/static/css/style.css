@@ -941,7 +941,7 @@ a {
 }
 
 .list-meta {
-    padding: 0 var(--md3-spacing-16) var(--md3-spacing-12);
+    padding: var(--md3-spacing-12) var(--md3-spacing-16) var(--md3-spacing-12);
     color: var(--md3-color-on-surface-variant);
     font-size: 13px;
     display: flex;
@@ -983,6 +983,18 @@ a {
 .sort-button.active {
     background-color: var(--md3-color-primary);
     color: var(--md3-color-on-primary);
+}
+
+.sort-button .sort-icon {
+    transition: transform 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sort-button[data-direction="asc"] .sort-icon {
+    transform: rotate(180deg);
+}
+
+.sort-button[data-direction="desc"] .sort-icon {
+    transform: rotate(0deg);
 }
 
 @media (max-width: 599px) {

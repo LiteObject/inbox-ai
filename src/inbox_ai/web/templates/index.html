@@ -177,13 +177,11 @@
                         <p>Showing <span id="insights-visible-count-2">{{ insights | length }}</span> of
                             {{ insights_total | default(0) }} insights</p>
                         <div class="sort-controls">
-                            <button class="sort-button" id="sort-asc" title="Sort by received (oldest first)">
-                                <span class="material-icons" aria-hidden="true">arrow_upward</span>
-                                <span class="sr-only">Sort ascending</span>
-                            </button>
-                            <button class="sort-button" id="sort-desc" title="Sort by received (newest first)">
-                                <span class="material-icons" aria-hidden="true">arrow_downward</span>
-                                <span class="sr-only">Sort descending</span>
+                            <button class="sort-button" id="sort-toggle" data-direction="desc"
+                                title="Sort by received date (newest first)"
+                                aria-label="Sort by received date, currently newest first">
+                                <span class="material-icons sort-icon" aria-hidden="true">arrow_downward</span>
+                                <span class="sr-only">Toggle sort order</span>
                             </button>
                         </div>
                     </div>
