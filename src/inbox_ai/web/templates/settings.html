@@ -5,280 +5,415 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Inbox AI Configuration</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet" />
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}" />
     <style>
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+            font-family: var(--md3-font-family);
+            background: var(--md3-color-surface);
+            color: var(--md3-color-on-surface);
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        .settings-container {
             max-width: 960px;
-            margin: 40px auto;
-            padding: 20px;
-            background: #f5f5f5;
-            color: #111827;
+            margin: 0 auto;
+            width: 100%;
+            padding: var(--md3-spacing-32);
+            flex: 1;
         }
 
-        h1 {
-            color: #1e40af;
-            margin-bottom: 12px;
+        .settings-header {
+            display: flex;
+            align-items: center;
+            gap: var(--md3-spacing-16);
+            margin-bottom: var(--md3-spacing-32);
         }
 
-        p.description {
-            color: #4b5563;
-            margin-top: 0;
-        }
-
-        a.back-link {
+        .settings-header a {
             display: inline-flex;
             align-items: center;
-            gap: 6px;
-            margin-bottom: 24px;
-            color: #2563eb;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: var(--md3-color-primary-container);
+            color: var(--md3-color-on-primary-container);
             text-decoration: none;
+            cursor: pointer;
+            transition: background 160ms ease;
+        }
+
+        .settings-header a:hover,
+        .settings-header a:focus {
+            background: var(--md3-color-primary);
+            color: var(--md3-color-on-primary);
+        }
+
+        .settings-heading {
+            flex: 1;
+        }
+
+        .settings-heading h1 {
+            margin: 0;
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--md3-color-primary);
+        }
+
+        .settings-heading p {
+            margin: var(--md3-spacing-8) 0 0 0;
+            font-size: 14px;
+            color: var(--md3-color-on-surface-variant);
+        }
+
+        .md3-card {
+            background: var(--md3-color-surface-container);
+            padding: var(--md3-spacing-24);
+            margin-bottom: var(--md3-spacing-24);
+            border-radius: var(--md3-radius-lg);
+            box-shadow: var(--md3-elevation-1);
+        }
+
+        .md3-card h2 {
+            margin: 0 0 var(--md3-spacing-16) 0;
+            font-size: 20px;
             font-weight: 600;
+            color: var(--md3-color-on-surface);
         }
 
-        a.back-link:hover,
-        a.back-link:focus {
-            text-decoration: underline;
-        }
-
-        .section {
-            background: #ffffff;
-            padding: 20px;
-            margin: 20px 0;
-            border-radius: 8px;
-            border: 1px solid #e5e7eb;
-        }
-
-        .config-details {
-            border: 1px solid #d1d5db;
-            border-radius: 8px;
-            padding: 12px 16px;
-            background: #ffffff;
+        .md3-card p {
+            margin: 0 0 var(--md3-spacing-16) 0;
+            font-size: 14px;
+            color: var(--md3-color-on-surface-variant);
+            line-height: 1.5;
         }
 
         .config-form {
-            margin-top: 16px;
             display: flex;
             flex-direction: column;
-            gap: 20px;
+            gap: var(--md3-spacing-24);
         }
 
         .config-group {
-            border: 1px solid #e5e7eb;
-            border-radius: 6px;
-            padding: 12px 16px 4px;
-            background: #f9fafb;
+            border: 1px solid var(--md3-color-outline-variant);
+            border-radius: var(--md3-radius-sm);
+            padding: var(--md3-spacing-16);
+            background: var(--md3-color-surface);
         }
 
         .config-group legend {
-            padding: 0 6px;
-            font-weight: 700;
-            color: #1f2937;
+            display: block;
+            font-weight: 600;
+            font-size: 14px;
+            color: var(--md3-color-on-surface);
+            margin-bottom: var(--md3-spacing-16);
+            padding: 0;
         }
 
         .config-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 16px 20px;
-            margin-top: 10px;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: var(--md3-spacing-16);
         }
 
-        .config-label {
+        .md3-field {
             display: flex;
             flex-direction: column;
-            gap: 6px;
-            font-weight: 600;
-            color: #1f2937;
+            gap: var(--md3-spacing-8);
         }
 
-        .config-label input,
-        .config-label select {
-            padding: 8px;
-            border: 1px solid #cbd5f5;
-            border-radius: 4px;
-            font-weight: 400;
-            background: #ffffff;
+        .md3-field label {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--md3-color-on-surface-variant);
         }
 
-        .config-label input:focus,
-        .config-label select:focus {
-            outline: 2px solid #2563eb;
-            outline-offset: 1px;
+        .md3-input,
+        .md3-select,
+        .md3-textarea {
+            width: 100%;
+            padding: var(--md3-spacing-12) var(--md3-spacing-16);
+            border-radius: var(--md3-radius-sm);
+            border: 1px solid var(--md3-color-outline-variant);
+            background: var(--md3-color-surface-container);
+            color: var(--md3-color-on-surface);
+            font-family: var(--md3-font-family);
+            font-size: 14px;
+            transition: border-color 160ms ease, box-shadow 160ms ease;
+        }
+
+        .md3-input:focus,
+        .md3-select:focus,
+        .md3-textarea:focus {
+            border-color: var(--md3-color-primary);
+            box-shadow: 0 0 0 1px var(--md3-color-primary);
+            outline: none;
+        }
+
+        .md3-select {
+            appearance: none;
+            background-image: url('data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="%2344474f" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"%3E%3Cpolyline points="6 9 12 15 18 9"/%3E%3C/svg%3E');
+            background-repeat: no-repeat;
+            background-position: right 12px center;
+            padding-right: 40px;
         }
 
         .config-help {
-            font-size: 0.85rem;
-            color: #6b7280;
+            font-size: 12px;
+            color: var(--md3-color-on-surface-variant);
             font-weight: 400;
+            margin-top: var(--md3-spacing-4);
         }
 
         .config-actions {
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: var(--md3-spacing-16);
             flex-wrap: wrap;
+            margin-top: var(--md3-spacing-24);
         }
 
-        .config-actions button {
-            padding: 10px 18px;
-            background: #0f766e;
-            color: #ffffff;
-            border: none;
-            border-radius: 4px;
+        .md3-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: var(--md3-spacing-8);
+            padding: 0 var(--md3-spacing-20);
+            height: 40px;
+            border-radius: var(--md3-radius-pill);
+            border: 1px solid transparent;
+            background: transparent;
             cursor: pointer;
-            font-weight: 600;
+            font-weight: 500;
+            letter-spacing: 0.1px;
+            transition: background 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+            font-size: 14px;
         }
 
-        .config-actions button:hover,
-        .config-actions button:focus {
-            background: #0d5c57;
+        .md3-button--filled {
+            background: var(--md3-color-primary);
+            color: var(--md3-color-on-primary);
+            box-shadow: var(--md3-elevation-1);
+        }
+
+        .md3-button--filled:hover {
+            box-shadow: var(--md3-elevation-2);
+        }
+
+        .md3-button--outlined {
+            border-color: var(--md3-color-outline);
+            color: var(--md3-color-primary);
+            background: var(--md3-color-surface);
+        }
+
+        .md3-button--outlined:hover {
+            border-color: var(--md3-color-primary);
+            background: var(--md3-color-primary-container);
+        }
+
+        .md3-button--tonal {
+            background: var(--md3-color-secondary-container);
+            color: var(--md3-color-on-secondary-container);
+        }
+
+        .md3-button--tonal:hover {
+            background: var(--md3-color-secondary);
+            color: var(--md3-color-on-secondary);
         }
 
         .config-actions .note {
-            font-size: 0.85rem;
-            color: #374151;
+            font-size: 13px;
+            color: var(--md3-color-on-surface-variant);
         }
 
         .config-meta {
-            margin-top: 8px;
-            font-size: 0.8rem;
-            color: #6b7280;
+            margin-top: var(--md3-spacing-12);
+            font-size: 12px;
+            color: var(--md3-color-on-surface-variant);
         }
 
         .flash {
-            margin-top: 12px;
-            padding: 10px 12px;
-            border-radius: 6px;
-            font-weight: 600;
+            padding: var(--md3-spacing-16);
+            border-radius: var(--md3-radius-lg);
+            font-weight: 500;
+            font-size: 14px;
+            margin-bottom: var(--md3-spacing-16);
+            display: flex;
+            align-items: center;
+            gap: var(--md3-spacing-12);
         }
 
         .flash.success {
-            background: #dcfce7;
-            color: #166534;
-            border: 1px solid #bbf7d0;
+            background: rgba(0, 128, 0, 0.12);
+            color: #2e7d32;
+            border: 1px solid rgba(0, 128, 0, 0.24);
         }
 
         .flash.error {
-            background: #fee2e2;
-            color: #991b1b;
-            border: 1px solid #fecaca;
+            background: rgba(211, 47, 47, 0.12);
+            color: #c62828;
+            border: 1px solid rgba(211, 47, 47, 0.24);
+        }
+
+        .flash::before {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 24px;
+            height: 24px;
+            flex-shrink: 0;
+            font-size: 20px;
+        }
+
+        .flash.success::before {
+            content: "✓";
+        }
+
+        .flash.error::before {
+            content: "✕";
+        }
+
+        code {
+            background: var(--md3-color-surface-dim);
+            padding: var(--md3-spacing-4) var(--md3-spacing-8);
+            border-radius: 4px;
+            font-family: "Courier New", monospace;
+            font-size: 13px;
+            color: var(--md3-color-on-surface);
         }
 
         .maintenance-actions {
             display: flex;
-            gap: 12px;
+            gap: var(--md3-spacing-12);
             flex-wrap: wrap;
-            margin-top: 16px;
+            margin-top: var(--md3-spacing-16);
         }
 
         .maintenance-actions form {
             margin: 0;
         }
 
-        .maintenance-actions button {
-            padding: 10px 18px;
-            background: #2563eb;
-            color: #ffffff;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-weight: 600;
+        @media (max-width: 768px) {
+            .settings-container {
+                padding: var(--md3-spacing-16);
+            }
+
+            .settings-header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .config-grid {
+                grid-template-columns: 1fr;
+            }
         }
 
-        .maintenance-actions button:hover,
-        .maintenance-actions button:focus {
-            background: #1e40af;
-        }
+        @media (prefers-reduced-motion: reduce) {
 
-        .maintenance-actions button.danger {
-            background: #dc2626;
-        }
-
-        .maintenance-actions button.danger:hover,
-        .maintenance-actions button.danger:focus {
-            background: #b91c1c;
-        }
-
-        code {
-            background: #f4f4f4;
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-family: "Courier New", monospace;
+            .settings-header a,
+            .md3-button {
+                transition: none;
+            }
         }
     </style>
 </head>
 
 <body>
-    <a href="/" class="back-link">&#8592; Back to dashboard</a>
-    <h1>Configuration</h1>
-    <p class="description">Adjust IMAP, storage, and intelligence settings. Changes are written to your
-        <code>.env</code>
-        file and applied after the server restarts.
-    </p>
-
-    <div class="section">
-        {% if config_status == "saved" %}
-        <div class="flash success">Configuration saved. Restart the server to apply changes.</div>
-        {% elif config_status == "error" %}
-        <div class="flash error">Unable to update {{ config_env_path }}. Check file permissions.</div>
-        {% endif %}
-
-        <form class="config-form" method="post" action="/config" data-scroll-restore>
-            <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
-            <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-            {% for section in config_sections %}
-            <fieldset class="config-group">
-                <legend>{{ section.title }}</legend>
-                <div class="config-grid">
-                    {% for field in section.fields %}
-                    <label class="config-label" for="{{ field.key }}">
-                        <span>{{ field.label }}</span>
-                        {% if field.input_type == "select" %}
-                        <select id="{{ field.key }}" name="{{ field.key }}">
-                            {% for option in field.options %}
-                            <option value="{{ option }}" {% if config_values.get(field.key, '' )==option %}selected{%
-                                endif %}>
-                                {{ option | capitalize }}
-                            </option>
-                            {% endfor %}
-                        </select>
-                        {% elif field.input_type == "textarea" %}
-                        <textarea id="{{ field.key }}" name="{{ field.key }}"
-                            rows="{{ field.textarea_rows or 6 }}">{{ config_values.get(field.key, '') }}</textarea>
-                        {% else %}
-                        <input type="{{ field.input_type }}" id="{{ field.key }}" name="{{ field.key }}"
-                            value="{{ config_values.get(field.key, '') }}" />
-                        {% endif %}
-                        {% if field.description %}
-                        <span class="config-help">{{ field.description }}</span>
-                        {% endif %}
-                    </label>
-                    {% endfor %}
-                </div>
-            </fieldset>
-            {% endfor %}
-            <div class="config-actions">
-                <button type="submit">Save Changes</button>
-                <span class="note">Restart the server after saving to ensure new values are used.</span>
+    <div class="settings-container">
+        <div class="settings-header">
+            <a href="/" title="Back to dashboard">
+                <span class="material-icons">arrow_back</span>
+            </a>
+            <div class="settings-heading">
+                <h1>Configuration</h1>
+                <p>Adjust IMAP, storage, and intelligence settings. Changes are written to your <code>.env</code> file
+                    and applied after the server restarts.</p>
             </div>
-        </form>
-        <div class="config-meta">Editing <code>{{ config_env_path }}</code></div>
-    </div>
-    <div id="maintenance" class="section">
-        <h2>Maintenance</h2>
-        <p class="description">Run occasional clean-up tasks from here. These actions affect stored data
-            immediately.</p>
-        <div class="maintenance-actions">
-            <form method="post" action="/categories/regenerate">
+        </div>
+
+        <div class="md3-card">
+            {% if config_status == "saved" %}
+            <div class="flash success">Configuration saved. Restart the server to apply changes.</div>
+            {% elif config_status == "error" %}
+            <div class="flash error">Unable to update {{ config_env_path }}. Check file permissions.</div>
+            {% endif %}
+
+            <h2>Settings</h2>
+
+            <form class="config-form" method="post" action="/config" data-scroll-restore>
                 <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
-                <input type="hidden" name="redirect_to" value="{{ redirect_to }}#maintenance" />
-                <button type="submit">Rebuild Categories</button>
+                <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
+                {% for section in config_sections %}
+                <fieldset class="config-group">
+                    <legend>{{ section.title }}</legend>
+                    <div class="config-grid">
+                        {% for field in section.fields %}
+                        <div class="md3-field">
+                            <label for="{{ field.key }}">{{ field.label }}</label>
+                            {% if field.input_type == "select" %}
+                            <select id="{{ field.key }}" name="{{ field.key }}" class="md3-select">
+                                {% for option in field.options %}
+                                <option value="{{ option }}" {% if config_values.get(field.key, '' )==option
+                                    %}selected{% endif %}>
+                                    {{ option | capitalize }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                            {% elif field.input_type == "textarea" %}
+                            <textarea id="{{ field.key }}" name="{{ field.key }}" class="md3-textarea"
+                                rows="{{ field.textarea_rows or 6 }}">{{ config_values.get(field.key, '') }}</textarea>
+                            {% else %}
+                            <input type="{{ field.input_type }}" id="{{ field.key }}" name="{{ field.key }}"
+                                class="md3-input" value="{{ config_values.get(field.key, '') }}" />
+                            {% endif %}
+                            {% if field.description %}
+                            <span class="config-help">{{ field.description }}</span>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                </fieldset>
+                {% endfor %}
+                <div class="config-actions">
+                    <button type="submit" class="md3-button md3-button--filled">
+                        <span class="material-icons" aria-hidden="true">save</span>
+                        Save Changes
+                    </button>
+                    <span class="note">Restart the server after saving to ensure new values are used.</span>
+                </div>
+                <div class="config-meta">Editing <code>{{ config_env_path }}</code></div>
             </form>
-            <form method="post" action="/clear-database"
-                onsubmit="return confirm('This will permanently delete all emails, insights, drafts, and follow-ups. Are you sure?');">
-                <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
-                <input type="hidden" name="redirect_to" value="{{ redirect_to }}#maintenance" />
-                <button type="submit" class="danger">Clear Database</button>
-            </form>
+        </div>
+
+        <div class="md3-card" id="maintenance">
+            <h2>Maintenance</h2>
+            <p>Run occasional clean-up tasks from here. These actions affect stored data immediately.</p>
+            <div class="maintenance-actions">
+                <form method="post" action="/categories/regenerate">
+                    <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
+                    <input type="hidden" name="redirect_to" value="{{ redirect_to }}#maintenance" />
+                    <button type="submit" class="md3-button md3-button--tonal">
+                        <span class="material-icons" aria-hidden="true">category</span>
+                        Rebuild Categories
+                    </button>
+                </form>
+                <form method="post" action="/clear-database"
+                    onsubmit="return confirm('This will permanently delete all emails, insights, drafts, and follow-ups. Are you sure?');">
+                    <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
+                    <input type="hidden" name="redirect_to" value="{{ redirect_to }}#maintenance" />
+                    <button type="submit" class="md3-button md3-button--outlined"
+                        style="color: var(--md3-color-error); border-color: var(--md3-color-error);">
+                        <span class="material-icons" aria-hidden="true">delete_outline</span>
+                        Clear Database
+                    </button>
+                </form>
+            </div>
         </div>
     </div>
 </body>
