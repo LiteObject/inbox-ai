@@ -32,15 +32,6 @@
                 <span class="material-icons" aria-hidden="true">settings</span>
                 <span class="sr-only">Open settings</span>
             </button>
-            <form method="post" action="/sync" data-spinner data-scroll-restore
-                data-spinner-label="Sync in progress...">
-                <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
-                <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-                <button class="md3-icon-button" type="submit" aria-label="Sync now">
-                    <span class="material-icons" aria-hidden="true">sync</span>
-                    <span class="sr-only">Sync inbox</span>
-                </button>
-            </form>
         </div>
     </header>
 
@@ -162,14 +153,13 @@
                             Rebuild Categories
                         </button>
                     </form>
-                    <form method="post" action="/clear-database" data-scroll-restore data-spinner
-                        data-spinner-label="Clearing data..."
-                        data-confirm="This will permanently delete all emails, insights, drafts, and follow-ups. Continue?">
+                    <form method="post" action="/sync" data-spinner data-scroll-restore
+                        data-spinner-label="Sync in progress...">
                         <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
                         <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
                         <button class="md3-button md3-button--outlined" type="submit">
-                            <span class="material-icons" aria-hidden="true">delete_forever</span>
-                            Clear Database
+                            <span class="material-icons" aria-hidden="true">sync</span>
+                            Sync Inbox
                         </button>
                     </form>
                 </div>
@@ -230,9 +220,6 @@
                                     <span class="item-supporting">{{ item.sender or "Unknown sender" }}{% if
                                         item.receivedAtDisplay %} · {{ item.receivedAtDisplay }}{% endif %}</span>
                                 </span>
-                                {% if item.categories %}
-                                <span class="item-trailing">{{ category_labels }}</span>
-                                {% endif %}
                             </button>
                         </li>
                         {% endfor %}
@@ -259,25 +246,22 @@
                         map(attribute='uid') | list %}
                         <template data-email-detail data-uid="{{ item.uid }}">
                             <article class="md3-detail-view detail-view">
-                                <button class="md3-back-button" type="button" data-detail-back>
-                                    <span class="material-icons" aria-hidden="true">arrow_back</span>
-                                    <span>Back to list</span>
-                                </button>
-
                                 <header class="md3-detail-header">
-                                    <h3>{{ item.subject or "(no subject)" }}</h3>
-                                    <div class="md3-detail-meta">
-                                        <span>From: {{ item.sender or "Unknown sender" }}</span>
-                                        {% if item.receivedAtDisplay %}<span>Received {{ item.receivedAtDisplay
-                                            }}</span>{% endif %}
+                                    <div class="md3-detail-title-section">
+                                        <h3>{{ item.subject or "(no subject)" }}</h3>
+                                        <div class="md3-detail-meta">
+                                            <span>From: {{ item.sender or "Unknown sender" }}</span>
+                                            {% if item.receivedAtDisplay %}<span>Received {{ item.receivedAtDisplay
+                                                }}</span>{% endif %}
+                                        </div>
+                                        {% if item.categories %}
+                                        <div class="md3-chip-set">
+                                            {% for category in item.categories %}
+                                            <span class="md3-chip">{{ category.label }}</span>
+                                            {% endfor %}
+                                        </div>
+                                        {% endif %}
                                     </div>
-                                    {% if item.categories %}
-                                    <div class="md3-chip-set">
-                                        {% for category in item.categories %}
-                                        <span class="md3-chip">{{ category.label }}</span>
-                                        {% endfor %}
-                                    </div>
-                                    {% endif %}
                                     <form method="post" action="/emails/{{ item.uid }}/delete" data-scroll-restore
                                         data-spinner data-confirm="Delete message UID {{ item.uid }}?">
                                         <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
@@ -416,6 +400,12 @@
                                                 formaction="/emails/{{ item.uid }}/draft/delete">
                                                 <span class="material-icons" aria-hidden="true">delete_outline</span>
                                                 Delete Draft
+                                            </button>
+                                            {% else %}
+                                            <button class="md3-button md3-button--outlined" type="submit"
+                                                formaction="/emails/{{ item.uid }}/draft/regenerate">
+                                                <span class="material-icons" aria-hidden="true">auto_fix_high</span>
+                                                Generate
                                             </button>
                                             {% endif %}
                                         </div>

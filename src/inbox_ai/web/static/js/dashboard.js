@@ -263,6 +263,50 @@ function installSpinnerForms(spinner, toastManager, dialogManager) {
                         }
                     }
                     spinner.hide();
+                } else if (action.includes("/draft")) {
+                    // Handle draft operations - these need page reload to show updated content
+                    const response = await fetch(action, {
+                        method,
+                        body: formData,
+                        redirect: "follow",
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+
+                    // For draft operations, we need to reload to show updated content
+                    // Get the redirected URL or the current URL
+                    const targetUrl = response.url || formData.get("redirect_to") || window.location.href;
+
+                    // Queue the toast before reload
+                    let successMessage = "Draft saved successfully";
+                    if (action.includes("/draft/regenerate")) {
+                        successMessage = "Draft regenerated successfully";
+                    } else if (action.includes("/draft/delete")) {
+                        successMessage = "Draft deleted successfully";
+                    }
+
+                    // Preserve the currently selected email UID so we can re-select it after reload
+                    const currentlySelectedItem = document.querySelector('.email-list-item[selected]');
+                    const selectedUid = currentlySelectedItem?.dataset.uid;
+
+                    // Store toast and selected email in session storage to restore after reload
+                    try {
+                        const pendingToasts = [{
+                            message: successMessage,
+                            variant: "success"
+                        }];
+                        window.sessionStorage?.setItem(TOAST_STORAGE_KEY, JSON.stringify(pendingToasts));
+                        if (selectedUid) {
+                            window.sessionStorage?.setItem('dashboard.selectedEmailUid', selectedUid);
+                        }
+                    } catch (error) {
+                        console.warn("Unable to persist data before reload", error);
+                    }
+
+                    spinner.hide();
+                    window.location.href = targetUrl;
                 } else {
                     const response = await fetch(action, {
                         method,
@@ -378,6 +422,20 @@ document.addEventListener("DOMContentLoaded", () => {
                 bindInteractiveForms();
             },
         });
+
+        // Restore previously selected email if it was stored (e.g., after a draft save reload)
+        try {
+            const previouslySelectedUid = window.sessionStorage?.getItem('dashboard.selectedEmailUid');
+            if (previouslySelectedUid) {
+                const previousItem = emailList.querySelector(`[data-uid="${previouslySelectedUid}"]`);
+                if (previousItem) {
+                    window.listDetailController.selectItem(previouslySelectedUid, { scroll: false, updateHistory: false });
+                }
+                window.sessionStorage?.removeItem('dashboard.selectedEmailUid');
+            }
+        } catch (error) {
+            console.warn("Unable to restore previously selected email", error);
+        }
 
         const visibleCountTargets = document.querySelectorAll('#insights-visible-count, #insights-visible-count-2');
 
