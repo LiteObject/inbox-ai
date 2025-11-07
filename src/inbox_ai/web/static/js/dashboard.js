@@ -445,5 +445,55 @@ document.addEventListener("DOMContentLoaded", () => {
             visibleCount: visibleCountTargets,
             emptyNotice: document.getElementById('insights-filter-empty'),
         });
+
+        // Setup sort controls
+        const sortAscBtn = document.getElementById('sort-asc');
+        const sortDescBtn = document.getElementById('sort-desc');
+        const SORT_ORDER_KEY = 'dashboard.sort-order';
+        let currentSortOrder = localStorage?.getItem(SORT_ORDER_KEY) ?? 'desc';
+
+        const updateSortButtonStates = () => {
+            sortAscBtn?.classList.toggle('active', currentSortOrder === 'asc');
+            sortDescBtn?.classList.toggle('active', currentSortOrder === 'desc');
+        };
+
+        const sortList = (order) => {
+            const items = Array.from(emailList.querySelectorAll('.email-list-item'));
+
+            items.sort((a, b) => {
+                const uidA = a.getAttribute('data-uid');
+                const uidB = b.getAttribute('data-uid');
+
+                // Parse UIDs as indices (they typically have numeric components)
+                const numA = parseInt(uidA, 36) || 0;
+                const numB = parseInt(uidB, 36) || 0;
+
+                return order === 'asc' ? numA - numB : numB - numA;
+            });
+
+            // Re-insert items in sorted order
+            items.forEach((item) => {
+                emailList.appendChild(item);
+            });
+
+            currentSortOrder = order;
+            try {
+                localStorage?.setItem(SORT_ORDER_KEY, order);
+            } catch (error) {
+                console.warn("Unable to persist sort order", error);
+            }
+
+            updateSortButtonStates();
+        };
+
+        if (sortAscBtn) {
+            sortAscBtn.addEventListener('click', () => sortList('asc'));
+        }
+
+        if (sortDescBtn) {
+            sortDescBtn.addEventListener('click', () => sortList('desc'));
+        }
+
+        updateSortButtonStates();
     }
 });

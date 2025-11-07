@@ -172,8 +172,20 @@
                         <input id="insights-search" type="search" placeholder="Search emails..."
                             aria-label="Search insights" />
                     </div>
-                    <p class="list-meta">Showing <span id="insights-visible-count-2">{{ insights | length }}</span> of
-                        {{ insights_total | default(0) }} insights</p>
+                    <div class="list-meta">
+                        <p>Showing <span id="insights-visible-count-2">{{ insights | length }}</span> of
+                            {{ insights_total | default(0) }} insights</p>
+                        <div class="sort-controls">
+                            <button class="sort-button" id="sort-asc" title="Sort by received (oldest first)">
+                                <span class="material-icons" aria-hidden="true">arrow_upward</span>
+                                <span class="sr-only">Sort ascending</span>
+                            </button>
+                            <button class="sort-button" id="sort-desc" title="Sort by received (newest first)">
+                                <span class="material-icons" aria-hidden="true">arrow_downward</span>
+                                <span class="sr-only">Sort descending</span>
+                            </button>
+                        </div>
+                    </div>
 
                     <ul class="md3-list email-list" id="email-list">
                         {% for item in insights %}
