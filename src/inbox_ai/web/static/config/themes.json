@@ -41,6 +41,13 @@
       "title": "Teal theme",
       "gradientStart": "#00897b",
       "gradientEnd": "#a7f0d9"
+    },
+    {
+      "id": "lavender",
+      "label": "Lavender",
+      "title": "Lavender Bloom theme",
+      "gradientStart": "#6e53c9",
+      "gradientEnd": "#ff8bd2"
     }
   ]
 }
