@@ -28,7 +28,7 @@
     <header class="md3-top-app-bar" id="dashboard-app-bar">
         <div class="md3-app-bar-title">Inbox AI Dashboard</div>
         <div class="md3-top-app-bar-actions">
-            
+
             <button id="settings-button" class="md3-icon-button" type="button" data-href="/settings">
                 <span class="material-icons" aria-hidden="true">settings</span>
                 <span class="sr-only">Open settings</span>
@@ -177,13 +177,11 @@
                         <p>Showing <span id="insights-visible-count-2">{{ insights | length }}</span> of
                             {{ insights_total | default(0) }} insights</p>
                         <div class="sort-controls">
-                            <button class="sort-button" id="sort-asc" title="Sort by received (oldest first)">
-                                <span class="material-icons" aria-hidden="true">arrow_upward</span>
-                                <span class="sr-only">Sort ascending</span>
-                            </button>
-                            <button class="sort-button" id="sort-desc" title="Sort by received (newest first)">
-                                <span class="material-icons" aria-hidden="true">arrow_downward</span>
-                                <span class="sr-only">Sort descending</span>
+                            <button class="sort-button" id="sort-toggle" data-direction="desc"
+                                title="Sort by received date (newest first)"
+                                aria-label="Sort by received date, currently newest first">
+                                <span class="material-icons sort-icon" aria-hidden="true">arrow_downward</span>
+                                <span class="sr-only">Toggle sort order</span>
                             </button>
                         </div>
                     </div>
@@ -262,10 +260,26 @@
                                 <header class="md3-detail-header">
                                     <div class="md3-detail-title-section">
                                         <h3>{{ item.subject or "(no subject)" }}</h3>
-                                        <div class="md3-detail-meta">
-                                            <span>From: {{ item.sender or "Unknown sender" }}</span>
-                                            {% if item.receivedAtDisplay %}<span>Received {{ item.receivedAtDisplay
-                                                }}</span>{% endif %}
+                                        <div class="md3-detail-meta-extended">
+                                            <div class="meta-row">
+                                                <span class="material-icons" aria-hidden="true">person</span>
+                                                <span>{{ item.sender or "Unknown sender" }}</span>
+                                            </div>
+                                            <div class="meta-row">
+                                                <span class="material-icons" aria-hidden="true">schedule</span>
+                                                <span>{{ item.receivedAtDisplay or "Not available" }}</span>
+                                            </div>
+                                            <div class="meta-row">
+                                                <span class="material-icons" aria-hidden="true">flag</span>
+                                                <span>{{ item.priorityLabel }} ({{ item.priority }})</span>
+                                            </div>
+                                            {% if item.threadId and thread_members | length > 1 %}
+                                            <div class="meta-row">
+                                                <span class="material-icons" aria-hidden="true">forum</span>
+                                                <span>{{ thread_members | length }} message{% if thread_members | length
+                                                    != 1 %}s{% endif %}</span>
+                                            </div>
+                                            {% endif %}
                                         </div>
                                         {% if item.categories %}
                                         <div class="md3-chip-set">
@@ -292,34 +306,6 @@
                                         Summary
                                     </h4>
                                     <p>{{ item.summary or "No summary available for this email." }}</p>
-                                </section>
-
-                                <section class="md3-detail-section">
-                                    <h4>
-                                        <span class="material-icons" aria-hidden="true">info</span>
-                                        Message Details
-                                    </h4>
-                                    <div class="md3-metadata-list">
-                                        <div class="md3-meta-row">
-                                            <span>Sender</span>
-                                            <span>{{ item.sender or "Unknown sender" }}</span>
-                                        </div>
-                                        <div class="md3-meta-row">
-                                            <span>Received</span>
-                                            <span>{{ item.receivedAtDisplay or "Not available" }}</span>
-                                        </div>
-                                        <div class="md3-meta-row">
-                                            <span>Priority</span>
-                                            <span>{{ item.priorityLabel }} ({{ item.priority }})</span>
-                                        </div>
-                                        {% if item.threadId %}
-                                        <div class="md3-meta-row">
-                                            <span>Thread</span>
-                                            <span>{{ thread_members | length }} message{% if thread_members | length !=
-                                                1 %}s{% endif %}</span>
-                                        </div>
-                                        {% endif %}
-                                    </div>
                                 </section>
 
                                 <section class="md3-detail-section">
@@ -432,29 +418,6 @@
             </div>
         </section>
     </main>
-
-    <!-- <div class="theme-switcher" role="group" aria-label="Theme selector">
-        <button type="button" data-theme-select="default">
-            <span class="theme-preview theme-default" aria-hidden="true"></span>
-            <span class="sr-only">Default theme</span>
-        </button>
-        <button type="button" data-theme-select="plant">
-            <span class="theme-preview theme-plant" aria-hidden="true"></span>
-            <span class="sr-only">Plant theme</span>
-        </button>
-        <button type="button" data-theme-select="dark">
-            <span class="theme-preview theme-dark" aria-hidden="true"></span>
-            <span class="sr-only">Dark theme</span>
-        </button>
-        <button type="button" data-theme-select="high-contrast">
-            <span class="theme-preview theme-contrast" aria-hidden="true"></span>
-            <span class="sr-only">High contrast theme</span>
-        </button>
-        <button type="button" data-theme-select="vibrant">
-            <span class="theme-preview theme-vibrant" aria-hidden="true"></span>
-            <span class="sr-only">Vibrant theme</span>
-        </button>
-    </div> -->
 
     <script type="module" src="{{ url_for('static', path='js/dashboard.js') }}"></script>
 </body>

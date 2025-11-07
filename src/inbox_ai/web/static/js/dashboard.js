@@ -5,7 +5,7 @@ import { installScrollRestore } from "./modules/scroll.js";
 import ListDetailController from "./modules/list-detail.js";
 import { installEmailListSearch } from "./modules/search.js";
 
-let AVAILABLE_THEMES = ["default", "plant", "dark", "high-contrast", "vibrant", "teal"];
+let AVAILABLE_THEMES = ["default", "plant", "dark", "high-contrast", "vibrant", "teal", "lavender"];
 const THEME_STORAGE_KEY = "dashboard.theme";
 
 // Load themes from config
@@ -464,14 +464,17 @@ document.addEventListener("DOMContentLoaded", async () => {
         });
 
         // Setup sort controls
-        const sortAscBtn = document.getElementById('sort-asc');
-        const sortDescBtn = document.getElementById('sort-desc');
+        const sortToggle = document.getElementById('sort-toggle');
         const SORT_ORDER_KEY = 'dashboard.sort-order';
         let currentSortOrder = localStorage?.getItem(SORT_ORDER_KEY) ?? 'desc';
 
-        const updateSortButtonStates = () => {
-            sortAscBtn?.classList.toggle('active', currentSortOrder === 'asc');
-            sortDescBtn?.classList.toggle('active', currentSortOrder === 'desc');
+        const updateSortButton = () => {
+            if (sortToggle) {
+                sortToggle.setAttribute('data-direction', currentSortOrder);
+                const label = currentSortOrder === 'desc' ? 'newest first' : 'oldest first';
+                sortToggle.setAttribute('aria-label', `Sort by received date, currently ${label}`);
+                sortToggle.setAttribute('title', `Sort by received date (${label})`);
+            }
         };
 
         const sortList = (order) => {
@@ -500,17 +503,18 @@ document.addEventListener("DOMContentLoaded", async () => {
                 console.warn("Unable to persist sort order", error);
             }
 
-            updateSortButtonStates();
+            updateSortButton();
         };
 
-        if (sortAscBtn) {
-            sortAscBtn.addEventListener('click', () => sortList('asc'));
+        if (sortToggle) {
+            sortToggle.addEventListener('click', () => {
+                const newOrder = currentSortOrder === 'desc' ? 'asc' : 'desc';
+                sortList(newOrder);
+            });
         }
 
-        if (sortDescBtn) {
-            sortDescBtn.addEventListener('click', () => sortList('desc'));
-        }
-
-        updateSortButtonStates();
+        // Initialize sort state and apply saved preference
+        updateSortButton();
+        sortList(currentSortOrder);
     }
 });
