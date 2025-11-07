@@ -505,8 +505,8 @@
                     onsubmit="return confirm('This will permanently delete all emails, insights, drafts, and follow-ups. Are you sure?');">
                     <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
                     <input type="hidden" name="redirect_to" value="{{ redirect_to }}#maintenance" />
-                    <button type="submit" class="md3-button md3-button--outlined"
-                        style="color: var(--md3-color-error); border-color: var(--md3-color-error);">
+                    <button type="submit" class="md3-button md3-button--tonal"
+                        style="background: var(--md3-color-error-container); color: var(--md3-color-on-error-container);">
                         <span class="material-icons" aria-hidden="true">delete_outline</span>
                         Clear Database
                     </button>
