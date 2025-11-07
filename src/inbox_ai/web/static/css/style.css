@@ -196,10 +196,20 @@
     --md3-elevation-1: 0 1px 1px rgba(31, 31, 36, 0.1), 0 2px 2px rgba(31, 31, 36, 0.12);
     --md3-elevation-2: 0 2px 4px rgba(31, 31, 36, 0.16);
     --md3-elevation-3: 0 6px 10px rgba(31, 31, 36, 0.16);
-    --md3-radius-sm: 12px;
-    --md3-radius-lg: 16px;
-    --md3-radius-xl: 24px;
-    --md3-radius-pill: 999px;
+    
+    /* MD3 Shape System */
+    --md3-radius-none: 0px;
+    --md3-radius-xs: 4px;
+    --md3-radius-s: 8px;
+    --md3-radius-m: 12px;
+    --md3-radius-l: 16px;
+    --md3-radius-xl: 28px;
+    --md3-radius-full: 999px;
+    
+    /* Legacy shortcuts (mapped to MD3 system) */
+    --md3-radius-sm: var(--md3-radius-m);
+    --md3-radius-lg: var(--md3-radius-l);
+    --md3-radius-pill: var(--md3-radius-full);
 }
 
 * {
@@ -521,7 +531,7 @@ a {
 .md3-textarea {
     width: 100%;
     padding: var(--md3-spacing-12) var(--md3-spacing-16);
-    border-radius: var(--md3-radius-sm);
+    border-radius: var(--md3-radius-s);
     border: 1px solid var(--md3-color-outline-variant);
     background: var(--md3-color-surface-container);
     transition: border-color 160ms ease, box-shadow 160ms ease;
