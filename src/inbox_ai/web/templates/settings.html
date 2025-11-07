@@ -43,19 +43,41 @@
             justify-content: center;
             width: 40px;
             height: 40px;
-            border-radius: 50%;
-            background: var(--md3-color-primary-container);
-            color: var(--md3-color-on-primary-container);
+            border-radius: 20px;
+            background: transparent;
+            color: var(--md3-color-on-surface);
             text-decoration: none;
             cursor: pointer;
-            transition: background 160ms ease;
+            position: relative;
+            overflow: hidden;
+            transition: background 200ms cubic-bezier(0.2, 0, 0, 1);
             flex-shrink: 0;
         }
 
-        .settings-header a:hover,
-        .settings-header a:focus {
-            background: var(--md3-color-primary);
-            color: var(--md3-color-on-primary);
+        .settings-header a::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: currentColor;
+            opacity: 0;
+            transition: opacity 200ms cubic-bezier(0.2, 0, 0, 1);
+            pointer-events: none;
+        }
+
+        .settings-header a:hover::before {
+            opacity: 0.08;
+        }
+
+        .settings-header a:focus-visible {
+            outline: none;
+        }
+
+        .settings-header a:focus-visible::before {
+            opacity: 0.12;
+        }
+
+        .settings-header a:active::before {
+            opacity: 0.12;
         }
 
         @media (max-width: 599px) {
@@ -196,48 +218,82 @@
             display: flex;
             flex-direction: column;
             gap: var(--md3-spacing-8);
+            position: relative;
         }
 
         .md3-field label {
-            font-size: 14px;
-            font-weight: 500;
+            position: absolute;
+            left: var(--md3-spacing-16);
+            top: var(--md3-spacing-12);
+            font-size: 16px;
+            font-weight: 400;
             color: var(--md3-color-on-surface-variant);
+            background: var(--md3-color-surface);
+            padding: 0 var(--md3-spacing-4);
+            transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .md3-field.filled label,
+        .md3-field:focus-within label {
+            top: -8px;
+            left: var(--md3-spacing-12);
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--md3-color-primary);
         }
 
         .md3-input,
         .md3-select,
         .md3-textarea {
             width: 100%;
-            padding: var(--md3-spacing-12) var(--md3-spacing-16);
-            border-radius: 8px;
-            border: 1px solid var(--md3-color-outline-variant);
-            background: var(--md3-color-surface-container);
+            padding: var(--md3-spacing-16);
+            padding-top: var(--md3-spacing-20);
+            padding-bottom: var(--md3-spacing-12);
+            border: 1px solid var(--md3-color-outline);
+            /* border-radius: 4px 4px 0 0; */
+            background: var(--md3-color-surface-container-highest);
             color: var(--md3-color-on-surface);
             font-family: var(--md3-font-family);
-            font-size: 14px;
-            transition: border-color 160ms ease, box-shadow 160ms ease;
+            font-size: 16px;
+            line-height: 24px;
+            transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
+            position: relative;
         }
 
-        .md3-input:focus,
+        .md3-input::after,
+        .md3-select::after,
+        .md3-textarea::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: var(--md3-color-primary);
+            transform: scaleX(0);
+            transition: transform 200ms cubic-bezier(0.2, 0, 0, 1);
+        }
+
+        /* .md3-input:focus,
         .md3-select:focus,
         .md3-textarea:focus {
-            border-color: var(--md3-color-primary);
-            box-shadow: 0 0 0 1px var(--md3-color-primary);
             outline: none;
+            border-color: var(--md3-color-primary);
+            border-width: 2px;
+        } */
+
+        .md3-input:focus::after,
+        .md3-select:focus::after,
+        .md3-textarea:focus::after {
+            transform: scaleX(1);
         }
 
-        @media (max-width: 599px) {
-
-            .md3-input,
-            .md3-select,
-            .md3-textarea {
-                padding: var(--md3-spacing-10) var(--md3-spacing-12);
-                font-size: 16px;
-            }
-
-            .md3-field label {
-                font-size: 13px;
-            }
+        .md3-input:focus+label,
+        .md3-select:focus+label,
+        .md3-textarea:focus+label {
+            color: var(--md3-color-primary);
         }
 
         .md3-select {
@@ -285,33 +341,62 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            gap: var(--md3-spacing-8);
-            padding: 0 var(--md3-spacing-16);
-            height: 32px;
-            border-radius: var(--md3-radius-pill);
-            border: 1px solid transparent;
-            background: transparent;
-            cursor: pointer;
-            font-weight: 500;
-            letter-spacing: 0.1px;
-            transition: background 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+            gap: 8px;
+            height: 40px;
+            padding: 0 24px;
+            border: none;
+            border-radius: 20px;
+            font-family: var(--md3-font-family);
             font-size: 14px;
+            font-weight: 500;
+            line-height: 20px;
+            letter-spacing: 0.1px;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+            transition: box-shadow 200ms cubic-bezier(0.2, 0, 0, 1);
+        }
+
+        .md3-button::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: currentColor;
+            opacity: 0;
+            transition: opacity 200ms cubic-bezier(0.2, 0, 0, 1);
+            pointer-events: none;
+        }
+
+        .md3-button:hover::before {
+            opacity: 0.08;
+        }
+
+        .md3-button:focus-visible {
+            outline: none;
+        }
+
+        .md3-button:focus-visible::before {
+            opacity: 0.12;
+        }
+
+        .md3-button:active::before {
+            opacity: 0.12;
         }
 
         .md3-button--filled {
             background: var(--md3-color-primary);
             color: var(--md3-color-on-primary);
-            box-shadow: var(--md3-elevation-1);
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px 1px rgba(0, 0, 0, 0.15);
         }
 
         .md3-button--filled:hover {
-            box-shadow: var(--md3-elevation-2);
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 6px 2px rgba(0, 0, 0, 0.15);
         }
 
         .md3-button--outlined {
-            border-color: var(--md3-color-outline);
+            background: transparent;
             color: var(--md3-color-primary);
-            background: var(--md3-color-surface);
+            border: 1px solid var(--md3-color-outline);
         }
 
         .md3-button--outlined:hover {
@@ -329,6 +414,12 @@
             color: var(--md3-color-on-secondary);
         }
 
+        .md3-button .material-icons {
+            font-size: 18px;
+            width: 18px;
+            height: 18px;
+        }
+
         .config-actions .note {
             font-size: 13px;
             color: var(--md3-color-on-surface-variant);
@@ -340,45 +431,58 @@
             color: var(--md3-color-on-surface-variant);
         }
 
-        .flash {
-            padding: var(--md3-spacing-16);
-            border-radius: var(--md3-radius-lg);
-            font-weight: 500;
-            font-size: 14px;
-            margin-bottom: var(--md3-spacing-16);
+        .md3-snackbar {
             display: flex;
             align-items: center;
             gap: var(--md3-spacing-12);
+            padding: var(--md3-spacing-12) var(--md3-spacing-16);
+            border-radius: var(--md3-radius-lg);
+            background: var(--md3-color-inverse-surface);
+            color: var(--md3-color-inverse-on-surface);
+            font-size: 14px;
+            font-weight: 400;
+            line-height: 20px;
+            letter-spacing: 0.25px;
+            box-shadow: var(--md3-elevation-6);
+            margin-bottom: var(--md3-spacing-16);
+            position: relative;
+            overflow: hidden;
         }
 
-        .flash.success {
-            background: rgba(0, 128, 0, 0.12);
-            color: #2e7d32;
-            border: 1px solid rgba(0, 128, 0, 0.24);
+        .md3-snackbar::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 6px;
+            background: currentColor;
+            opacity: 0.8;
         }
 
-        .flash.error {
-            background: rgba(211, 47, 47, 0.12);
-            color: #c62828;
-            border: 1px solid rgba(211, 47, 47, 0.24);
-        }
-
-        .flash::before {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 24px;
-            height: 24px;
-            flex-shrink: 0;
+        .md3-snackbar .material-icons {
             font-size: 20px;
+            width: 20px;
+            height: 20px;
+            flex-shrink: 0;
         }
 
-        .flash.success::before {
-            content: "✓";
+        .md3-snackbar.success {
+            background: var(--md3-color-tertiary-container);
+            color: var(--md3-color-on-tertiary-container);
         }
 
-        .flash.error::before {
-            content: "✕";
+        .md3-snackbar.success::before {
+            background: var(--md3-color-tertiary);
+        }
+
+        .md3-snackbar.error {
+            background: var(--md3-color-error-container);
+            color: var(--md3-color-on-error-container);
+        }
+
+        .md3-snackbar.error::before {
+            background: var(--md3-color-error);
         }
 
         code {
@@ -402,73 +506,72 @@
         }
 
         .theme-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
-            gap: var(--md3-spacing-16);
+            display: flex;
+            flex-wrap: wrap;
+            gap: var(--md3-spacing-8);
             margin-top: var(--md3-spacing-16);
         }
 
-        @media (max-width: 599px) {
-            .theme-grid {
-                grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
-                gap: var(--md3-spacing-12);
-            }
-        }
-
-        @media (min-width: 600px) and (max-width: 839px) {
-            .theme-grid {
-                grid-template-columns: repeat(auto-fit, minmax(75px, 1fr));
-            }
-        }
-
-        .theme-button {
-            display: flex;
-            flex-direction: column;
+        .theme-chip {
+            display: inline-flex;
             align-items: center;
             gap: var(--md3-spacing-8);
-            padding: var(--md3-spacing-12);
-            background: var(--md3-color-surface);
-            border: 2px solid var(--md3-color-outline-variant);
-            border-radius: var(--md3-radius-lg);
-            cursor: pointer;
-            transition: all 160ms ease;
-        }
-
-        .theme-button:hover {
-            border-color: var(--md3-color-primary);
-            box-shadow: var(--md3-elevation-1);
-        }
-
-        .theme-button.active {
-            border-color: var(--md3-color-primary);
-            background: var(--md3-color-primary-container);
-            box-shadow: var(--md3-elevation-2);
-        }
-
-        @media (max-width: 599px) {
-            .theme-button {
-                padding: var(--md3-spacing-10);
-                gap: var(--md3-spacing-6);
-            }
-        }
-
-        .theme-preview {
-            width: 100%;
-            height: 48px;
+            padding: var(--md3-spacing-8) var(--md3-spacing-12);
             border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 12px;
-            font-weight: 600;
-            color: white;
+            background: var(--md3-color-surface-container-low);
+            border: 1px solid var(--md3-color-outline-variant);
+            color: var(--md3-color-on-surface-variant);
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+            transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
+            font-size: 14px;
+            font-weight: 500;
+            line-height: 20px;
+            text-decoration: none;
         }
 
-        @media (max-width: 599px) {
-            .theme-preview {
-                height: 40px;
-                font-size: 11px;
-            }
+        .theme-chip::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: currentColor;
+            opacity: 0;
+            transition: opacity 200ms cubic-bezier(0.2, 0, 0, 1);
+            pointer-events: none;
+        }
+
+        .theme-chip:hover::before {
+            opacity: 0.08;
+        }
+
+        .theme-chip:focus-visible {
+            outline: none;
+        }
+
+        .theme-chip:focus-visible::before {
+            opacity: 0.12;
+        }
+
+        .theme-chip:active::before {
+            opacity: 0.12;
+        }
+
+        .theme-chip.active {
+            background: var(--md3-color-secondary-container);
+            border-color: var(--md3-color-secondary);
+            color: var(--md3-color-on-secondary-container);
+        }
+
+        .theme-chip.active::before {
+            opacity: 0.16;
+        }
+
+        .theme-chip .theme-preview {
+            width: 16px;
+            height: 16px;
+            border-radius: 8px;
+            flex-shrink: 0;
         }
 
         .theme-preview.theme-default {
@@ -556,9 +659,15 @@
 
         <div class="md3-card">
             {% if config_status == "saved" %}
-            <div class="flash success">Configuration saved. Restart the server to apply changes.</div>
+            <div class="md3-snackbar success">
+                <span class="material-icons">check_circle</span>
+                Configuration saved. Restart the server to apply changes.
+            </div>
             {% elif config_status == "error" %}
-            <div class="flash error">Unable to update {{ config_env_path }}. Check file permissions.</div>
+            <div class="md3-snackbar error">
+                <span class="material-icons">error</span>
+                Unable to update {{ config_env_path }}. Check file permissions.
+            </div>
             {% endif %}
 
             <h2>Settings</h2>
@@ -571,8 +680,7 @@
                     <legend>{{ section.title }}</legend>
                     <div class="config-grid">
                         {% for field in section.fields %}
-                        <div class="md3-field">
-                            <label for="{{ field.key }}">{{ field.label }}</label>
+                        <div class="md3-field{% if config_values.get(field.key, '') %} filled{% endif %}">
                             {% if field.input_type == "select" %}
                             <select id="{{ field.key }}" name="{{ field.key }}" class="md3-select">
                                 {% for option in field.options %}
@@ -582,12 +690,15 @@
                                 </option>
                                 {% endfor %}
                             </select>
+                            <label for="{{ field.key }}">{{ field.label }}</label>
                             {% elif field.input_type == "textarea" %}
                             <textarea id="{{ field.key }}" name="{{ field.key }}" class="md3-textarea"
-                                rows="{{ field.textarea_rows or 6 }}">{{ config_values.get(field.key, '') }}</textarea>
+                                rows="{{ field.textarea_rows or 6 }}">{% if config_values.get(field.key, '') %}{{ config_values.get(field.key, '') }}{% endif %}</textarea>
+                            <label for="{{ field.key }}">{{ field.label }}</label>
                             {% else %}
                             <input type="{{ field.input_type }}" id="{{ field.key }}" name="{{ field.key }}"
                                 class="md3-input" value="{{ config_values.get(field.key, '') }}" />
+                            <label for="{{ field.key }}">{{ field.label }}</label>
                             {% endif %}
                             {% if field.description %}
                             <span class="config-help">{{ field.description }}</span>
@@ -677,9 +788,9 @@
             ];
 
             themeGrid.innerHTML = themesToRender.map(theme => `
-                <button type="button" class="theme-button" data-theme-select="${theme.id}" title="${theme.title}">
+                <button type="button" class="theme-chip" data-theme-select="${theme.id}" title="${theme.title}">
                     <div class="theme-preview" style="background: linear-gradient(135deg, ${theme.gradientStart} 0%, ${theme.gradientEnd} 100%);"></div>
-                    <span class="theme-label">${theme.label}</span>
+                    <span>${theme.label}</span>
                 </button>
             `).join("");
 
@@ -729,6 +840,28 @@
         const currentTheme = loadCurrentTheme();
         document.documentElement.setAttribute("data-theme", currentTheme);
         loadThemesConfig();
+
+        // Floating label behavior
+        function updateFieldStates() {
+            document.querySelectorAll('.md3-field').forEach(field => {
+                const input = field.querySelector('.md3-input, .md3-select, .md3-textarea');
+                if (input && input.value.trim()) {
+                    field.classList.add('filled');
+                } else {
+                    field.classList.remove('filled');
+                }
+            });
+        }
+
+        // Set up floating label listeners
+        document.addEventListener('DOMContentLoaded', () => {
+            updateFieldStates();
+
+            document.querySelectorAll('.md3-input, .md3-select, .md3-textarea').forEach(input => {
+                input.addEventListener('input', updateFieldStates);
+                input.addEventListener('change', updateFieldStates);
+            });
+        });
     </script>
 </body>
 
