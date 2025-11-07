@@ -4,6 +4,10 @@ export function installScrollRestore({ forms, storageKey }) {
     }
 
     forms.forEach((form) => {
+        if (form.hasAttribute("data-scroll-restore-bound")) {
+            return;
+        }
+        form.setAttribute("data-scroll-restore-bound", "true");
         form.addEventListener("submit", () => {
             try {
                 const position = {

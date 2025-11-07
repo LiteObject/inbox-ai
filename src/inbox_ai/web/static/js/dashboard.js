@@ -2,70 +2,73 @@ import { SpinnerController } from "./modules/spinner.js";
 import { ToastManager } from "./modules/toast.js";
 import { DialogManager } from "./modules/dialog.js";
 import { installScrollRestore } from "./modules/scroll.js";
-import { installInsightSearch } from "./modules/search.js";
+import ListDetailController from "./modules/list-detail.js";
+import { installEmailListSearch } from "./modules/search.js";
 
-// Material Design component fallback handling
-function setupMaterialDesignFallbacks() {
-    function checkAndSetupFallbacks() {
-        // Check if Material Design components loaded properly
-        const testElement = document.createElement('md-outlined-select');
-        const isMDLoaded = testElement.constructor !== HTMLElement;
+const AVAILABLE_THEMES = ["default", "plant", "dark", "high-contrast", "vibrant"];
+const THEME_STORAGE_KEY = "dashboard.theme";
 
-        document.body.classList.toggle('md-fallback', !isMDLoaded);
-
-        const fallbackGroups = document.querySelectorAll('[data-md-fallback-group]');
-        fallbackGroups.forEach((group) => {
-            const mdElement = group.querySelector('[data-md-element]');
-            const fallbackControl = group.querySelector('[data-fallback-control]');
-
-            if (!mdElement || !fallbackControl) {
-                return;
-            }
-
-            if (isMDLoaded) {
-                // Sync any value entered in the fallback control back to the MD component.
-                if (!fallbackControl.hidden && typeof mdElement.value !== "undefined" && fallbackControl.value !== undefined) {
-                    try {
-                        mdElement.value = fallbackControl.value;
-                    } catch (error) {
-                        console.warn("Unable to sync fallback value to Material component", error);
-                    }
-                }
-
-                mdElement.hidden = false;
-                fallbackControl.hidden = true;
-                fallbackControl.disabled = true;
-            } else {
-                // Copy existing value from the MD element (if any) to the fallback control.
-                let mdValue = typeof mdElement.value !== "undefined" ? mdElement.value : null;
-                if (!mdValue) {
-                    mdValue = mdElement.getAttribute("value");
-                }
-                if (mdValue !== null && mdValue !== undefined && fallbackControl.value !== undefined) {
-                    fallbackControl.value = mdValue;
-                }
-
-                mdElement.hidden = true;
-                fallbackControl.hidden = false;
-                fallbackControl.disabled = false;
-            }
-        });
+function resolveInitialTheme() {
+    let storedTheme = null;
+    try {
+        storedTheme = window.localStorage?.getItem(THEME_STORAGE_KEY) ?? null;
+    } catch (error) {
+        storedTheme = null;
     }
 
-    // Check immediately
-    checkAndSetupFallbacks();
+    if (storedTheme && AVAILABLE_THEMES.includes(storedTheme)) {
+        return storedTheme;
+    }
 
-    // Also check after a delay in case components load asynchronously
-    window.setTimeout(checkAndSetupFallbacks, 1000);
+    if (window.matchMedia?.("(prefers-color-scheme: dark)")?.matches) {
+        return "dark";
+    }
 
-    if (window.customElements && typeof window.customElements.whenDefined === "function") {
-        const definitions = [
-            window.customElements.whenDefined("md-outlined-select"),
-            window.customElements.whenDefined("md-outlined-text-field"),
-            window.customElements.whenDefined("md-filled-button"),
-        ];
-        Promise.allSettled(definitions).then(() => {
-            checkAndSetupFallbacks();
+    return "default";
+}
+
+document.documentElement.setAttribute("data-theme", resolveInitialTheme());
+
+class ThemeManager {
+    constructor(initialTheme) {
+        this.validThemes = AVAILABLE_THEMES;
+        this.storageKey = THEME_STORAGE_KEY;
+        this.currentTheme = null;
+        this.applyTheme(initialTheme ?? resolveInitialTheme(), { persist: false });
+    }
+
+    applyTheme(theme, options = {}) {
+        if (!this.validThemes.includes(theme)) {
+            return;
+        }
+
+        document.documentElement.setAttribute("data-theme", theme);
+        this.currentTheme = theme;
+
+        if (options.persist !== false) {
+            try {
+                window.localStorage?.setItem(this.storageKey, theme);
+            } catch (error) {
+                console.warn("Unable to persist theme selection", error);
+            }
+        }
+
+        this.updateActiveControls();
+        window.dispatchEvent(new CustomEvent("themechange", { detail: { theme } }));
+    }
+
+    setTheme(theme) {
+        this.applyTheme(theme);
+    }
+
+    updateActiveControls() {
+        const buttons = document.querySelectorAll("[data-theme-select]");
+        if (!buttons.length) {
+            return;
+        }
+        buttons.forEach((button) => {
+            const isActive = button.dataset.themeSelect === this.currentTheme;
+            button.classList.toggle("active", isActive);
         });
     }
 }
@@ -165,8 +168,9 @@ function consumeStoredToasts(toastManager) {
 }
 
 function installSpinnerForms(spinner, toastManager, dialogManager) {
-    const forms = document.querySelectorAll("form[data-spinner]");
+    const forms = document.querySelectorAll("form[data-spinner]:not([data-spinner-bound='true'])");
     forms.forEach((form) => {
+        form.setAttribute("data-spinner-bound", "true");
         const submitButtons = form.querySelectorAll("button[type='submit'], button:not([type])");
         let lastSubmitter = null;
         submitButtons.forEach((button) => {
@@ -205,7 +209,19 @@ function installSpinnerForms(spinner, toastManager, dialogManager) {
 
             try {
                 const formData = new FormData(form);
-                const action = submitter?.formAction || form.action || window.location.href;
+
+                // Get the action URL - ensure it's properly resolved to an absolute URL
+                let action = submitter?.formAction || form.action;
+                if (!action || action === window.location.href) {
+                    action = form.getAttribute('action');
+                    if (action) {
+                        // Resolve relative URL to absolute URL
+                        action = new URL(action, window.location.href).href;
+                    } else {
+                        action = window.location.href;
+                    }
+                }
+
                 const method = (submitter?.formMethod || form.method || "post").toUpperCase();
 
                 if (action.endsWith("/sync")) {
@@ -247,6 +263,50 @@ function installSpinnerForms(spinner, toastManager, dialogManager) {
                         }
                     }
                     spinner.hide();
+                } else if (action.includes("/draft")) {
+                    // Handle draft operations - these need page reload to show updated content
+                    const response = await fetch(action, {
+                        method,
+                        body: formData,
+                        redirect: "follow",
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+
+                    // For draft operations, we need to reload to show updated content
+                    // Get the redirected URL or the current URL
+                    const targetUrl = response.url || formData.get("redirect_to") || window.location.href;
+
+                    // Queue the toast before reload
+                    let successMessage = "Draft saved successfully";
+                    if (action.includes("/draft/regenerate")) {
+                        successMessage = "Draft regenerated successfully";
+                    } else if (action.includes("/draft/delete")) {
+                        successMessage = "Draft deleted successfully";
+                    }
+
+                    // Preserve the currently selected email UID so we can re-select it after reload
+                    const currentlySelectedItem = document.querySelector('.email-list-item[selected]');
+                    const selectedUid = currentlySelectedItem?.dataset.uid;
+
+                    // Store toast and selected email in session storage to restore after reload
+                    try {
+                        const pendingToasts = [{
+                            message: successMessage,
+                            variant: "success"
+                        }];
+                        window.sessionStorage?.setItem(TOAST_STORAGE_KEY, JSON.stringify(pendingToasts));
+                        if (selectedUid) {
+                            window.sessionStorage?.setItem('dashboard.selectedEmailUid', selectedUid);
+                        }
+                    } catch (error) {
+                        console.warn("Unable to persist data before reload", error);
+                    }
+
+                    spinner.hide();
+                    window.location.href = targetUrl;
                 } else {
                     const response = await fetch(action, {
                         method,
@@ -300,8 +360,23 @@ function installSettingsNavigation() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-    // Setup Material Design component fallbacks
-    setupMaterialDesignFallbacks();
+    const themeManager = new ThemeManager(document.documentElement.getAttribute("data-theme"));
+    window.themeManager = themeManager;
+
+    const themeButtons = document.querySelectorAll("[data-theme-select]");
+    themeButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+            themeManager.setTheme(button.dataset.themeSelect);
+        });
+    });
+    themeManager.updateActiveControls();
+
+    const toastManager = new ToastManager({
+        container: document.getElementById("toast-container"),
+        dataset: document.getElementById("toast-data"),
+    });
+    toastManager.hydrateFromDataset();
+    consumeStoredToasts(toastManager);
 
     const spinner = new SpinnerController({
         overlay: document.getElementById("sync-spinner"),
@@ -312,17 +387,17 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     spinner.hide();
 
-    const toastManager = new ToastManager({
-        container: document.getElementById("toast-container"),
-        snackbar: document.getElementById("global-snackbar"),
-        dataset: document.getElementById("toast-data"),
-    });
-    toastManager.hydrateFromDataset();
-    consumeStoredToasts(toastManager);
-
     const dialogManager = new DialogManager();
 
-    installSpinnerForms(spinner, toastManager, dialogManager);
+    const bindInteractiveForms = () => {
+        installSpinnerForms(spinner, toastManager, dialogManager);
+        installScrollRestore({
+            forms: document.querySelectorAll("form[data-scroll-restore]"),
+            storageKey: "dashboard-scroll",
+        });
+    };
+
+    bindInteractiveForms();
 
     window.addEventListener("pageshow", (event) => {
         if (event.persisted) {
@@ -330,17 +405,45 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
-    installScrollRestore({
-        forms: document.querySelectorAll("form[data-scroll-restore]"),
-        storageKey: "dashboard-scroll",
-    });
-
-    installInsightSearch({
-        input: document.getElementById("insights-search"),
-        grid: document.getElementById("insights-grid"),
-        visibleCount: document.getElementById("insights-visible-count"),
-        emptyNotice: document.getElementById("insights-filter-empty"),
-    });
-
     installSettingsNavigation();
+
+    const listDetailContainer = document.querySelector('.list-detail-container');
+    const emailList = document.getElementById('email-list');
+    const detailHost = document.getElementById('detail-content');
+    const templateContainer = document.getElementById('detail-templates');
+
+    if (listDetailContainer && emailList && detailHost && templateContainer) {
+        window.listDetailController = new ListDetailController({
+            container: listDetailContainer,
+            list: emailList,
+            detailHost,
+            templateContainer,
+            onDetailChanged: () => {
+                bindInteractiveForms();
+            },
+        });
+
+        // Restore previously selected email if it was stored (e.g., after a draft save reload)
+        try {
+            const previouslySelectedUid = window.sessionStorage?.getItem('dashboard.selectedEmailUid');
+            if (previouslySelectedUid) {
+                const previousItem = emailList.querySelector(`[data-uid="${previouslySelectedUid}"]`);
+                if (previousItem) {
+                    window.listDetailController.selectItem(previouslySelectedUid, { scroll: false, updateHistory: false });
+                }
+                window.sessionStorage?.removeItem('dashboard.selectedEmailUid');
+            }
+        } catch (error) {
+            console.warn("Unable to restore previously selected email", error);
+        }
+
+        const visibleCountTargets = document.querySelectorAll('#insights-visible-count, #insights-visible-count-2');
+
+        installEmailListSearch({
+            input: document.getElementById('insights-search'),
+            list: emailList,
+            visibleCount: visibleCountTargets,
+            emptyNotice: document.getElementById('insights-filter-empty'),
+        });
+    }
 });
