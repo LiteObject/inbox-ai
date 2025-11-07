@@ -122,7 +122,28 @@ class SqliteEmailRepository(EmailRepository):
 
     def persist_insight(self, insight: EmailInsight) -> None:
         """Insert or update summarisation data for an email."""
+        if insight is None:
+            LOGGER.warning("Attempted to persist None insight, skipping")
+            return
+
         LOGGER.debug("Persisting insight for UID %s", insight.email_uid)
+
+        # Defensive check: verify email exists before persisting insight
+        cur = self._connection.execute(
+            "SELECT COUNT(*) FROM emails WHERE uid = ?",
+            (insight.email_uid,),
+        )
+        email_exists = cur.fetchone()[0] > 0
+        if not email_exists:
+            LOGGER.error(
+                "Cannot persist insight: email UID %s not found in database. "
+                "Email must be persisted before its insight.",
+                insight.email_uid,
+            )
+            raise ValueError(
+                f"Email UID {insight.email_uid} must be persisted before its insight"
+            )
+
         with self._connection:
             self._connection.execute(
                 """
