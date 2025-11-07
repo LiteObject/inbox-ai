@@ -52,6 +52,18 @@ class EmailRepository(Protocol):
         """Remove an email and related records. Returns ``True`` if deleted."""
         raise NotImplementedError
 
+    def update_content_hash(self, email_uid: int, content_hash: str) -> None:
+        """Update the content hash for an email."""
+        raise NotImplementedError
+
+    def get_content_hash(self, email_uid: int) -> str | None:
+        """Get the content hash for an email."""
+        raise NotImplementedError
+
+    def find_cached_analysis(self, content_hash: str) -> EmailInsight | None:
+        """Find existing analysis for emails with matching content hash."""
+        raise NotImplementedError
+
     def get_checkpoint(self, mailbox: str) -> SyncCheckpoint | None:
         """Return the last stored checkpoint for the given mailbox."""
         raise NotImplementedError
