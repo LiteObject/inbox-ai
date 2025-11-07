@@ -181,6 +181,36 @@
     --theme-inverse-primary: #7fdbca;
 }
 
+:root[data-theme="lavender"] {
+    --theme-primary: #6e53c9;
+    --theme-on-primary: #ffffff;
+    --theme-primary-container: #d9ceff;
+    --theme-on-primary-container: #21145a;
+    --theme-secondary: #a488f6;
+    --theme-on-secondary: #2a1c66;
+    --theme-secondary-container: #e7deff;
+    --theme-on-secondary-container: #20134d;
+    --theme-tertiary: #ff8bd2;
+    --theme-on-tertiary: #3b0030;
+    --theme-tertiary-container: #ffd7f1;
+    --theme-on-tertiary-container: #360024;
+    --theme-surface: #f1edff;
+    --theme-surface-dim: #e1dbf5;
+    --theme-surface-container: #ebe6ff;
+    --theme-surface-container-high: #e3defa;
+    --theme-surface-container-highest: #dcd6f4;
+    --theme-surface-variant: #d8d2ee;
+    --theme-on-surface: #2d2942;
+    --theme-on-surface-variant: #514c68;
+    --theme-outline: #7a7398;
+    --theme-outline-variant: #d5d0ee;
+    --theme-error: #b3261e;
+    --theme-on-error: #ffffff;
+    --theme-inverse-surface: #312a52;
+    --theme-inverse-on-surface: #f6f0ff;
+    --theme-inverse-primary: #cbbeff;
+}
+
 :root {
     --md3-font-family: 'Roboto', sans-serif;
     --md3-spacing-2: 2px;
@@ -1328,6 +1358,10 @@ a {
 
 .theme-preview.theme-teal {
     background: linear-gradient(135deg, #00897b 50%, #a7f0d9 50%);
+}
+
+.theme-preview.theme-lavender {
+    background: linear-gradient(135deg, #6e53c9 50%, #ff8bd2 50%);
 }
 
 @media (max-width: 599px) {
