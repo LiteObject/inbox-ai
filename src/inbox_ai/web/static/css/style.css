@@ -1200,6 +1200,59 @@ a {
     font-size: 14px;
 }
 
+.md3-detail-meta-extended {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: var(--md3-spacing-12);
+    margin-top: var(--md3-spacing-16);
+    margin-bottom: var(--md3-spacing-8);
+}
+
+.md3-detail-meta-extended .meta-row {
+    display: flex;
+    align-items: center;
+    gap: var(--md3-spacing-8);
+    color: var(--md3-color-on-surface-variant);
+    font-size: 14px;
+    line-height: 20px;
+    min-height: 24px;
+}
+
+.md3-detail-meta-extended .meta-row .material-icons {
+    font-size: 18px;
+    width: 18px;
+    height: 18px;
+    color: var(--md3-color-on-surface-variant);
+    flex-shrink: 0;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.md3-detail-meta-extended .meta-row span:last-child {
+    color: var(--md3-color-on-surface);
+}
+
+@media (max-width: 599px) {
+    .md3-detail-meta-extended {
+        grid-template-columns: 1fr;
+        gap: var(--md3-spacing-8);
+    }
+    
+    .md3-detail-meta-extended .meta-row {
+        font-size: 13px;
+    }
+}
+
+@media (min-width: 600px) and (max-width: 839px) {
+    .md3-detail-meta-extended {
+        grid-template-columns: repeat(2, 1fr);
+        gap: var(--md3-spacing-10);
+    }
+}
+
+
 .md3-chip-set {
     display: flex;
     flex-wrap: wrap;
