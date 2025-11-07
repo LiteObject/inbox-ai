@@ -207,6 +207,54 @@ class SqliteEmailRepository(EmailRepository):
             )
         return cur.rowcount > 0
 
+    def update_content_hash(self, email_uid: int, content_hash: str) -> None:
+        """Update the content hash for an email."""
+        LOGGER.debug("Updating content hash for UID %s", email_uid)
+        with self._connection:
+            self._connection.execute(
+                "UPDATE emails SET content_hash = ? WHERE uid = ?",
+                (content_hash, email_uid),
+            )
+
+    def get_content_hash(self, email_uid: int) -> str | None:
+        """Get the content hash for an email."""
+        cur = self._connection.execute(
+            "SELECT content_hash FROM emails WHERE uid = ?",
+            (email_uid,),
+        )
+        row = cur.fetchone()
+        return row["content_hash"] if row else None
+
+    def find_cached_analysis(self, content_hash: str) -> EmailInsight | None:
+        """Find existing analysis for emails with matching content hash."""
+        cur = self._connection.execute(
+            """
+            SELECT ei.email_uid, ei.summary, ei.action_items, ei.priority_score, 
+                   ei.provider, ei.generated_at, ei.used_fallback
+            FROM email_insights ei
+            JOIN emails e ON ei.email_uid = e.uid
+            WHERE e.content_hash = ?
+            LIMIT 1
+            """,
+            (content_hash,),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return None
+        action_items_raw = row["action_items"] or "[]"
+        action_items = tuple(json.loads(action_items_raw))
+        return EmailInsight(
+            email_uid=row["email_uid"],
+            summary=row["summary"],
+            action_items=tuple(str(item) for item in action_items),
+            priority=row["priority_score"],
+            provider=row["provider"],
+            generated_at=cast(
+                datetime, parse_datetime(row["generated_at"], assume_utc=True)
+            ),
+            used_fallback=bool(row["used_fallback"]),
+        )
+
     def fetch_insight(self, email_uid: int) -> EmailInsight | None:
         """Fetch the stored insight row for the supplied email UID."""
         cur = self._connection.execute(
@@ -815,6 +863,7 @@ class SqliteEmailRepository(EmailRepository):
         """Return a migration handler for the supplied migration stem."""
         return {
             "005_mailbox": self._apply_mailbox_migration,
+            "006_content_hash": self._apply_content_hash_migration,
         }.get(name, self._apply_default_migration)
 
     def _apply_default_migration(self, script: str) -> None:
@@ -838,6 +887,32 @@ class SqliteEmailRepository(EmailRepository):
                     cursor.execute("SELECT mailbox FROM emails LIMIT 1")
                     # Column exists, skip this statement
                     LOGGER.debug("Mailbox column already exists, skipping ALTER TABLE")
+                    continue
+                except sqlite3.OperationalError:
+                    # Column doesn't exist, proceed with ALTER TABLE
+                    pass
+
+            with self._connection:
+                self._connection.execute(line)
+
+    def _apply_content_hash_migration(self, script: str) -> None:
+        """Apply the content_hash migration with special handling for duplicate columns."""
+        lines = [
+            line.strip()
+            for line in script.split("\n")
+            if line.strip() and not line.strip().startswith("--")
+        ]
+
+        for line in lines:
+            if line.upper().startswith("ALTER TABLE EMAILS ADD COLUMN CONTENT_HASH"):
+                # Check if column already exists
+                try:
+                    cursor = self._connection.cursor()
+                    cursor.execute("SELECT content_hash FROM emails LIMIT 1")
+                    # Column exists, skip this statement
+                    LOGGER.debug(
+                        "Content_hash column already exists, skipping ALTER TABLE"
+                    )
                     continue
                 except sqlite3.OperationalError:
                     # Column doesn't exist, proceed with ALTER TABLE
