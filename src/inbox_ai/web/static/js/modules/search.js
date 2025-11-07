@@ -21,6 +21,22 @@ function parseNumeric(value) {
     return Number.isFinite(parsed) ? parsed : null;
 }
 
+function toElementArray(value) {
+    if (!value) {
+        return [];
+    }
+    if (Array.isArray(value)) {
+        return value.filter(Boolean);
+    }
+    if (typeof NodeList !== "undefined" && value instanceof NodeList) {
+        return Array.from(value).filter(Boolean);
+    }
+    if (typeof HTMLCollection !== "undefined" && value instanceof HTMLCollection) {
+        return Array.from(value).filter(Boolean);
+    }
+    return [value].filter(Boolean);
+}
+
 function buildSearchIndex(card) {
     const dataset = card.dataset;
     return {
@@ -320,3 +336,51 @@ export function installInsightSearch({ input, grid, visibleCount, emptyNotice })
 }
 
 export default installInsightSearch;
+
+export function installEmailListSearch({ input, list, visibleCount, emptyNotice }) {
+    if (!input || !list) {
+        return;
+    }
+
+    const items = Array.from(list.querySelectorAll(".email-list-item"));
+    if (!items.length) {
+        return;
+    }
+
+    const indexMap = new Map();
+    items.forEach((item) => {
+        indexMap.set(item, buildSearchIndex(item));
+    });
+
+    const counterElements = toElementArray(visibleCount);
+
+    const updateVisibleCount = (value) => {
+        const displayValue = String(value);
+        counterElements.forEach((node) => {
+            node.textContent = displayValue;
+        });
+    };
+
+    function applyFilter() {
+        const tokens = parseSearchTokens(input.value || "");
+        let visible = 0;
+        items.forEach((item) => {
+            const itemIndex = indexMap.get(item);
+            const matches = itemIndex ? cardMatches(itemIndex, tokens) : true;
+            item.style.display = matches ? "" : "none";
+            item.toggleAttribute("data-hidden", !matches);
+            if (matches) {
+                visible += 1;
+            }
+        });
+
+        updateVisibleCount(visible);
+        if (emptyNotice) {
+            emptyNotice.hidden = visible !== 0;
+        }
+    }
+
+    input.addEventListener("input", applyFilter);
+    input.addEventListener("search", applyFilter);
+    applyFilter();
+}

@@ -1,148 +1,149 @@
-/**
- * Material Design 3 Dialog Manager
- * Provides a Material Design alternative to browser confirm() dialogs
- */
+const HAS_DIALOG_SUPPORT = typeof window !== "undefined" && typeof HTMLDialogElement !== "undefined";
+
+function createUniqueId(prefix) {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+        return `${prefix}-${crypto.randomUUID()}`;
+    }
+    const fallback = Math.random().toString(36).slice(2);
+    return `${prefix}-${fallback}`;
+}
 
 export class DialogManager {
     constructor() {
         this.dialogElement = null;
-        this.setupDialog();
-    }
-
-    setupDialog() {
-        // Wait for MD components to be defined
-        if (typeof customElements !== 'undefined' && customElements.whenDefined) {
-            customElements.whenDefined('md-dialog').then(() => {
-                this.createDialogElement();
-            }).catch(() => {
-                console.warn('md-dialog component not available, falling back to native confirm');
-                this.dialogElement = null;
-            });
-        } else {
-            this.createDialogElement();
+        this.headlineElement = null;
+        this.messageElement = null;
+        this.cancelButton = null;
+        this.confirmButton = null;
+        if (HAS_DIALOG_SUPPORT) {
+            this.ensureDialog();
         }
     }
 
-    createDialogElement() {
-        // Create dialog element if it doesn't exist
-        this.dialogElement = document.createElement('md-dialog');
-        this.dialogElement.id = 'confirm-dialog';
+    ensureDialog() {
+        if (this.dialogElement || !HAS_DIALOG_SUPPORT || typeof document === "undefined") {
+            return;
+        }
 
-        this.dialogElement.innerHTML = `
-            <div slot="headline" id="dialog-headline">Confirm Action</div>
-            <div slot="content" id="dialog-content">
-                Are you sure you want to proceed?
-            </div>
-            <div slot="actions">
-                <md-text-button id="dialog-cancel">
-                    Cancel
-                </md-text-button>
-                <md-filled-button id="dialog-confirm" autofocus>
-                    Confirm
-                </md-filled-button>
-            </div>
+        const headlineId = createUniqueId("md3-dialog-headline");
+        const messageId = createUniqueId("md3-dialog-message");
+
+        const dialog = document.createElement("dialog");
+        dialog.className = "md3-dialog";
+        dialog.setAttribute("aria-labelledby", headlineId);
+        dialog.setAttribute("aria-describedby", messageId);
+
+        dialog.innerHTML = `
+            <form method="dialog" class="md3-dialog__content">
+                <h2 class="md3-dialog__headline" id="${headlineId}">Confirm Action</h2>
+                <p class="md3-dialog__message" id="${messageId}">Are you sure you want to proceed?</p>
+                <div class="md3-dialog__actions">
+                    <button type="submit" value="cancel" class="md3-button" data-action="cancel">Cancel</button>
+                    <button type="submit" value="confirm" class="md3-button md3-button--filled" data-action="confirm">Confirm</button>
+                </div>
+            </form>
         `;
 
-        document.body.appendChild(this.dialogElement);
+        dialog.addEventListener("cancel", (event) => {
+            event.preventDefault();
+            dialog.close("cancel");
+        });
 
-        // Set up button click handlers
-        const cancelBtn = this.dialogElement.querySelector('#dialog-cancel');
-        const confirmBtn = this.dialogElement.querySelector('#dialog-confirm');
+        document.body.appendChild(dialog);
 
-        if (cancelBtn) {
-            cancelBtn.addEventListener('click', () => {
-                this.dialogElement.close('cancel');
-            });
-        }
-
-        if (confirmBtn) {
-            confirmBtn.addEventListener('click', () => {
-                this.dialogElement.close('confirm');
-            });
-        }
-
-        console.log('Dialog element created and appended', this.dialogElement);
+        this.dialogElement = dialog;
+        this.headlineElement = dialog.querySelector(`#${headlineId}`);
+        this.messageElement = dialog.querySelector(`#${messageId}`);
+        this.cancelButton = dialog.querySelector('[data-action="cancel"]');
+        this.confirmButton = dialog.querySelector('[data-action="confirm"]');
     }
 
-    /**
-     * Show a confirmation dialog
-     * @param {string} message - The message to display
-     * @param {string} headline - Optional headline (default: "Confirm Action")
-     * @param {string} confirmText - Optional confirm button text (default: "Confirm")
-     * @param {string} cancelText - Optional cancel button text (default: "Cancel")
-     * @returns {Promise<boolean>} - Resolves to true if confirmed, false if cancelled
-     */
-    async confirm(message, headline = 'Confirm Action', confirmText = 'Confirm', cancelText = 'Cancel') {
+    async confirm(message, headline = "Confirm Action", confirmText = "Confirm", cancelText = "Cancel") {
+        this.ensureDialog();
+
+        if (!this.dialogElement) {
+            return Promise.resolve(window.confirm(message));
+        }
+
+        if (this.headlineElement) {
+            this.headlineElement.textContent = headline;
+        }
+        if (this.messageElement) {
+            this.messageElement.textContent = message;
+        }
+        if (this.cancelButton) {
+            this.cancelButton.textContent = cancelText;
+        }
+        if (this.confirmButton) {
+            this.confirmButton.textContent = confirmText;
+        }
+
+        if (this.dialogElement.open) {
+            this.dialogElement.close("cancel");
+        }
+
         return new Promise((resolve) => {
-            // Fallback to native confirm if dialog not ready
-            if (!this.dialogElement) {
-                console.warn('Dialog not ready, using native confirm');
-                resolve(window.confirm(message));
-                return;
-            }
-
-            // Update dialog content
-            const headlineEl = this.dialogElement.querySelector('#dialog-headline');
-            const contentEl = this.dialogElement.querySelector('#dialog-content');
-            const cancelBtn = this.dialogElement.querySelector('#dialog-cancel');
-            const confirmBtn = this.dialogElement.querySelector('#dialog-confirm');
-
-            if (headlineEl) headlineEl.textContent = headline;
-            if (contentEl) contentEl.textContent = message;
-            if (cancelBtn) cancelBtn.textContent = cancelText;
-            if (confirmBtn) confirmBtn.textContent = confirmText;
-
-            // Handle dialog close
-            const handleClose = (event) => {
-                const returnValue = event.target.returnValue;
-                this.dialogElement.removeEventListener('close', handleClose);
-                console.log('Dialog closed with return value:', returnValue);
-                resolve(returnValue === 'confirm');
+            const handleClose = () => {
+                this.dialogElement.removeEventListener("close", handleClose);
+                resolve(this.dialogElement.returnValue === "confirm");
             };
-
-            this.dialogElement.addEventListener('close', handleClose);
-
-            // Show dialog
-            console.log('Showing dialog...');
-            this.dialogElement.show();
+            this.dialogElement.addEventListener("close", handleClose, { once: true });
+            try {
+                this.dialogElement.showModal();
+            } catch (error) {
+                this.dialogElement.removeEventListener("close", handleClose);
+                resolve(window.confirm(message));
+            }
         });
     }
 
-    /**
-     * Show an alert dialog (single action)
-     * @param {string} message - The message to display
-     * @param {string} headline - Optional headline (default: "Alert")
-     * @param {string} actionText - Optional action button text (default: "OK")
-     * @returns {Promise<void>}
-     */
-    async alert(message, headline = 'Alert', actionText = 'OK') {
+    async alert(message, headline = "Alert", actionText = "OK") {
+        this.ensureDialog();
+
+        if (!this.dialogElement) {
+            window.alert(message);
+            return;
+        }
+
+        if (this.headlineElement) {
+            this.headlineElement.textContent = headline;
+        }
+        if (this.messageElement) {
+            this.messageElement.textContent = message;
+        }
+        if (this.confirmButton) {
+            this.confirmButton.textContent = actionText;
+        }
+
+        let previousDisplay = "";
+        if (this.cancelButton) {
+            previousDisplay = this.cancelButton.style.display;
+            this.cancelButton.style.display = "none";
+        }
+
+        if (this.dialogElement.open) {
+            this.dialogElement.close("cancel");
+        }
+
         return new Promise((resolve) => {
-            if (!this.dialogElement) {
-                this.setupDialog();
-            }
-
-            // Update dialog content
-            const headlineEl = this.dialogElement.querySelector('#dialog-headline');
-            const contentEl = this.dialogElement.querySelector('#dialog-content');
-            const cancelBtn = this.dialogElement.querySelector('#dialog-cancel');
-            const confirmBtn = this.dialogElement.querySelector('#dialog-confirm');
-
-            if (headlineEl) headlineEl.textContent = headline;
-            if (contentEl) contentEl.textContent = message;
-            if (confirmBtn) confirmBtn.textContent = actionText;
-            if (cancelBtn) cancelBtn.style.display = 'none'; // Hide cancel button for alerts
-
-            // Handle dialog close
             const handleClose = () => {
-                this.dialogElement.removeEventListener('close', handleClose);
-                if (cancelBtn) cancelBtn.style.display = ''; // Restore cancel button
+                this.dialogElement.removeEventListener("close", handleClose);
+                if (this.cancelButton) {
+                    this.cancelButton.style.display = previousDisplay;
+                }
                 resolve();
             };
-
-            this.dialogElement.addEventListener('close', handleClose);
-
-            // Show dialog
-            this.dialogElement.show();
+            this.dialogElement.addEventListener("close", handleClose, { once: true });
+            try {
+                this.dialogElement.showModal();
+            } catch (error) {
+                this.dialogElement.removeEventListener("close", handleClose);
+                if (this.cancelButton) {
+                    this.cancelButton.style.display = previousDisplay;
+                }
+                window.alert(message);
+                resolve();
+            }
         });
     }
 }
