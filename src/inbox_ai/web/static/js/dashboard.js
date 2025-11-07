@@ -5,8 +5,22 @@ import { installScrollRestore } from "./modules/scroll.js";
 import ListDetailController from "./modules/list-detail.js";
 import { installEmailListSearch } from "./modules/search.js";
 
-const AVAILABLE_THEMES = ["default", "plant", "dark", "high-contrast", "vibrant"];
+let AVAILABLE_THEMES = ["default", "plant", "dark", "high-contrast", "vibrant", "teal"];
 const THEME_STORAGE_KEY = "dashboard.theme";
+
+// Load themes from config
+async function loadThemesConfig() {
+    try {
+        const response = await fetch("/static/config/themes.json");
+        if (!response.ok) throw new Error("Failed to load themes config");
+        const config = await response.json();
+        AVAILABLE_THEMES = config.themes.map(theme => theme.id);
+        return config.themes;
+    } catch (error) {
+        console.warn("Failed to load themes config, using defaults:", error);
+        return null;
+    }
+}
 
 function resolveInitialTheme() {
     let storedTheme = null;

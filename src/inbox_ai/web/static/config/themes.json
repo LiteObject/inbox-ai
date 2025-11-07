@@ -1,0 +1,46 @@
+{
+  "themes": [
+    {
+      "id": "default",
+      "label": "Default",
+      "title": "Default theme",
+      "gradientStart": "#0b57d0",
+      "gradientEnd": "#d8e2ff"
+    },
+    {
+      "id": "plant",
+      "label": "Plant",
+      "title": "Plant theme",
+      "gradientStart": "#5c7c54",
+      "gradientEnd": "#dff8ce"
+    },
+    {
+      "id": "dark",
+      "label": "Dark",
+      "title": "Dark theme",
+      "gradientStart": "#8ab4f8",
+      "gradientEnd": "#1f1f1f"
+    },
+    {
+      "id": "high-contrast",
+      "label": "Contrast",
+      "title": "High contrast theme",
+      "gradientStart": "#0056ff",
+      "gradientEnd": "#000000"
+    },
+    {
+      "id": "vibrant",
+      "label": "Vibrant",
+      "title": "Vibrant theme",
+      "gradientStart": "#ff6b35",
+      "gradientEnd": "#00d084"
+    },
+    {
+      "id": "teal",
+      "label": "Teal",
+      "title": "Teal theme",
+      "gradientStart": "#00897b",
+      "gradientEnd": "#a7f0d9"
+    }
+  ]
+}
