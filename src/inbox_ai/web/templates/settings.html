@@ -364,6 +364,10 @@
             background: linear-gradient(135deg, #ff6b35 0%, #00d084 100%);
         }
 
+        .theme-preview.theme-teal {
+            background: linear-gradient(135deg, #00897b 0%, #a7f0d9 100%);
+        }
+
         .theme-label {
             font-size: 12px;
             font-weight: 500;
@@ -476,28 +480,8 @@
         <div class="md3-card" id="maintenance">
             <h2>Appearance</h2>
             <p>Choose your preferred theme. Your selection is saved automatically.</p>
-            <div class="theme-grid">
-                <button type="button" class="theme-button" data-theme-select="default" title="Default theme">
-                    <div class="theme-preview theme-default"></div>
-                    <span class="theme-label">Default</span>
-                </button>
-                <button type="button" class="theme-button" data-theme-select="plant" title="Plant theme">
-                    <div class="theme-preview theme-plant"></div>
-                    <span class="theme-label">Plant</span>
-                </button>
-                <button type="button" class="theme-button" data-theme-select="dark" title="Dark theme">
-                    <div class="theme-preview theme-dark"></div>
-                    <span class="theme-label">Dark</span>
-                </button>
-                <button type="button" class="theme-button" data-theme-select="high-contrast"
-                    title="High contrast theme">
-                    <div class="theme-preview theme-contrast"></div>
-                    <span class="theme-label">Contrast</span>
-                </button>
-                <button type="button" class="theme-button" data-theme-select="vibrant" title="Vibrant theme">
-                    <div class="theme-preview theme-vibrant"></div>
-                    <span class="theme-label">Vibrant</span>
-                </button>
+            <div class="theme-grid" id="theme-grid">
+                <!-- Themes will be loaded here dynamically -->
             </div>
         </div>
 
@@ -530,7 +514,55 @@
     <script>
         // Theme management for settings page
         const THEME_STORAGE_KEY = "dashboard.theme";
-        const AVAILABLE_THEMES = ["default", "plant", "dark", "high-contrast", "vibrant"];
+        let AVAILABLE_THEMES = ["default", "plant", "dark", "high-contrast", "vibrant", "teal"];
+        let THEMES_CONFIG = null;
+
+        // Load themes from config file
+        async function loadThemesConfig() {
+            try {
+                const response = await fetch("/static/config/themes.json");
+                if (!response.ok) throw new Error("Failed to load themes");
+                THEMES_CONFIG = await response.json();
+                AVAILABLE_THEMES = THEMES_CONFIG.themes.map(t => t.id);
+                renderThemeButtons();
+            } catch (error) {
+                console.warn("Failed to load themes config:", error);
+                renderThemeButtons(); // Fall back to defaults
+            }
+        }
+
+        function renderThemeButtons() {
+            const themeGrid = document.getElementById("theme-grid");
+            if (!themeGrid) return;
+
+            const themesToRender = THEMES_CONFIG?.themes || [
+                { id: "default", label: "Default", title: "Default theme", gradientStart: "#0b57d0", gradientEnd: "#d8e2ff" },
+                { id: "plant", label: "Plant", title: "Plant theme", gradientStart: "#5c7c54", gradientEnd: "#dff8ce" },
+                { id: "dark", label: "Dark", title: "Dark theme", gradientStart: "#8ab4f8", gradientEnd: "#1f1f1f" },
+                { id: "high-contrast", label: "Contrast", title: "High contrast theme", gradientStart: "#0056ff", gradientEnd: "#000000" },
+                { id: "vibrant", label: "Vibrant", title: "Vibrant theme", gradientStart: "#ff6b35", gradientEnd: "#00d084" },
+                { id: "teal", label: "Teal", title: "Teal theme", gradientStart: "#00897b", gradientEnd: "#a7f0d9" }
+            ];
+
+            themeGrid.innerHTML = themesToRender.map(theme => `
+                <button type="button" class="theme-button" data-theme-select="${theme.id}" title="${theme.title}">
+                    <div class="theme-preview" style="background: linear-gradient(135deg, ${theme.gradientStart} 0%, ${theme.gradientEnd} 100%);"></div>
+                    <span class="theme-label">${theme.label}</span>
+                </button>
+            `).join("");
+
+            // Update buttons after rendering
+            const currentTheme = loadCurrentTheme();
+            updateThemeButtons(currentTheme);
+
+            // Set up event listeners
+            document.querySelectorAll('[data-theme-select]').forEach((button) => {
+                button.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    setTheme(button.dataset.themeSelect);
+                });
+            });
+        }
 
         function loadCurrentTheme() {
             try {
@@ -561,18 +593,10 @@
             });
         }
 
-        // Initialize theme
+        // Initialize
         const currentTheme = loadCurrentTheme();
         document.documentElement.setAttribute("data-theme", currentTheme);
-        updateThemeButtons(currentTheme);
-
-        // Set up theme button event listeners
-        document.querySelectorAll('[data-theme-select]').forEach((button) => {
-            button.addEventListener('click', (e) => {
-                e.preventDefault();
-                setTheme(button.dataset.themeSelect);
-            });
-        });
+        loadThemesConfig();
     </script>
 </body>
 

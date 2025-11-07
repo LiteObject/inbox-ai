@@ -151,6 +151,36 @@
     --theme-inverse-primary: #ffb396;
 }
 
+:root[data-theme="teal"] {
+    --theme-primary: #00897b;
+    --theme-on-primary: #ffffff;
+    --theme-primary-container: #a7f0d9;
+    --theme-on-primary-container: #00312d;
+    --theme-secondary: #4a7c7e;
+    --theme-on-secondary: #ffffff;
+    --theme-secondary-container: #cdf8ff;
+    --theme-on-secondary-container: #001f24;
+    --theme-tertiary: #9a5c42;
+    --theme-on-tertiary: #ffffff;
+    --theme-tertiary-container: #ffdcc4;
+    --theme-on-tertiary-container: #3b1900;
+    --theme-surface: #fffbfe;
+    --theme-surface-dim: #f3eff3;
+    --theme-surface-container: #ede7f0;
+    --theme-surface-container-high: #e8e1eb;
+    --theme-surface-container-highest: #e2dae5;
+    --theme-surface-variant: #d4c7d4;
+    --theme-on-surface: #1a1719;
+    --theme-on-surface-variant: #49454f;
+    --theme-outline: #796e77;
+    --theme-outline-variant: #c3bcc5;
+    --theme-error: #b3261e;
+    --theme-on-error: #ffffff;
+    --theme-inverse-surface: #302f31;
+    --theme-inverse-on-surface: #f5eff4;
+    --theme-inverse-primary: #7fdbca;
+}
+
 :root {
     --md3-font-family: 'Roboto', sans-serif;
     --md3-spacing-2: 2px;
