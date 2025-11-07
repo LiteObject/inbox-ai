@@ -5,8 +5,22 @@ import { installScrollRestore } from "./modules/scroll.js";
 import ListDetailController from "./modules/list-detail.js";
 import { installEmailListSearch } from "./modules/search.js";
 
-const AVAILABLE_THEMES = ["default", "plant", "dark", "high-contrast", "vibrant"];
+let AVAILABLE_THEMES = ["default", "plant", "dark", "high-contrast", "vibrant", "teal"];
 const THEME_STORAGE_KEY = "dashboard.theme";
+
+// Load themes from config
+async function loadThemesConfig() {
+    try {
+        const response = await fetch("/static/config/themes.json");
+        if (!response.ok) throw new Error("Failed to load themes config");
+        const config = await response.json();
+        AVAILABLE_THEMES = config.themes.map(theme => theme.id);
+        return config.themes;
+    } catch (error) {
+        console.warn("Failed to load themes config, using defaults:", error);
+        return null;
+    }
+}
 
 function resolveInitialTheme() {
     let storedTheme = null;
@@ -359,7 +373,10 @@ function installSettingsNavigation() {
     });
 }
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
+    // Load themes from config first
+    await loadThemesConfig();
+
     const themeManager = new ThemeManager(document.documentElement.getAttribute("data-theme"));
     window.themeManager = themeManager;
 
@@ -445,5 +462,55 @@ document.addEventListener("DOMContentLoaded", () => {
             visibleCount: visibleCountTargets,
             emptyNotice: document.getElementById('insights-filter-empty'),
         });
+
+        // Setup sort controls
+        const sortAscBtn = document.getElementById('sort-asc');
+        const sortDescBtn = document.getElementById('sort-desc');
+        const SORT_ORDER_KEY = 'dashboard.sort-order';
+        let currentSortOrder = localStorage?.getItem(SORT_ORDER_KEY) ?? 'desc';
+
+        const updateSortButtonStates = () => {
+            sortAscBtn?.classList.toggle('active', currentSortOrder === 'asc');
+            sortDescBtn?.classList.toggle('active', currentSortOrder === 'desc');
+        };
+
+        const sortList = (order) => {
+            const items = Array.from(emailList.querySelectorAll('.email-list-item'));
+
+            items.sort((a, b) => {
+                const uidA = a.getAttribute('data-uid');
+                const uidB = b.getAttribute('data-uid');
+
+                // Parse UIDs as indices (they typically have numeric components)
+                const numA = parseInt(uidA, 36) || 0;
+                const numB = parseInt(uidB, 36) || 0;
+
+                return order === 'asc' ? numA - numB : numB - numA;
+            });
+
+            // Re-insert items in sorted order
+            items.forEach((item) => {
+                emailList.appendChild(item);
+            });
+
+            currentSortOrder = order;
+            try {
+                localStorage?.setItem(SORT_ORDER_KEY, order);
+            } catch (error) {
+                console.warn("Unable to persist sort order", error);
+            }
+
+            updateSortButtonStates();
+        };
+
+        if (sortAscBtn) {
+            sortAscBtn.addEventListener('click', () => sortList('asc'));
+        }
+
+        if (sortDescBtn) {
+            sortDescBtn.addEventListener('click', () => sortList('desc'));
+        }
+
+        updateSortButtonStates();
     }
 });

@@ -28,6 +28,7 @@
     <header class="md3-top-app-bar" id="dashboard-app-bar">
         <div class="md3-app-bar-title">Inbox AI Dashboard</div>
         <div class="md3-top-app-bar-actions">
+            
             <button id="settings-button" class="md3-icon-button" type="button" data-href="/settings">
                 <span class="material-icons" aria-hidden="true">settings</span>
                 <span class="sr-only">Open settings</span>
@@ -129,7 +130,7 @@
                 {% for item in insights %}
                 <input type="hidden" name="uids" value="{{ item.uid }}" />
                 {% endfor %}
-                <button class="md3-button md3-button--outlined" type="submit">
+                <button class="md3-button md3-button--tonal" type="submit">
                     <span class="material-icons" aria-hidden="true">delete_sweep</span>
                     Delete These Emails
                 </button>
@@ -148,7 +149,7 @@
                         data-spinner-label="Rebuilding categories...">
                         <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
                         <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-                        <button class="md3-button md3-button--outlined" type="submit">
+                        <button class="md3-button md3-button--tonal" type="submit">
                             <span class="material-icons" aria-hidden="true">category</span>
                             Rebuild Categories
                         </button>
@@ -157,7 +158,7 @@
                         data-spinner-label="Sync in progress...">
                         <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
                         <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-                        <button class="md3-button md3-button--outlined" type="submit">
+                        <button class="md3-button md3-button--tonal" type="submit">
                             <span class="material-icons" aria-hidden="true">sync</span>
                             Sync Inbox
                         </button>
@@ -172,8 +173,20 @@
                         <input id="insights-search" type="search" placeholder="Search emails..."
                             aria-label="Search insights" />
                     </div>
-                    <p class="list-meta">Showing <span id="insights-visible-count-2">{{ insights | length }}</span> of
-                        {{ insights_total | default(0) }} insights</p>
+                    <div class="list-meta">
+                        <p>Showing <span id="insights-visible-count-2">{{ insights | length }}</span> of
+                            {{ insights_total | default(0) }} insights</p>
+                        <div class="sort-controls">
+                            <button class="sort-button" id="sort-asc" title="Sort by received (oldest first)">
+                                <span class="material-icons" aria-hidden="true">arrow_upward</span>
+                                <span class="sr-only">Sort ascending</span>
+                            </button>
+                            <button class="sort-button" id="sort-desc" title="Sort by received (newest first)">
+                                <span class="material-icons" aria-hidden="true">arrow_downward</span>
+                                <span class="sr-only">Sort descending</span>
+                            </button>
+                        </div>
+                    </div>
 
                     <ul class="md3-list email-list" id="email-list">
                         {% for item in insights %}
@@ -266,7 +279,7 @@
                                         data-spinner data-confirm="Delete message UID {{ item.uid }}?">
                                         <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
                                         <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-                                        <button class="md3-button md3-button--outlined" type="submit">
+                                        <button class="md3-button md3-button--tonal" type="submit">
                                             <span class="material-icons" aria-hidden="true">delete</span>
                                             Delete Email
                                         </button>
@@ -391,18 +404,18 @@
                                                 Save Draft
                                             </button>
                                             {% if item.draft %}
-                                            <button class="md3-button md3-button--outlined" type="submit"
+                                            <button class="md3-button md3-button--tonal" type="submit"
                                                 formaction="/emails/{{ item.uid }}/draft/regenerate">
                                                 <span class="material-icons" aria-hidden="true">auto_fix_high</span>
                                                 Regenerate
                                             </button>
-                                            <button class="md3-button md3-button--outlined" type="submit"
+                                            <button class="md3-button md3-button--tonal" type="submit"
                                                 formaction="/emails/{{ item.uid }}/draft/delete">
                                                 <span class="material-icons" aria-hidden="true">delete_outline</span>
                                                 Delete Draft
                                             </button>
                                             {% else %}
-                                            <button class="md3-button md3-button--outlined" type="submit"
+                                            <button class="md3-button md3-button--tonal" type="submit"
                                                 formaction="/emails/{{ item.uid }}/draft/regenerate">
                                                 <span class="material-icons" aria-hidden="true">auto_fix_high</span>
                                                 Generate
@@ -420,7 +433,7 @@
         </section>
     </main>
 
-    <div class="theme-switcher" role="group" aria-label="Theme selector">
+    <!-- <div class="theme-switcher" role="group" aria-label="Theme selector">
         <button type="button" data-theme-select="default">
             <span class="theme-preview theme-default" aria-hidden="true"></span>
             <span class="sr-only">Default theme</span>
@@ -441,7 +454,7 @@
             <span class="theme-preview theme-vibrant" aria-hidden="true"></span>
             <span class="sr-only">Vibrant theme</span>
         </button>
-    </div>
+    </div> -->
 
     <script type="module" src="{{ url_for('static', path='js/dashboard.js') }}"></script>
 </body>
