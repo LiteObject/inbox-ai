@@ -590,6 +590,11 @@ a {
 }
 
 .md3-button--tonal {
+    background: var(--md3-color-secondary-container);
+    color: var(--md3-color-on-secondary-container);
+}
+
+.md3-button--tonal:hover {
     background: var(--md3-color-secondary);
     color: var(--md3-color-on-secondary);
 }

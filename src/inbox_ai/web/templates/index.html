@@ -129,7 +129,7 @@
                 {% for item in insights %}
                 <input type="hidden" name="uids" value="{{ item.uid }}" />
                 {% endfor %}
-                <button class="md3-button md3-button--outlined" type="submit">
+                <button class="md3-button md3-button--tonal" type="submit">
                     <span class="material-icons" aria-hidden="true">delete_sweep</span>
                     Delete These Emails
                 </button>
@@ -148,7 +148,7 @@
                         data-spinner-label="Rebuilding categories...">
                         <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
                         <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-                        <button class="md3-button md3-button--outlined" type="submit">
+                        <button class="md3-button md3-button--tonal" type="submit">
                             <span class="material-icons" aria-hidden="true">category</span>
                             Rebuild Categories
                         </button>
@@ -157,7 +157,7 @@
                         data-spinner-label="Sync in progress...">
                         <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
                         <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-                        <button class="md3-button md3-button--outlined" type="submit">
+                        <button class="md3-button md3-button--tonal" type="submit">
                             <span class="material-icons" aria-hidden="true">sync</span>
                             Sync Inbox
                         </button>
@@ -278,7 +278,7 @@
                                         data-spinner data-confirm="Delete message UID {{ item.uid }}?">
                                         <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
                                         <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-                                        <button class="md3-button md3-button--outlined" type="submit">
+                                        <button class="md3-button md3-button--tonal" type="submit">
                                             <span class="material-icons" aria-hidden="true">delete</span>
                                             Delete Email
                                         </button>
@@ -403,18 +403,18 @@
                                                 Save Draft
                                             </button>
                                             {% if item.draft %}
-                                            <button class="md3-button md3-button--outlined" type="submit"
+                                            <button class="md3-button md3-button--tonal" type="submit"
                                                 formaction="/emails/{{ item.uid }}/draft/regenerate">
                                                 <span class="material-icons" aria-hidden="true">auto_fix_high</span>
                                                 Regenerate
                                             </button>
-                                            <button class="md3-button md3-button--outlined" type="submit"
+                                            <button class="md3-button md3-button--tonal" type="submit"
                                                 formaction="/emails/{{ item.uid }}/draft/delete">
                                                 <span class="material-icons" aria-hidden="true">delete_outline</span>
                                                 Delete Draft
                                             </button>
                                             {% else %}
-                                            <button class="md3-button md3-button--outlined" type="submit"
+                                            <button class="md3-button md3-button--tonal" type="submit"
                                                 formaction="/emails/{{ item.uid }}/draft/regenerate">
                                                 <span class="material-icons" aria-hidden="true">auto_fix_high</span>
                                                 Generate
