@@ -73,11 +73,34 @@ class MailFetcher:
         )
 
         processed = 0
+        failed = 0
         new_last_uid = last_uid
 
         for chunk in self._mailbox.fetch_since(last_uid, self._batch_size):
             envelope = self._parser.parse(chunk.uid, chunk.raw, mailbox_name)
-            self._repository.persist_email(envelope)
+
+            # Persist email FIRST - if this fails, skip all processing for this email
+            try:
+                self._repository.persist_email(envelope)
+                LOGGER.debug("Successfully persisted email UID %s", envelope.uid)
+            except Exception as persist_error:  # pylint: disable=broad-except
+                LOGGER.error(
+                    "Failed to persist email UID %s: %s",
+                    envelope.uid,
+                    persist_error,
+                    exc_info=True,
+                )
+                LOGGER.info(
+                    "Skipping processing for UID %s due to persistence failure",
+                    envelope.uid,
+                )
+                failed += 1
+                # Update checkpoint even for failed emails to avoid reprocessing
+                self._repository.upsert_checkpoint(
+                    SyncCheckpoint(mailbox=mailbox_name, last_uid=chunk.uid)
+                )
+                new_last_uid = chunk.uid
+                continue  # Skip to next email
 
             if self._progress_callback:
                 self._progress_callback(
@@ -229,7 +252,10 @@ class MailFetcher:
                 break
 
         LOGGER.info(
-            "Fetch completed: processed=%s new_last_uid=%s", processed, new_last_uid
+            "Fetch completed: processed=%s, failed=%s, new_last_uid=%s",
+            processed,
+            failed,
+            new_last_uid,
         )
         return MailFetcherResult(processed=processed, new_last_uid=new_last_uid)
 

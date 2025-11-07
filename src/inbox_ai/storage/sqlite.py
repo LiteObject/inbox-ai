@@ -64,61 +64,107 @@ class SqliteEmailRepository(EmailRepository):
     def persist_email(self, email: EmailEnvelope) -> None:
         """Insert or update the stored record for ``email``."""
         LOGGER.debug("Persisting email UID %s", email.uid)
-        with self._connection:
-            self._connection.execute(
-                """
-                INSERT INTO emails (
-                    uid,
-                    mailbox,
-                    message_id,
-                    thread_id,
-                    subject,
-                    sender,
-                    to_recipients,
-                    cc_recipients,
-                    bcc_recipients,
-                    sent_at,
-                    received_at,
-                    body_text,
-                    body_html
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(uid) DO UPDATE SET
-                    mailbox=excluded.mailbox,
-                    message_id=excluded.message_id,
-                    thread_id=excluded.thread_id,
-                    subject=excluded.subject,
-                    sender=excluded.sender,
-                    to_recipients=excluded.to_recipients,
-                    cc_recipients=excluded.cc_recipients,
-                    bcc_recipients=excluded.bcc_recipients,
-                    sent_at=excluded.sent_at,
-                    received_at=excluded.received_at,
-                    body_text=excluded.body_text,
-                    body_html=excluded.body_html
-                """,
-                (
-                    email.uid,
-                    email.mailbox,
-                    email.message_id,
-                    email.thread_id,
-                    email.subject,
-                    email.sender,
-                    ",".join(email.to),
-                    ",".join(email.cc),
-                    ",".join(email.bcc),
-                    serialize_datetime(email.sent_at),
-                    serialize_datetime(email.received_at),
-                    email.body.text,
-                    email.body.html,
-                ),
-            )
+        
+        # Validate required fields
+        if not email.uid:
+            raise ValueError("Email UID is required")
+        if not email.mailbox:
+            raise ValueError("Email mailbox is required")
+        
+        try:
+            with self._connection:
+                self._connection.execute(
+                    """
+                    INSERT INTO emails (
+                        uid,
+                        mailbox,
+                        message_id,
+                        thread_id,
+                        subject,
+                        sender,
+                        to_recipients,
+                        cc_recipients,
+                        bcc_recipients,
+                        sent_at,
+                        received_at,
+                        body_text,
+                        body_html
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(uid) DO UPDATE SET
+                        mailbox=excluded.mailbox,
+                        message_id=excluded.message_id,
+                        thread_id=excluded.thread_id,
+                        subject=excluded.subject,
+                        sender=excluded.sender,
+                        to_recipients=excluded.to_recipients,
+                        cc_recipients=excluded.cc_recipients,
+                        bcc_recipients=excluded.bcc_recipients,
+                        sent_at=excluded.sent_at,
+                        received_at=excluded.received_at,
+                        body_text=excluded.body_text,
+                        body_html=excluded.body_html
+                    """,
+                    (
+                        email.uid,
+                        email.mailbox,
+                        email.message_id,
+                        email.thread_id,
+                        email.subject,
+                        email.sender,
+                        ",".join(email.to),
+                        ",".join(email.cc),
+                        ",".join(email.bcc),
+                        serialize_datetime(email.sent_at),
+                        serialize_datetime(email.received_at),
+                        email.body.text,
+                        email.body.html,
+                    ),
+                )
 
-            self._connection.execute(
-                "DELETE FROM attachments WHERE email_uid = ?",
-                (email.uid,),
+                # Delete old attachments
+                self._connection.execute(
+                    "DELETE FROM attachments WHERE email_uid = ?",
+                    (email.uid,),
+                )
+                
+                # Insert new attachments
+                for attachment in email.attachments:
+                    try:
+                        self._insert_attachment(email.uid, attachment)
+                    except Exception as att_error:  # pylint: disable=broad-except
+                        LOGGER.warning(
+                            "Failed to insert attachment for UID %s: %s",
+                            email.uid,
+                            att_error,
+                        )
+                        # Continue - attachment failure shouldn't fail entire email
+                
+                LOGGER.debug("Successfully persisted email UID %s", email.uid)
+                
+        except sqlite3.IntegrityError as e:
+            LOGGER.error(
+                "Database integrity error persisting email UID %s: %s",
+                email.uid,
+                e,
+                exc_info=True,
             )
-            for attachment in email.attachments:
-                self._insert_attachment(email.uid, attachment)
+            raise ValueError(f"Failed to persist email UID {email.uid}: {e}") from e
+        except sqlite3.OperationalError as e:
+            LOGGER.error(
+                "Database operational error persisting email UID %s: %s",
+                email.uid,
+                e,
+                exc_info=True,
+            )
+            raise ValueError(f"Database error persisting email UID {email.uid}: {e}") from e
+        except Exception as e:
+            LOGGER.error(
+                "Unexpected error persisting email UID %s: %s",
+                email.uid,
+                e,
+                exc_info=True,
+            )
+            raise
 
     def persist_insight(self, insight: EmailInsight) -> None:
         """Insert or update summarisation data for an email."""
