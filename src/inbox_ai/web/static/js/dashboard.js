@@ -373,7 +373,10 @@ function installSettingsNavigation() {
     });
 }
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
+    // Load themes from config first
+    await loadThemesConfig();
+
     const themeManager = new ThemeManager(document.documentElement.getAttribute("data-theme"));
     window.themeManager = themeManager;
 
