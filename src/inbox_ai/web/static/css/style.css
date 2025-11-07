@@ -500,6 +500,10 @@ a {
     gap: var(--md3-spacing-16);
 }
 
+.secondary-form button {
+    width: 100%;
+}
+
 .md3-field {
     display: flex;
     flex-direction: column;
@@ -541,6 +545,10 @@ a {
 
 .filter-actions {
     margin-top: var(--md3-spacing-8);
+}
+
+.filter-actions button {
+    width: 100%;
 }
 
 .md3-button {
@@ -784,12 +792,23 @@ a {
 
 .md3-detail-header {
     display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--md3-spacing-16);
+    margin-bottom: var(--md3-spacing-24);
+}
+
+.md3-detail-title-section {
+    display: flex;
     flex-direction: column;
     gap: var(--md3-spacing-16);
+    flex: 1;
 }
 
 .md3-detail-header form {
     margin: 0;
+    flex-shrink: 0;
 }
 
 .md3-detail-meta {
@@ -982,11 +1001,13 @@ a {
 }
 
 .toast.success {
-    background: #0c6f3c;
+    background: var(--md3-color-primary);
+    color: var(--md3-color-on-primary);
 }
 
 .toast.error {
-    background: #b3261e;
+    background: var(--md3-color-error);
+    color: var(--md3-color-on-error);
 }
 
 .toast button {
