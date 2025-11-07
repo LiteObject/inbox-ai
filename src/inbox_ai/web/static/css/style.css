@@ -505,7 +505,21 @@ a {
     }
 
     .md3-app-bar-title {
-        font-size: 20px;
+        font-size: 22px;
+        line-height: 28px;
+    }
+    
+    .md3-app-bar-subtitle {
+        font-size: 11px;
+        gap: 6px;
+    }
+    
+    .md3-app-bar-subtitle .material-icons {
+        font-size: 14px;
+    }
+    
+    .md3-app-bar-subtitle span:last-child {
+        max-width: 150px;
     }
 }
 
@@ -515,15 +529,47 @@ a {
     }
 
     .md3-app-bar-title {
-        font-size: 20px;
+        font-size: 22px;
+        line-height: 28px;
     }
 }
 
 .md3-app-bar-title {
-    font-size: 22px;
-    font-weight: 500;
-    letter-spacing: 0.2px;
+    font-size: 24px;
+    font-weight: 400;
+    line-height: 32px;
+    letter-spacing: 0;
     color: var(--theme-primary);
+}
+
+.md3-app-bar-title-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+.md3-app-bar-subtitle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    line-height: 16px;
+    font-weight: 500;
+    color: var(--md3-color-on-surface-variant);
+    letter-spacing: 0.5px;
+    margin-top: -4px;
+}
+
+.md3-app-bar-subtitle .material-icons {
+    font-size: 16px;
+    color: var(--md3-color-on-surface-variant);
+}
+
+.md3-app-bar-subtitle span:last-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 300px;
 }
 
 .md3-top-app-bar-actions {
