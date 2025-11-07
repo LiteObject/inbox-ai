@@ -556,8 +556,8 @@ a {
     align-items: center;
     justify-content: center;
     gap: var(--md3-spacing-8);
-    padding: 0 var(--md3-spacing-20);
-    height: 40px;
+    padding: 0 var(--md3-spacing-16);
+    height: 32px;
     border-radius: var(--md3-radius-pill);
     border: 1px solid transparent;
     background: transparent;
@@ -565,6 +565,7 @@ a {
     font-weight: 500;
     letter-spacing: 0.1px;
     transition: background 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+    font-size: 14px;
 }
 
 .md3-button--filled {
@@ -666,6 +667,45 @@ a {
     padding: 0 var(--md3-spacing-16) var(--md3-spacing-12);
     color: var(--md3-color-on-surface-variant);
     font-size: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--md3-spacing-12);
+}
+
+.list-meta p {
+    margin: 0;
+    flex: 1;
+}
+
+.sort-controls {
+    display: flex;
+    gap: var(--md3-spacing-4);
+}
+
+.sort-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+    color: var(--md3-color-on-surface-variant);
+    cursor: pointer;
+    transition: background-color 160ms ease, color 160ms ease;
+    font-size: 16px;
+}
+
+.sort-button:hover {
+    background-color: var(--md3-color-primary-container);
+    color: var(--md3-color-on-primary-container);
+}
+
+.sort-button.active {
+    background-color: var(--md3-color-primary);
+    color: var(--md3-color-on-primary);
 }
 
 .md3-list {
