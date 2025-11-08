@@ -64,13 +64,13 @@ class SqliteEmailRepository(EmailRepository):
     def persist_email(self, email: EmailEnvelope) -> None:
         """Insert or update the stored record for ``email``."""
         LOGGER.debug("Persisting email UID %s", email.uid)
-        
+
         # Validate required fields
         if not email.uid:
             raise ValueError("Email UID is required")
         if not email.mailbox:
             raise ValueError("Email mailbox is required")
-        
+
         try:
             with self._connection:
                 self._connection.execute(
@@ -126,7 +126,7 @@ class SqliteEmailRepository(EmailRepository):
                     "DELETE FROM attachments WHERE email_uid = ?",
                     (email.uid,),
                 )
-                
+
                 # Insert new attachments
                 for attachment in email.attachments:
                     try:
@@ -138,9 +138,9 @@ class SqliteEmailRepository(EmailRepository):
                             att_error,
                         )
                         # Continue - attachment failure shouldn't fail entire email
-                
+
                 LOGGER.debug("Successfully persisted email UID %s", email.uid)
-                
+
         except sqlite3.IntegrityError as e:
             LOGGER.error(
                 "Database integrity error persisting email UID %s: %s",
@@ -156,7 +156,9 @@ class SqliteEmailRepository(EmailRepository):
                 e,
                 exc_info=True,
             )
-            raise ValueError(f"Database error persisting email UID {email.uid}: {e}") from e
+            raise ValueError(
+                f"Database error persisting email UID {email.uid}: {e}"
+            ) from e
         except Exception as e:
             LOGGER.error(
                 "Unexpected error persisting email UID %s: %s",
@@ -900,6 +902,73 @@ class SqliteEmailRepository(EmailRepository):
             self._connection.execute("DELETE FROM emails")
             # Reset auto-increment sequences (TRUNCATE-like behavior)
             self._connection.execute("DELETE FROM sqlite_sequence")
+
+    # User preferences --------------------------------------------------------
+
+    def get_user_preference(self, key: str) -> str | None:
+        """Retrieve a user preference by key.
+
+        Args:
+            key: The preference key to retrieve
+
+        Returns:
+            The preference value, or None if not found
+        """
+        cursor = self._connection.execute(
+            "SELECT value FROM user_preferences WHERE key = ?", (key,)
+        )
+        row = cursor.fetchone()
+        return row[0] if row else None
+
+    def set_user_preference(self, key: str, value: str) -> None:
+        """Store or update a user preference.
+
+        Args:
+            key: The preference key
+            value: The preference value to store
+        """
+        now = datetime.now(UTC).isoformat()
+        with self._connection:
+            self._connection.execute(
+                """
+                INSERT INTO user_preferences (key, value, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    value = excluded.value,
+                    updated_at = excluded.updated_at
+                """,
+                (key, value, now),
+            )
+        LOGGER.debug("Saved user preference: %s", key)
+
+    def get_all_user_preferences(self) -> dict[str, str]:
+        """Retrieve all user preferences as a dictionary.
+
+        Returns:
+            Dictionary mapping preference keys to values
+        """
+        cursor = self._connection.execute(
+            "SELECT key, value FROM user_preferences ORDER BY key"
+        )
+        return dict(cursor.fetchall())
+
+    def delete_user_preference(self, key: str) -> bool:
+        """Delete a user preference.
+
+        Args:
+            key: The preference key to delete
+
+        Returns:
+            True if a preference was deleted, False if not found
+        """
+        with self._connection:
+            cursor = self._connection.execute(
+                "DELETE FROM user_preferences WHERE key = ?", (key,)
+            )
+        deleted = cursor.rowcount > 0
+        if deleted:
+            LOGGER.debug("Deleted user preference: %s", key)
+        return deleted
 
     def close(self) -> None:
         """Close the underlying SQLite connection."""
