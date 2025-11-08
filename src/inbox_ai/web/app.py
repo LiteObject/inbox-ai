@@ -356,7 +356,21 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         cached_response = response_cache.get(cache_key)
         if cached_response is not None:
             LOGGER.debug("Serving dashboard from cache")
-            return cached_response
+            cached_headers = cached_response.get("headers", {})
+            cached_body = cached_response.get("body", "")
+            cached_media_type = cached_response.get("media_type")
+            cached_status = cached_response.get("status_code", http_status.HTTP_200_OK)
+
+            response = HTMLResponse(content=cached_body, status_code=cached_status)
+            if cached_media_type:
+                response.media_type = cached_media_type
+
+            for header_key, header_value in cached_headers.items():
+                if header_key.lower() in {"content-length", "content-type"}:
+                    continue
+                response.headers[header_key] = header_value
+
+            return response
 
         # Cache miss - build response
         min_priority, max_priority = _PRIORITY_FILTER_MAP[filters.priority_filter]
@@ -430,8 +444,24 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                 request.query_params.get("clear_status"),
             ]
         ):
-            response_cache.set(cache_key, response, ttl_seconds=300)
-            LOGGER.debug("Cached dashboard response")
+            # Access response body directly for caching
+            body_bytes = response.body or b""
+            if body_bytes:
+                charset = response.charset or "utf-8"
+                if isinstance(body_bytes, memoryview):
+                    body_bytes = body_bytes.tobytes()
+                body_text = body_bytes.decode(charset)
+                response_cache.set(
+                    cache_key,
+                    {
+                        "body": body_text,
+                        "media_type": response.media_type,
+                        "status_code": response.status_code,
+                        "headers": dict(response.headers),
+                    },
+                    ttl_seconds=300,
+                )
+                LOGGER.debug("Cached dashboard response")
 
         return response
 
