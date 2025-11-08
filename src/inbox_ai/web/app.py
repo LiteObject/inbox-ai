@@ -480,6 +480,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             "redirect_to": redirect_target,
             "csrf_token": csrf_token,
             "csrf_field_name": csrf.field_name,
+            "imap_username": app_settings.imap.username,
         }
         response = templates.TemplateResponse("settings.html", context)
         csrf.set_cookie(response, csrf_token, secure=request.url.scheme == "https")
