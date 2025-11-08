@@ -1408,6 +1408,332 @@ a {
     resize: vertical;
 }
 
+/* ============================================================================
+   MD3 Tabs Component
+   ============================================================================ */
+
+/* Tabs container with tabs section modifier */
+.md3-detail-section--tabs {
+    padding: 0;
+    background: transparent;
+    gap: 0;
+}
+
+/* MD3 Tabs Container */
+.md3-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--md3-color-outline-variant);
+    background: var(--md3-color-surface-container);
+    position: relative;
+    border-radius: var(--md3-radius-lg) var(--md3-radius-lg) 0 0;
+}
+
+/* Individual Tab Button */
+.md3-tab {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 12px 20px;
+    min-height: 48px;
+    background: transparent;
+    border: none;
+    color: var(--md3-color-on-surface-variant);
+    font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: color 200ms cubic-bezier(0.4, 0, 0.2, 1),
+                background-color 200ms cubic-bezier(0.4, 0, 0.2, 1);
+    flex: 1;
+    max-width: 360px;
+}
+
+.md3-tab:hover {
+    background: color-mix(in srgb, var(--md3-color-on-surface) 8%, transparent);
+}
+
+.md3-tab:focus-visible {
+    outline: 2px solid var(--md3-color-primary);
+    outline-offset: -2px;
+    border-radius: 4px;
+}
+
+/* Active Tab */
+.md3-tab--active {
+    color: var(--md3-color-primary);
+}
+
+/* Tab Content Wrapper */
+.md3-tab__content {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    pointer-events: none;
+}
+
+.md3-tab__content .material-icons {
+    font-size: 20px;
+}
+
+.md3-tab__text-label {
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: 0.1px;
+}
+
+/* Tab Indicator (Active State Line) */
+.md3-tab__indicator {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--md3-color-primary);
+    transform: scaleX(0);
+    transform-origin: center;
+    transition: transform 250ms cubic-bezier(0.4, 0, 0.2, 1);
+    border-radius: 3px 3px 0 0;
+}
+
+.md3-tab--active .md3-tab__indicator {
+    transform: scaleX(1);
+}
+
+/* Tab Panels Container */
+.md3-tab-panels {
+    padding: var(--md3-spacing-20);
+    background: var(--md3-color-surface-container);
+    border-radius: 0 0 var(--md3-radius-lg) var(--md3-radius-lg);
+    min-height: 200px;
+}
+
+/* Individual Tab Panel */
+.md3-tab-panel {
+    display: none;
+    animation: fadeInUp 250ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.md3-tab-panel--active {
+    display: block;
+}
+
+/* Fade-in animation */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(12px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Detail subsection within tab panels */
+.md3-detail-subsection {
+    display: flex;
+    flex-direction: column;
+    gap: var(--md3-spacing-12);
+    margin-bottom: var(--md3-spacing-20);
+}
+
+.md3-detail-subsection:last-child {
+    margin-bottom: 0;
+}
+
+.md3-detail-subsection h4 {
+    display: flex;
+    align-items: center;
+    gap: var(--md3-spacing-8);
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0;
+    color: var(--md3-color-on-surface);
+}
+
+.md3-detail-subsection h4 .material-icons {
+    font-size: 20px;
+    color: var(--md3-color-primary);
+}
+
+/* Original Email Styles */
+.email-original {
+    display: flex;
+    flex-direction: column;
+    gap: var(--md3-spacing-16);
+}
+
+.email-meta {
+    background: var(--md3-color-surface-container-low);
+    padding: var(--md3-spacing-16);
+    border-radius: var(--md3-radius-md);
+    border: 1px solid var(--md3-color-outline-variant);
+}
+
+.email-meta dl {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: var(--md3-spacing-8) var(--md3-spacing-16);
+    margin: 0;
+}
+
+.email-meta dt {
+    font-weight: 500;
+    font-size: 14px;
+    color: var(--md3-color-on-surface-variant);
+}
+
+.email-meta dd {
+    margin: 0;
+    font-size: 14px;
+    color: var(--md3-color-on-surface);
+    word-break: break-word;
+}
+
+/* Email Body Container */
+.email-body {
+    background: var(--md3-color-surface-container-lowest);
+    padding: var(--md3-spacing-20);
+    border-radius: var(--md3-radius-md);
+    border: 1px solid var(--md3-color-outline-variant);
+    min-height: 200px;
+}
+
+.email-body iframe {
+    width: 100%;
+    border: none;
+    min-height: 400px;
+    border-radius: var(--md3-radius-sm);
+    background: white;
+}
+
+.email-body pre {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    font-family: 'Roboto Mono', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    margin: 0;
+    color: var(--md3-color-on-surface);
+}
+
+/* Loading Placeholder */
+.loading-placeholder {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    min-height: 200px;
+    gap: var(--md3-spacing-12);
+}
+
+/* MD3 Circular Progress */
+.md3-circular-progress {
+    width: 48px;
+    height: 48px;
+    position: relative;
+    display: inline-block;
+}
+
+.md3-circular-progress svg {
+    width: 100%;
+    height: 100%;
+    transform-origin: center;
+    animation: rotate 1.4s linear infinite;
+}
+
+.md3-circular-progress circle {
+    stroke: var(--md3-color-primary);
+    stroke-dasharray: 113;
+    stroke-dashoffset: 0;
+    transform-origin: center;
+    animation: dash 1.4s ease-in-out infinite;
+}
+
+@keyframes rotate {
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes dash {
+    0% {
+        stroke-dashoffset: 113;
+    }
+    50% {
+        stroke-dashoffset: 28;
+        transform: rotate(135deg);
+    }
+    100% {
+        stroke-dashoffset: 113;
+        transform: rotate(450deg);
+    }
+}
+
+/* Error and info messages in email body */
+.email-body .error-message,
+.email-body .info-message {
+    padding: var(--md3-spacing-12);
+    border-radius: var(--md3-radius-sm);
+    display: flex;
+    align-items: center;
+    gap: var(--md3-spacing-8);
+}
+
+.email-body .error-message {
+    background: color-mix(in srgb, var(--md3-color-error) 10%, transparent);
+    color: var(--md3-color-error);
+    border: 1px solid var(--md3-color-error);
+}
+
+.email-body .info-message {
+    background: color-mix(in srgb, var(--md3-color-primary) 10%, transparent);
+    color: var(--md3-color-primary);
+    border: 1px solid var(--md3-color-primary);
+}
+
+/* Responsive: Stack tabs on narrow screens */
+@media (max-width: 600px) {
+    .md3-tabs {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
+    }
+    
+    .md3-tab {
+        flex-shrink: 0;
+        min-width: 120px;
+    }
+    
+    .md3-tab-panels {
+        padding: var(--md3-spacing-16);
+    }
+    
+    .email-meta dl {
+        grid-template-columns: 1fr;
+        gap: var(--md3-spacing-4);
+    }
+    
+    .email-meta dt::after {
+        content: '';
+    }
+}
+
+/* Screen reader only content */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+}
+
 .theme-switcher {
     position: fixed;
     bottom: var(--md3-spacing-24);
