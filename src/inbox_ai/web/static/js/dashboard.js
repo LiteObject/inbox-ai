@@ -470,6 +470,13 @@ document.addEventListener("DOMContentLoaded", async () => {
             templateContainer,
             onDetailChanged: () => {
                 bindInteractiveForms();
+                // Initialize tabs for the newly loaded detail view
+                if (typeof window.initializeTabs === 'function') {
+                    window.initializeTabs();
+                } else {
+                    // Dispatch custom event for tabs.js to handle
+                    window.dispatchEvent(new CustomEvent('content-loaded'));
+                }
             },
             onSelect: (uid) => {
                 // Lazy load email detail when selected

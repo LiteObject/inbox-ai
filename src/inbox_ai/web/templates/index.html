@@ -297,32 +297,95 @@
                                     </form>
                                 </header>
 
-                                <section class="md3-detail-section">
-                                    <h4>
-                                        <span class="material-icons" aria-hidden="true">summarize</span>
-                                        Summary
-                                    </h4>
-                                    <p>{{ item.summary or "No summary available for this email." }}</p>
-                                </section>
+                                <div class="md3-detail-section md3-detail-section--tabs">
+                                    <div class="md3-tabs" role="tablist">
+                                        <button class="md3-tab md3-tab--active" role="tab" aria-selected="true"
+                                            aria-controls="summary-panel-{{ item.uid }}" id="summary-tab-{{ item.uid }}"
+                                            data-tab="summary">
+                                            <span class="md3-tab__content">
+                                                <span class="material-icons" aria-hidden="true">summarize</span>
+                                                <span class="md3-tab__text-label">Summary</span>
+                                            </span>
+                                            <span class="md3-tab__indicator"></span>
+                                        </button>
 
-                                <section class="md3-detail-section">
-                                    <h4>
-                                        <span class="material-icons" aria-hidden="true">flag</span>
-                                        Key Actions
-                                    </h4>
-                                    {% if item.actionItems %}
-                                    <ul class="md3-detail-list">
-                                        {% for action in item.actionItems %}
-                                        <li>
-                                            <span class="material-icons" aria-hidden="true">task_alt</span>
-                                            <span>{{ action }}</span>
-                                        </li>
-                                        {% endfor %}
-                                    </ul>
-                                    {% else %}
-                                    <p>No recommended actions for this email.</p>
-                                    {% endif %}
-                                </section>
+                                        <button class="md3-tab" role="tab" aria-selected="false"
+                                            aria-controls="original-panel-{{ item.uid }}"
+                                            id="original-tab-{{ item.uid }}" data-tab="original" tabindex="-1">
+                                            <span class="md3-tab__content">
+                                                <span class="material-icons" aria-hidden="true">mail</span>
+                                                <span class="md3-tab__text-label">Original Email</span>
+                                            </span>
+                                            <span class="md3-tab__indicator"></span>
+                                        </button>
+                                    </div>
+
+                                    <div class="md3-tab-panels">
+                                        <!-- Summary Panel (Default Active) -->
+                                        <div class="md3-tab-panel md3-tab-panel--active" role="tabpanel"
+                                            id="summary-panel-{{ item.uid }}"
+                                            aria-labelledby="summary-tab-{{ item.uid }}">
+
+                                            <div class="md3-detail-subsection">
+                                                <h4>
+                                                    <span class="material-icons" aria-hidden="true">smart_toy</span>
+                                                    AI Summary
+                                                </h4>
+                                                <p>{{ item.summary or "No summary available for this email." }}</p>
+                                            </div>
+
+                                            {% if item.actionItems %}
+                                            <div class="md3-detail-subsection">
+                                                <h4>
+                                                    <span class="material-icons" aria-hidden="true">flag</span>
+                                                    Key Actions
+                                                </h4>
+                                                <ul class="md3-detail-list">
+                                                    {% for action in item.actionItems %}
+                                                    <li>
+                                                        <span class="material-icons" aria-hidden="true">task_alt</span>
+                                                        <span>{{ action }}</span>
+                                                    </li>
+                                                    {% endfor %}
+                                                </ul>
+                                            </div>
+                                            {% endif %}
+                                        </div>
+
+                                        <!-- Original Email Panel -->
+                                        <div class="md3-tab-panel" role="tabpanel" id="original-panel-{{ item.uid }}"
+                                            aria-labelledby="original-tab-{{ item.uid }}" hidden>
+
+                                            <div class="email-original">
+                                                <div class="email-meta">
+                                                    <dl>
+                                                        <dt>From:</dt>
+                                                        <dd>{{ item.sender or "Unknown sender" }}</dd>
+
+                                                        <dt>Subject:</dt>
+                                                        <dd>{{ item.subject or "(no subject)" }}</dd>
+
+                                                        <dt>Received:</dt>
+                                                        <dd>{{ item.receivedAtDisplay or "Not available" }}</dd>
+                                                    </dl>
+                                                </div>
+
+                                                <div class="email-body" data-uid="{{ item.uid }}">
+                                                    <div class="loading-placeholder">
+                                                        <div class="md3-circular-progress" role="status"
+                                                            aria-label="Loading email content">
+                                                            <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+                                                                <circle cx="24" cy="24" r="18" fill="none"
+                                                                    stroke-width="4"></circle>
+                                                            </svg>
+                                                        </div>
+                                                        <span class="sr-only">Loading email content...</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
 
                                 <section class="md3-detail-section">
                                     <h4>
@@ -416,6 +479,7 @@
         </section>
     </main>
 
+    <script src="{{ url_for('static', path='js/tabs.js') }}"></script>
     <script type="module" src="{{ url_for('static', path='js/dashboard.js') }}"></script>
 </body>
 
