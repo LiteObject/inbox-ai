@@ -87,23 +87,64 @@ ruff check src && pylint src/inbox_ai && mypy src/inbox_ai && pytest
 
 ## Web Dashboard
 
-- Launch the FastAPI dashboard with ``uvicorn inbox_ai.web:app --reload`` to browse synced data in a
-   single view. The page consumes the same repository methods as ``/api/dashboard`` so the UI and
-   API remain consistent.
-- A prominent Sync card triggers manual mailbox refreshes; a spinner overlays the page while the
-   request runs and results surface through auto-dismissing toast notifications that appear in the
-   bottom-right corner.
-- Configuration fields are grouped by domain and editable in place. Saving updates writes to the
-   ``.env`` file while preserving blank entries, and success/error states also appear as toasts.
-- Recent Insights now show inline UID labels, a running ``visible / total`` counter, friendly
-   timestamps, action-item summaries, an advanced search box for instant filtering with field
-   queries (e.g., ``from:alice``, ``priority:>=7``, ``is:followups``), and a priority dropdown on the
-   filter bar so you can focus on urgent, high, or low items.
-- Delete buttons beside each insight remove the underlying email from both IMAP and storage. Upon
-   completion a toast confirms success (or failure) and the page preserves scroll position after all
-   actions.
-- Follow-up cards mirror repository data with inline status toggles, while draft content now lives
-   inside each insight so context stays in one place.
+The FastAPI dashboard provides a modern, responsive interface for browsing and managing your email insights:
+
+**Core Features:**
+- Launch with `uvicorn inbox_ai.web:app --reload` to access synced data through a clean, unified view
+- Material Design 3 UI with theme support (Default, Plant, Dark, High Contrast, Vibrant, Teal, Lavender)
+- Consistent header navigation across all pages with user account display
+- Service worker integration for offline-first caching and background sync capabilities
+
+**Email Insights:**
+- Browse recent insights with inline UID labels and visible/total counters
+- Advanced search box for instant filtering with field queries (e.g., `from:alice`, `priority:>=7`, `is:followups`)
+- Priority-based filtering (Urgent, High, Normal, Low, All)
+- Category-based filtering with dynamic category management
+- Follow-up status filtering (Open, Completed, All)
+- Sortable columns with friendly timestamps and action-item summaries
+- Lazy-loaded detail view for email content to optimize performance
+
+**Email Management:**
+- Delete individual emails or bulk delete with IMAP trash integration
+- Email deletion preserves scroll position and shows toast notifications
+- Comprehensive CSRF protection for all POST operations
+- Cache invalidation strategy ensures fresh data after modifications
+
+**Draft Management:**
+- Generate AI-powered reply drafts with inline editing
+- Save, regenerate, or delete drafts directly from the insight detail view
+- Fallback draft generation when LLM is unavailable
+- Manual draft editing with provider tracking
+
+**Follow-up Tasks:**
+- View and manage follow-up tasks with inline status toggles
+- Mark tasks as complete or reopen them as needed
+- Due date tracking with human-readable formatting
+- Filter insights by follow-up status or show only items with follow-ups
+
+**Sync & Configuration:**
+- Manual sync trigger with real-time progress updates via Server-Sent Events
+- Rate limiting protection (2 syncs per 60 seconds)
+- Settings page for in-place configuration editing
+- IMAP, LLM, storage, and sync settings grouped by domain
+- Configuration changes write to `.env` file with validation
+- Category regeneration and database clearing maintenance tools
+
+**UI/UX Enhancements:**
+- Responsive design optimized for desktop and mobile
+- Toast notifications for all operations (success, error, info)
+- Loading spinners with descriptive messages during async operations
+- Scroll position restoration after page navigation
+- Empty states with helpful guidance
+- Themed Material Icons throughout
+
+**Caching & Performance:**
+- Response caching with 5-minute TTL for dashboard data
+- Cache invalidation on data modifications (sync, delete, category updates)
+- Gzip compression for responses over 1KB
+- Optimized SQL queries with proper indexing
+
+The dashboard maintains consistency with the `/api/dashboard` endpoint, ensuring the UI and API share the same data layer and business logic.
 
 ## License
 

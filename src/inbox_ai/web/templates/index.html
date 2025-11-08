@@ -12,6 +12,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,400,0,0"
         rel="stylesheet" />
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}" />
+    <script src="{{ url_for('static', path='js/register-sw.js') }}" defer></script>
 </head>
 
 <body class="page-root">
@@ -25,22 +26,10 @@
         <div class="shape shape-6"></div>
     </div>
 
-    <header class="md3-top-app-bar" id="dashboard-app-bar">
-        <div class="md3-app-bar-title-section">
-            <div class="md3-app-bar-title">Inbox AI Dashboard</div>
-            <div class="md3-app-bar-subtitle">
-                <span class="material-icons" aria-hidden="true">account_circle</span>
-                <span>{{ imap_username | default('No account configured', true) }}</span>
-            </div>
-        </div>
-        <div class="md3-top-app-bar-actions">
-
-            <button id="settings-button" class="md3-icon-button" type="button" data-href="/settings">
-                <span class="material-icons" aria-hidden="true">settings</span>
-                <span class="sr-only">Open settings</span>
-            </button>
-        </div>
-    </header>
+    {% set page_title = 'Inbox AI Dashboard' %}
+    {% set show_settings_button = true %}
+    {% set show_back_button = false %}
+    {% include 'partials/header.html' %}
 
     <div id="sync-spinner" class="spinner-overlay" hidden>
         <div class="spinner-wrapper" role="status" aria-live="polite">
@@ -129,14 +118,14 @@
             </form>
 
             <form class="secondary-form" method="post" action="/emails/bulk-delete" data-scroll-restore data-spinner
-                data-spinner-label="Deleting emails..."
-                data-confirm="Delete all listed emails and related data? This cannot be undone.">
+                data-spinner-label="Moving emails to trash..."
+                data-confirm="Move all listed emails to trash? You can recover them from your trash folder.">
                 <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
                 <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
                 {% for item in insights %}
                 <input type="hidden" name="uids" value="{{ item.uid }}" />
                 {% endfor %}
-                <button class="md3-button md3-button--tonal" type="submit">
+                <button class="md3-button md3-button--tonal" type="submit" title="Move these emails to trash">
                     <span class="material-icons" aria-hidden="true">delete_sweep</span>
                     Delete These Emails
                 </button>
@@ -296,10 +285,12 @@
                                         {% endif %}
                                     </div>
                                     <form method="post" action="/emails/{{ item.uid }}/delete" data-scroll-restore
-                                        data-spinner data-confirm="Delete message UID {{ item.uid }}?">
+                                        data-spinner
+                                        data-confirm="Move this email to trash? You can recover it from your trash folder.">
                                         <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
                                         <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-                                        <button class="md3-button md3-button--tonal" type="submit">
+                                        <button class="md3-button md3-button--tonal" type="submit"
+                                            title="Move to trash">
                                             <span class="material-icons" aria-hidden="true">delete</span>
                                             Delete Email
                                         </button>
