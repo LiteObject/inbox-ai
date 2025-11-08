@@ -48,7 +48,13 @@ from inbox_ai.intelligence import (
 )
 from inbox_ai.storage import SqliteEmailRepository
 from inbox_ai.storage.connection_pool import ConnectionPool
-from inbox_ai.transport import ImapClient, ImapError
+from inbox_ai.transport import (
+    EmailMessage,
+    ImapClient,
+    ImapError,
+    SmtpClient,
+    SmtpError,
+)
 from .cache import response_cache
 from .security import CSRF_FIELD_NAME, CsrfProtector
 
@@ -181,6 +187,14 @@ class ClearDatabaseOutcome:
     message: str
 
 
+@dataclass(frozen=True)
+class SendDraftOutcome:
+    """Result of sending a draft email."""
+
+    success: bool
+    message: str
+
+
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -204,6 +218,27 @@ CONFIG_SECTIONS: tuple[ConfigSection, ...] = (
                 "Use SSL",
                 input_type="select",
                 options=_BOOLEAN_OPTIONS,
+            ),
+        ),
+    ),
+    ConfigSection(
+        title="SMTP (Outgoing Mail)",
+        fields=(
+            ConfigField("INBOX_AI_SMTP__HOST", "SMTP Host"),
+            ConfigField("INBOX_AI_SMTP__PORT", "SMTP Port", input_type="number"),
+            ConfigField("INBOX_AI_SMTP__USERNAME", "SMTP Username"),
+            ConfigField("INBOX_AI_SMTP__PASSWORD", "SMTP Password"),
+            ConfigField(
+                "INBOX_AI_SMTP__USE_TLS",
+                "Use TLS",
+                input_type="select",
+                options=_BOOLEAN_OPTIONS,
+                description="Use STARTTLS encryption (port 587). Disable for SSL (port 465).",
+            ),
+            ConfigField(
+                "INBOX_AI_SMTP__FROM_NAME",
+                "From Name",
+                description="Display name for sent emails (optional)",
             ),
         ),
     ),
@@ -971,6 +1006,54 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         target = _append_query_param(target, "draft_message", message)
         return RedirectResponse(url=target, status_code=http_status.HTTP_303_SEE_OTHER)
 
+    @app.post("/emails/{email_uid}/draft/send")
+    async def send_draft(
+        email_uid: int,
+        request: Request,
+        repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
+    ) -> RedirectResponse:
+        """Send a draft email as a reply to the original message."""
+        form = await request.form()
+        raw_token = form.get(csrf.field_name)
+        token = raw_token if isinstance(raw_token, str) else None
+        csrf.validate(request, token)
+
+        redirect_raw = _coerce_form_value(form.get("redirect_to"))
+        redirect_target = _sanitize_redirect(redirect_raw or None) or "/"
+
+        draft_id_raw = _coerce_form_value(form.get("draft_id")).strip()
+        draft_id: int | None = None
+        if draft_id_raw:
+            try:
+                draft_id = int(draft_id_raw)
+            except ValueError:
+                pass
+
+        if draft_id is None:
+            failure_target = _append_query_param(
+                redirect_target, "send_status", "error"
+            )
+            failure_target = _append_query_param(
+                failure_target, "send_message", "Draft not found."
+            )
+            return RedirectResponse(
+                url=failure_target, status_code=http_status.HTTP_303_SEE_OTHER
+            )
+
+        # Send the draft
+        outcome = await asyncio.to_thread(
+            _send_draft_email,
+            app_settings,
+            repository,
+            email_uid,
+            draft_id,
+        )
+
+        status_value = "ok" if outcome.success else "error"
+        target = _append_query_param(redirect_target, "send_status", status_value)
+        target = _append_query_param(target, "send_message", outcome.message)
+        return RedirectResponse(url=target, status_code=http_status.HTTP_303_SEE_OTHER)
+
     @app.post("/follow-ups/{follow_up_id}/status")
     async def update_follow_up_status(
         request: Request,
@@ -1405,6 +1488,98 @@ def _regenerate_draft(
         return DraftRegenerationOutcome(
             success=False,
             message="Draft could not be regenerated.",
+        )
+
+
+def _send_draft_email(
+    settings: AppSettings,
+    repository: SqliteEmailRepository,
+    email_uid: int,
+    draft_id: int,
+) -> SendDraftOutcome:
+    """Send a draft as a reply to the original email.
+
+    Args:
+        settings: Application settings with SMTP configuration
+        repository: Repository for database operations
+        email_uid: UID of the original email
+        draft_id: ID of the draft to send
+
+    Returns:
+        SendDraftOutcome with success status and message
+    """
+    # Validate SMTP configuration
+    if not settings.smtp.is_configured():
+        return SendDraftOutcome(
+            success=False,
+            message="SMTP not configured. Update settings to enable email sending.",
+        )
+
+    try:
+        # Fetch original email
+        email = repository.fetch_email(email_uid)
+        if email is None:
+            return SendDraftOutcome(
+                success=False,
+                message="Original email not found.",
+            )
+
+        # Fetch draft
+        draft = repository.fetch_draft(draft_id)
+        if draft is None or draft.email_uid != email_uid:
+            return SendDraftOutcome(
+                success=False,
+                message="Draft not found.",
+            )
+
+        # Validate sender address
+        if not email.sender:
+            return SendDraftOutcome(
+                success=False,
+                message="Cannot send reply: original email has no sender address.",
+            )
+
+        # Build reply subject
+        subject = email.subject
+        if subject and not subject.startswith("Re:"):
+            subject = f"Re: {subject}"
+        elif not subject:
+            subject = "Re: (no subject)"
+
+        # Build reply message
+        message = EmailMessage(
+            to=email.sender,
+            subject=subject,
+            body=draft.body,
+            in_reply_to=email.message_id,
+            references=email.message_id,
+            html=False,
+        )
+
+        # Send via SMTP
+        with SmtpClient(settings.smtp) as smtp:
+            smtp.send(message)
+
+        # Mark draft as sent
+        repository.mark_draft_sent(draft_id)
+
+        LOGGER.info("Sent draft %d as reply to email %d", draft_id, email_uid)
+        return SendDraftOutcome(
+            success=True,
+            message="Email sent successfully.",
+        )
+
+    except SmtpError as exc:
+        LOGGER.warning("Failed to send draft %d: %s", draft_id, exc)
+        return SendDraftOutcome(
+            success=False,
+            message=f"Failed to send email: {exc}",
+        )
+    except Exception as exc:  # noqa: BLE001
+        LOGGER.exception("Unexpected error sending draft %d: %s", draft_id, exc)
+        return SendDraftOutcome(
+            success=False,
+            message="Failed to send email. Check server logs for details.",
         )
 
 

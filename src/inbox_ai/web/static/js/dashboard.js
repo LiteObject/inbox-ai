@@ -94,6 +94,7 @@ const STATUS_PARAM_PAIRS = [
     ["delete_status", "delete_message"],
     ["categorize_status", "categorize_message"],
     ["draft_status", "draft_message"],
+    ["send_status", "send_message"],
     ["config_status", "config_message"],
     ["clear_status", "clear_message"],
 ];

@@ -879,6 +879,17 @@ a {
     box-shadow: var(--md3-elevation-2);
 }
 
+.md3-button--filled.md3-button--primary {
+    background: var(--md3-color-primary);
+    color: var(--md3-color-on-primary);
+    font-weight: 500;
+}
+
+.md3-button--filled.md3-button--primary:hover {
+    background: color-mix(in srgb, var(--md3-color-primary) 90%, black);
+    box-shadow: var(--md3-elevation-3);
+}
+
 .md3-button--outlined {
     border-color: var(--md3-color-outline);
     color: var(--md3-color-primary);

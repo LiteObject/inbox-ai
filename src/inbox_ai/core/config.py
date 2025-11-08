@@ -32,6 +32,27 @@ class ImapSettings(BaseModel):
         return v
 
 
+class SmtpSettings(BaseModel):
+    """Settings controlling SMTP connectivity for sending emails."""
+
+    host: str = Field(default="", description="SMTP hostname")
+    port: int = Field(
+        default=587, description="SMTP port, typically 587 for TLS or 465 for SSL"
+    )
+    username: str | None = Field(
+        default=None, description="SMTP username (usually email address)"
+    )
+    password: str | None = Field(
+        default=None, description="SMTP password or app password"
+    )
+    use_tls: bool = Field(default=True, description="Use STARTTLS for encryption")
+    from_name: str = Field(default="", description="Display name for sent emails")
+
+    def is_configured(self) -> bool:
+        """Check if SMTP is properly configured."""
+        return bool(self.host and self.username and self.password)
+
+
 class LlmSettings(BaseModel):
     """Settings for the local LLM provider."""
 
@@ -122,6 +143,7 @@ class AppSettings(BaseModel):
     """Aggregated application configuration."""
 
     imap: ImapSettings = Field(default_factory=ImapSettings)
+    smtp: SmtpSettings = Field(default_factory=SmtpSettings)
     llm: LlmSettings = Field(default_factory=LlmSettings)
     storage: StorageSettings = Field(default_factory=StorageSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
@@ -213,6 +235,7 @@ def load_app_settings(
 __all__ = [
     "AppSettings",
     "ImapSettings",
+    "SmtpSettings",
     "LlmSettings",
     "LoggingSettings",
     "StorageSettings",

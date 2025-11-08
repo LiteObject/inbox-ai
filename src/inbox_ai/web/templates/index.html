@@ -46,6 +46,8 @@
         data-categorize-message="{{ categorize_message | default('', true) | e }}"
         data-draft-status="{{ draft_status | default('', true) }}"
         data-draft-message="{{ draft_message | default('', true) | e }}"
+        data-send-status="{{ send_status | default('', true) }}"
+        data-send-message="{{ send_message | default('', true) | e }}"
         data-config-status="{{ config_status | default('', true) }}"
         data-config-message="{{ config_message | default('', true) | e }}"
         data-clear-status="{{ clear_status | default('', true) }}"
@@ -450,6 +452,12 @@
                                                 Save Draft
                                             </button>
                                             {% if item.draft %}
+                                            <button class="md3-button md3-button--filled md3-button--primary"
+                                                type="submit" formaction="/emails/{{ item.uid }}/draft/send"
+                                                data-confirm="Send this email reply?">
+                                                <span class="material-icons" aria-hidden="true">send</span>
+                                                Send Reply
+                                            </button>
                                             <button class="md3-button md3-button--tonal" type="submit"
                                                 formaction="/emails/{{ item.uid }}/draft/regenerate">
                                                 <span class="material-icons" aria-hidden="true">auto_fix_high</span>
