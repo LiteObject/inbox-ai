@@ -59,7 +59,8 @@
                     <legend>{{ section.title }}</legend>
                     <div class="config-grid">
                         {% for field in section.fields %}
-                        <div class="md3-field{% if config_values.get(field.key, '') %} filled{% endif %}">
+                        <div
+                            class="md3-field{% if config_values.get(field.key, '') or (field.key == 'INBOX_AI_USER__PREFERENCES' and user_preferences.get('guidance', '')) %} filled{% endif %}">
                             {% if field.input_type == "select" %}
                             <select id="{{ field.key }}" name="{{ field.key }}" class="md3-select">
                                 {% for option in field.options %}
@@ -72,7 +73,7 @@
                             <label for="{{ field.key }}">{{ field.label }}</label>
                             {% elif field.input_type == "textarea" %}
                             <textarea id="{{ field.key }}" name="{{ field.key }}" class="md3-textarea"
-                                rows="{{ field.textarea_rows or 6 }}">{% if config_values.get(field.key, '') %}{{ config_values.get(field.key, '') }}{% endif %}</textarea>
+                                rows="{{ field.textarea_rows or 6 }}">{% if field.key == 'INBOX_AI_USER__PREFERENCES' %}{{ user_preferences.get('guidance', '') }}{% elif config_values.get(field.key, '') %}{{ config_values.get(field.key, '') }}{% endif %}</textarea>
                             <label for="{{ field.key }}">{{ field.label }}</label>
                             {% else %}
                             <input type="{{ field.input_type }}" id="{{ field.key }}" name="{{ field.key }}"

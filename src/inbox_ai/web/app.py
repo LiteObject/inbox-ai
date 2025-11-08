@@ -466,24 +466,73 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         return response
 
     @app.get("/settings", response_class=HTMLResponse)
-    async def settings_page(request: Request) -> HTMLResponse:
+    async def settings_page(
+        request: Request,
+        repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
+    ) -> HTMLResponse:
         env_file = _resolve_env_file()
         config_values = _load_env_values(env_file)
+        user_preferences = repository.get_all_user_preferences()
         redirect_target = _build_redirect_target(request)
         csrf_token = csrf.generate_token()
         context = {
             "request": request,
             "config_sections": CONFIG_SECTIONS,
             "config_values": config_values,
+            "user_preferences": user_preferences,
             "config_status": request.query_params.get("config_status"),
             "config_env_path": str(env_file),
             "redirect_to": redirect_target,
             "csrf_token": csrf_token,
             "csrf_field_name": csrf.field_name,
+            "imap_username": app_settings.imap.username,
         }
         response = templates.TemplateResponse("settings.html", context)
         csrf.set_cookie(response, csrf_token, secure=request.url.scheme == "https")
         return response
+
+    @app.get("/api/preferences")
+    async def get_preferences(
+        repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
+    ) -> dict[str, str]:
+        """Retrieve all user preferences."""
+        return repository.get_all_user_preferences()
+
+    @app.post("/api/preferences")
+    async def set_preference(
+        request: Request,
+        repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
+    ) -> dict[str, Any]:
+        """Store or update a user preference."""
+        form = await request.form()
+        raw_token = form.get(csrf.field_name)
+        token = raw_token if isinstance(raw_token, str) else None
+        csrf.validate(request, token)
+
+        key = _coerce_form_value(form.get("key"))
+        value = _coerce_form_value(form.get("value"))
+
+        if not key:
+            return {"success": False, "error": "Preference key is required"}
+
+        repository.set_user_preference(key, value)
+        response_cache.invalidate("dashboard")
+        return {"success": True, "key": key}
+
+    @app.delete("/api/preferences/{key}")
+    async def delete_preference(
+        key: str,
+        request: Request,
+        repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
+    ) -> dict[str, Any]:
+        """Delete a user preference."""
+        csrf_token = request.headers.get("X-CSRF-Token")
+        csrf.validate(request, csrf_token)
+
+        deleted = repository.delete_user_preference(key)
+        if deleted:
+            response_cache.invalidate("dashboard")
+        return {"success": deleted}
 
     @app.get("/api/dashboard")
     async def dashboard(
@@ -574,7 +623,10 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         }
 
     @app.post("/config")
-    async def update_configuration(request: Request) -> RedirectResponse:
+    async def update_configuration(
+        request: Request,
+        repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
+    ) -> RedirectResponse:
         nonlocal app_settings
         form = await request.form()
         raw_token = form.get(csrf.field_name)
@@ -583,9 +635,26 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         env_file = _resolve_env_file()
         redirect_raw = _coerce_form_value(form.get("redirect_to"))
         redirect_target = _sanitize_redirect(redirect_raw or None) or "/"
-        updates: dict[str, str] = {
-            key: _coerce_form_value(form.get(key)) for key in CONFIG_FIELD_KEYS
-        }
+
+        # Separate user preferences from config fields
+        preference_keys = {"INBOX_AI_USER__PREFERENCES"}
+        updates: dict[str, str] = {}
+        preferences: dict[str, str] = {}
+
+        for key in CONFIG_FIELD_KEYS:
+            value = _coerce_form_value(form.get(key))
+            if key in preference_keys:
+                preferences[key] = value
+            else:
+                updates[key] = value
+
+        # Save user preferences to database
+        if preferences:
+            for key, value in preferences.items():
+                if key == "INBOX_AI_USER__PREFERENCES":
+                    repository.set_user_preference("guidance", value)
+
+        # Save config updates to .env file
         try:
             _update_env_file(env_file, updates)
         except OSError:
