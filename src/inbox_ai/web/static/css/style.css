@@ -1834,96 +1834,34 @@ a {
     margin: 0 auto;
     width: 100%;
     padding: var(--md3-spacing-32);
+    padding-top: calc(64px + var(--md3-spacing-32)); /* Account for fixed header */
     flex: 1;
     background: var(--md3-color-surface);
 }
 
-.settings-page .settings-header {
-    display: flex;
-    align-items: center;
-    gap: var(--md3-spacing-16);
+.settings-page .settings-intro {
     margin-bottom: var(--md3-spacing-32);
 }
 
-.settings-page .settings-header a {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    border-radius: 20px;
-    background: transparent;
-    color: var(--md3-color-on-surface);
-    text-decoration: none;
-    cursor: pointer;
-    position: relative;
-    overflow: hidden;
-    transition: background 200ms cubic-bezier(0.2, 0, 0, 1);
-    flex-shrink: 0;
-}
-
-.settings-page .settings-header a::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: currentColor;
-    opacity: 0;
-    transition: opacity 200ms cubic-bezier(0.2, 0, 0, 1);
-    pointer-events: none;
-}
-
-.settings-page .settings-header a:hover::before {
-    opacity: 0.08;
-}
-
-.settings-page .settings-header a:focus-visible {
-    outline: none;
-}
-
-.settings-page .settings-header a:focus-visible::before {
-    opacity: 0.12;
-}
-
-.settings-page .settings-header a:active::before {
-    opacity: 0.12;
-}
-
-@media (max-width: 599px) {
-    .settings-page .settings-header {
-        gap: var(--md3-spacing-12);
-        margin-bottom: var(--md3-spacing-20);
-    }
-
-    .settings-page .settings-header a {
-        width: 36px;
-        height: 36px;
-        font-size: 18px;
-    }
-}
-
-.settings-page .settings-heading {
-    flex: 1;
-}
-
-.settings-page .settings-heading h1 {
+.settings-page .settings-intro h1 {
     margin: 0;
     font-size: 28px;
     font-weight: 700;
     color: var(--md3-color-primary);
 }
 
-.settings-page .settings-heading p {
+.settings-page .settings-intro p {
     margin: var(--md3-spacing-8) 0 0 0;
     font-size: 14px;
     color: var(--md3-color-on-surface-variant);
 }
 
 @media (max-width: 599px) {
-    .settings-page .settings-heading h1 {
+    .settings-page .settings-intro h1 {
         font-size: 22px;
     }
 
-    .settings-page .settings-heading p {
+    .settings-page .settings-intro p {
         font-size: 13px;
     }
 }

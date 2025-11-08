@@ -73,11 +73,34 @@ class MailFetcher:
         )
 
         processed = 0
+        failed = 0
         new_last_uid = last_uid
 
         for chunk in self._mailbox.fetch_since(last_uid, self._batch_size):
             envelope = self._parser.parse(chunk.uid, chunk.raw, mailbox_name)
-            self._repository.persist_email(envelope)
+
+            # Persist email FIRST - if this fails, skip all processing for this email
+            try:
+                self._repository.persist_email(envelope)
+                LOGGER.debug("Successfully persisted email UID %s", envelope.uid)
+            except Exception as persist_error:  # pylint: disable=broad-except
+                LOGGER.error(
+                    "Failed to persist email UID %s: %s",
+                    envelope.uid,
+                    persist_error,
+                    exc_info=True,
+                )
+                LOGGER.info(
+                    "Skipping processing for UID %s due to persistence failure",
+                    envelope.uid,
+                )
+                failed += 1
+                # Update checkpoint even for failed emails to avoid reprocessing
+                self._repository.upsert_checkpoint(
+                    SyncCheckpoint(mailbox=mailbox_name, last_uid=chunk.uid)
+                )
+                new_last_uid = chunk.uid
+                continue  # Skip to next email
 
             if self._progress_callback:
                 self._progress_callback(
@@ -88,13 +111,28 @@ class MailFetcher:
             if self._insight_service is not None:
                 try:
                     insight = self._insight_service.generate_insight(envelope)
-                    self._repository.persist_insight(insight)
+                    if insight is not None:
+                        self._repository.persist_insight(insight)
+                    else:
+                        LOGGER.warning(
+                            "Insight generation returned None for UID %s",
+                            envelope.uid,
+                        )
                 except InsightError as exc:
                     LOGGER.warning(
                         "Failed to generate insight for UID %s: %s",
                         envelope.uid,
                         exc,
                     )
+                    insight = None
+                except Exception as exc:  # pylint: disable=broad-except
+                    LOGGER.error(
+                        "Unexpected error generating insight for UID %s: %s",
+                        envelope.uid,
+                        exc,
+                        exc_info=True,
+                    )
+                    insight = None
 
             if insight is None:
                 insight = self._repository.fetch_insight(envelope.uid)
@@ -119,13 +157,26 @@ class MailFetcher:
                     updated_insight = self._insight_service.generate_insight(
                         envelope, categories
                     )
-                    self._repository.persist_insight(updated_insight)
-                    insight = updated_insight
+                    if updated_insight is not None:
+                        self._repository.persist_insight(updated_insight)
+                        insight = updated_insight
+                    else:
+                        LOGGER.warning(
+                            "Updated insight generation returned None for UID %s",
+                            envelope.uid,
+                        )
                 except InsightError as exc:
                     LOGGER.warning(
                         "Failed to update insight for UID %s: %s",
                         envelope.uid,
                         exc,
+                    )
+                except Exception as exc:  # pylint: disable=broad-except
+                    LOGGER.error(
+                        "Unexpected error updating insight for UID %s: %s",
+                        envelope.uid,
+                        exc,
+                        exc_info=True,
                     )
 
             # Check if draft should be skipped
@@ -148,12 +199,19 @@ class MailFetcher:
             ):
                 try:
                     draft = self._drafting_service.generate_draft(envelope, insight)
-                    self._repository.persist_draft(draft)
+                    if draft is not None:
+                        self._repository.persist_draft(draft)
+                    else:
+                        LOGGER.warning(
+                            "Draft generation returned None for UID %s",
+                            envelope.uid,
+                        )
                 except Exception as exc:  # pylint: disable=broad-except
-                    LOGGER.warning(
+                    LOGGER.error(
                         "Failed to generate draft for UID %s: %s",
                         envelope.uid,
                         exc,
+                        exc_info=True,
                     )
 
             if self._follow_up_planner is not None and insight is not None:
@@ -168,12 +226,19 @@ class MailFetcher:
                         tasks = self._follow_up_planner.plan_follow_ups(
                             envelope, insight
                         )
-                        self._repository.replace_follow_ups(envelope.uid, tasks)
+                        if tasks is not None:
+                            self._repository.replace_follow_ups(envelope.uid, tasks)
+                        else:
+                            LOGGER.warning(
+                                "Follow-up planning returned None for UID %s",
+                                envelope.uid,
+                            )
                     except Exception as exc:  # pylint: disable=broad-except
-                        LOGGER.warning(
+                        LOGGER.error(
                             "Failed to derive follow-ups for UID %s: %s",
                             envelope.uid,
                             exc,
+                            exc_info=True,
                         )
 
             new_last_uid = chunk.uid
@@ -187,7 +252,10 @@ class MailFetcher:
                 break
 
         LOGGER.info(
-            "Fetch completed: processed=%s new_last_uid=%s", processed, new_last_uid
+            "Fetch completed: processed=%s, failed=%s, new_last_uid=%s",
+            processed,
+            failed,
+            new_last_uid,
         )
         return MailFetcherResult(processed=processed, new_last_uid=new_last_uid)
 

@@ -4,6 +4,12 @@ from inbox_ai.core.interfaces import InsightError
 
 from .category import KeywordCategoryService, LLMCategoryService
 from .drafter import DraftingError, DraftingService
+from .email_analysis_service import (
+    EmailAnalysis,
+    FollowUpTask,
+    LLMMetrics,
+    OptimizedEmailAnalyzer,
+)
 from .follow_up import FollowUpPlannerService
 from .llm import LLMClient, LLMError, OllamaClient
 from .priority import score_priority
@@ -21,4 +27,8 @@ __all__ = [
     "FollowUpPlannerService",
     "KeywordCategoryService",
     "LLMCategoryService",
+    "EmailAnalysis",
+    "FollowUpTask",
+    "LLMMetrics",
+    "OptimizedEmailAnalyzer",
 ]
