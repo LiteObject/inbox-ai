@@ -10,6 +10,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet" />
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet" />
     <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}" />
+    <script src="{{ url_for('static', path='js/register-sw.js') }}" defer></script>
 </head>
 
 <body class="page-root settings-page">
@@ -23,16 +24,16 @@
         <div class="shape shape-6"></div>
     </div>
 
+    {% set page_title = 'Settings' %}
+    {% set show_settings_button = false %}
+    {% set show_back_button = true %}
+    {% include 'partials/header.html' %}
+
     <div class="settings-container">
-        <div class="settings-header">
-            <a href="/" title="Back to dashboard">
-                <span class="material-icons">arrow_back</span>
-            </a>
-            <div class="settings-heading">
-                <h1>Configuration</h1>
-                <p>Adjust IMAP, storage, and intelligence settings. Changes are written to your <code>.env</code> file
-                    and applied after the server restarts.</p>
-            </div>
+        <div class="settings-intro">
+            <h1>Configuration</h1>
+            <p>Adjust IMAP, storage, and intelligence settings. Changes are written to your <code>.env</code> file
+                and applied after the server restarts.</p>
         </div>
 
         <div class="md3-card">

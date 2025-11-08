@@ -26,22 +26,10 @@
         <div class="shape shape-6"></div>
     </div>
 
-    <header class="md3-top-app-bar" id="dashboard-app-bar">
-        <div class="md3-app-bar-title-section">
-            <div class="md3-app-bar-title">Inbox AI Dashboard</div>
-            <div class="md3-app-bar-subtitle">
-                <span class="material-icons" aria-hidden="true">account_circle</span>
-                <span>{{ imap_username | default('No account configured', true) }}</span>
-            </div>
-        </div>
-        <div class="md3-top-app-bar-actions">
-
-            <button id="settings-button" class="md3-icon-button" type="button" data-href="/settings">
-                <span class="material-icons" aria-hidden="true">settings</span>
-                <span class="sr-only">Open settings</span>
-            </button>
-        </div>
-    </header>
+    {% set page_title = 'Inbox AI Dashboard' %}
+    {% set show_settings_button = true %}
+    {% set show_back_button = false %}
+    {% include 'partials/header.html' %}
 
     <div id="sync-spinner" class="spinner-overlay" hidden>
         <div class="spinner-wrapper" role="status" aria-live="polite">
