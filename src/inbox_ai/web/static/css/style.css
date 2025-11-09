@@ -2800,7 +2800,7 @@ a {
 
 .compose-dialog__content {
     flex: 1 1 auto;
-    padding: 0 var(--md3-spacing-24) var(--md3-spacing-24);
+    padding: var(--md3-spacing-32) var(--md3-spacing-24) var(--md3-spacing-24);
     overflow-y: auto;
     display: flex;
     flex-direction: column;
