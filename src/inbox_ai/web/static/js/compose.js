@@ -16,10 +16,50 @@
     const composeDialog = document.getElementById('compose-dialog');
     const composeForm = document.getElementById('compose-form');
     const closeButtons = composeDialog?.querySelectorAll('.close-dialog, .cancel-compose');
+    const confirmDialog = document.getElementById('confirm-dialog');
+    const confirmOk = document.getElementById('confirm-ok');
+    const confirmCancel = document.getElementById('confirm-cancel');
 
     if (!composeFab || !composeDialog || !composeForm) {
         console.warn('Compose elements not found in DOM');
         return;
+    }
+
+    // Track pending submission
+    let pendingSubmission = null;
+
+    /**
+     * Show custom confirmation dialog
+     */
+    function showConfirmDialog(message = 'Are you sure you want to send this email?') {
+        return new Promise((resolve) => {
+            const messageEl = document.getElementById('confirm-dialog-message');
+            if (messageEl) {
+                messageEl.textContent = message;
+            }
+
+            confirmDialog.showModal();
+
+            const handleOk = () => {
+                confirmDialog.close();
+                cleanup();
+                resolve(true);
+            };
+
+            const handleCancel = () => {
+                confirmDialog.close();
+                cleanup();
+                resolve(false);
+            };
+
+            const cleanup = () => {
+                confirmOk.removeEventListener('click', handleOk);
+                confirmCancel.removeEventListener('click', handleCancel);
+            };
+
+            confirmOk.addEventListener('click', handleOk);
+            confirmCancel.addEventListener('click', handleCancel);
+        });
     }
 
     /**
@@ -107,15 +147,15 @@
             return;
         }
 
-        // Get confirmation if needed
-        const submitButton = event.submitter;
-        const confirmMessage = submitButton?.dataset.confirm;
-        if (confirmMessage && !confirm(confirmMessage)) {
+        // Show custom confirmation dialog
+        const confirmed = await showConfirmDialog('Are you sure you want to send this email?');
+        if (!confirmed) {
             return;
         }
 
         // Prepare form data
         const formData = new FormData(composeForm);
+        const submitButton = event.submitter;
 
         try {
             // Show loading state
@@ -138,12 +178,10 @@
                 closeDialog();
                 showToast(result.message || 'Email sent successfully!', 'success');
 
-                // Redirect if specified
-                if (result.redirect) {
-                    setTimeout(() => {
-                        window.location.href = result.redirect;
-                    }, 1000);
-                }
+                // Reload the page to refresh the view
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1000);
             } else {
                 const error = await response.json();
                 showToast(error.detail || 'Failed to send email', 'error');

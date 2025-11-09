@@ -531,13 +531,33 @@
                 <button type="button" class="md3-button md3-button--text cancel-compose">
                     Cancel
                 </button>
-                <button type="submit" class="md3-button md3-button--filled md3-button--primary"
-                    data-confirm="Send this email?">
+                <button type="submit" class="md3-button md3-button--filled md3-button--primary">
                     <span class="material-icons" aria-hidden="true">send</span>
                     <span>Send</span>
                 </button>
             </footer>
         </form>
+    </dialog>
+
+    <!-- Confirmation Dialog -->
+    <dialog id="confirm-dialog" class="confirm-dialog">
+        <div class="confirm-dialog__container">
+            <header class="confirm-dialog__header">
+                <span class="material-icons confirm-dialog__icon" aria-hidden="true">help_outline</span>
+                <h3 class="confirm-dialog__title">Send Email?</h3>
+            </header>
+            <div class="confirm-dialog__content">
+                <p id="confirm-dialog-message">Are you sure you want to send this email?</p>
+            </div>
+            <footer class="confirm-dialog__actions">
+                <button type="button" class="md3-button md3-button--text" id="confirm-cancel">
+                    Cancel
+                </button>
+                <button type="button" class="md3-button md3-button--filled md3-button--primary" id="confirm-ok">
+                    Send
+                </button>
+            </footer>
+        </div>
     </dialog>
 
     <script src="{{ url_for('static', path='js/tabs.js') }}"></script>

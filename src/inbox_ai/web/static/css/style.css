@@ -2846,7 +2846,7 @@ a {
     width: 100%;
     padding: 18px 16px 14px;
     border: 1px solid var(--md3-color-outline);
-    border-radius: var(--md3-radius-small);
+    border-radius: var(--md3-radius-xs);
     background: var(--md3-color-surface);
     color: var(--md3-color-on-surface);
     font-family: inherit;
@@ -2930,6 +2930,85 @@ a {
     .compose-dialog__content {
         padding-bottom: var(--md3-spacing-16);
     }
+}
+
+/* ===================================
+   Confirmation Dialog
+   =================================== */
+
+.confirm-dialog {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+    z-index: 300;
+}
+
+.confirm-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(2px);
+}
+
+.confirm-dialog__container {
+    background: var(--md3-color-surface-container-high);
+    border-radius: var(--md3-radius-extra-large);
+    box-shadow: var(--md3-elevation-3);
+    min-width: 280px;
+    max-width: 400px;
+    overflow: hidden;
+    transform: scale(0.9);
+    opacity: 0;
+    transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1),
+                opacity 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.confirm-dialog[open] .confirm-dialog__container {
+    transform: scale(1);
+    opacity: 1;
+}
+
+.confirm-dialog__header {
+    display: flex;
+    align-items: center;
+    gap: var(--md3-spacing-16);
+    padding: var(--md3-spacing-24);
+    padding-bottom: var(--md3-spacing-16);
+}
+
+.confirm-dialog__icon {
+    font-size: 24px;
+    color: var(--md3-color-primary);
+}
+
+.confirm-dialog__title {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 500;
+    color: var(--md3-color-on-surface);
+}
+
+.confirm-dialog__content {
+    padding: 0 var(--md3-spacing-24);
+    padding-bottom: var(--md3-spacing-24);
+}
+
+.confirm-dialog__content p {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--md3-color-on-surface-variant);
+}
+
+.confirm-dialog__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--md3-spacing-8);
+    padding: var(--md3-spacing-16) var(--md3-spacing-24);
+    background: var(--md3-color-surface-container);
 }
 
 @media (prefers-reduced-motion: reduce) {
