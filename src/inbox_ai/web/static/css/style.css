@@ -2238,6 +2238,22 @@ a {
     color: var(--md3-color-primary);
 }
 
+.settings-page .settings-intro-header {
+    display: flex;
+    align-items: center;
+    gap: var(--md3-spacing-12);
+    margin-bottom: var(--md3-spacing-8);
+}
+
+.settings-page .settings-intro-header .md3-icon-button {
+    margin: 0;
+    flex-shrink: 0;
+}
+
+.settings-page .settings-intro-header h1 {
+    margin: 0;
+}
+
 .settings-page .settings-intro p {
     margin: var(--md3-spacing-8) 0 0 0;
     font-size: 14px;
@@ -2251,6 +2267,10 @@ a {
 
     .settings-page .settings-intro p {
         font-size: 13px;
+    }
+    
+    .settings-page .settings-intro-header {
+        gap: var(--md3-spacing-8);
     }
 }
 
