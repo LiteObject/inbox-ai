@@ -31,7 +31,13 @@
 
     <div class="settings-container">
         <div class="settings-intro">
-            <h1>Configuration</h1>
+            <div class="settings-intro-header">
+                <button id="back-button" class="md3-icon-button" type="button" onclick="window.location.href='/'">
+                    <span class="material-icons" aria-hidden="true">arrow_back</span>
+                    <span class="sr-only">Back to dashboard</span>
+                </button>
+                <h1>Configuration</h1>
+            </div>
             <p>Adjust IMAP, storage, and intelligence settings. Changes are written to your <code>.env</code> file
                 and applied after the server restarts.</p>
         </div>
