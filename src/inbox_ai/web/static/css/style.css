@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Rationale:wght@400;700&display=swap');
 
 :root[data-theme="default"],
 :root {
@@ -535,10 +535,11 @@ a {
 }
 
 .md3-app-bar-title {
+    font-family: 'Rationale', 'Roboto', sans-serif;
     font-size: 24px;
-    font-weight: 400;
+    font-weight: 700; /* stronger display weight for Foldit */
     line-height: 32px;
-    letter-spacing: 0;
+    letter-spacing: 0.2px;
     color: var(--theme-primary);
 }
 
