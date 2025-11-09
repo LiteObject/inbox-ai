@@ -1,12 +1,12 @@
 <header class="md3-top-app-bar" id="dashboard-app-bar">
     <div class="md3-app-bar-title-section">
         <div class="md3-app-bar-title">{{ page_title | default('Inbox AI Dashboard', true) }}</div>
-        <div class="md3-app-bar-subtitle">
+    </div>
+    <div class="md3-top-app-bar-actions">
+        <div class="md3-app-bar-username">
             <span class="material-icons" aria-hidden="true">account_circle</span>
             <span>{{ imap_username | default('No account configured', true) }}</span>
         </div>
-    </div>
-    <div class="md3-top-app-bar-actions">
         {% if show_back_button %}
         <button id="back-button" class="md3-icon-button" type="button" onclick="window.location.href='/'">
             <span class="material-icons" aria-hidden="true">arrow_back</span>

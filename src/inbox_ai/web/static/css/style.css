@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Major Mono Display:wght@400;700&display=swap');
 
 :root[data-theme="default"],
 :root {
@@ -521,6 +521,19 @@ a {
     .md3-app-bar-subtitle span:last-child {
         max-width: 150px;
     }
+    
+    .md3-app-bar-username {
+        font-size: 12px;
+        gap: 6px;
+    }
+    
+    .md3-app-bar-username .material-icons {
+        font-size: 16px;
+    }
+    
+    .md3-app-bar-username span:last-child {
+        max-width: 120px;
+    }
 }
 
 @media (min-width: 600px) and (max-width: 839px) {
@@ -532,13 +545,27 @@ a {
         font-size: 22px;
         line-height: 28px;
     }
+    
+    .md3-app-bar-username {
+        font-size: 13px;
+        gap: 7px;
+    }
+    
+    .md3-app-bar-username .material-icons {
+        font-size: 17px;
+    }
+    
+    .md3-app-bar-username span:last-child {
+        max-width: 160px;
+    }
 }
 
 .md3-app-bar-title {
+    font-family: 'Major Mono Display', 'Roboto', sans-serif;
     font-size: 24px;
-    font-weight: 400;
+    font-weight: 700; /* stronger display weight for Foldit */
     line-height: 32px;
-    letter-spacing: 0;
+    letter-spacing: 0.2px;
     color: var(--theme-primary);
 }
 
@@ -576,6 +603,30 @@ a {
     display: flex;
     align-items: center;
     gap: var(--md3-spacing-12);
+}
+
+.md3-app-bar-username {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    line-height: 20px;
+    font-weight: 500;
+    color: var(--md3-color-on-surface-variant);
+    letter-spacing: 0.25px;
+    margin-right: var(--md3-spacing-8);
+}
+
+.md3-app-bar-username .material-icons {
+    font-size: 18px;
+    color: var(--md3-color-on-surface-variant);
+}
+
+.md3-app-bar-username span:last-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 200px;
 }
 
 .md3-top-app-bar-actions form {
