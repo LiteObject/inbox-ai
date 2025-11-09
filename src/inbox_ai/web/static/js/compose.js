@@ -139,6 +139,7 @@
      */
     async function handleSubmit(event) {
         event.preventDefault();
+        event.stopImmediatePropagation(); // ensure dashboard spinner handler doesn't re-submit the form
 
         // Validate form
         const validation = validateForm();
