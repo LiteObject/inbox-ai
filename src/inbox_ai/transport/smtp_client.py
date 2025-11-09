@@ -83,31 +83,31 @@ class SmtpClient:
         if not self._settings.host:
             raise SmtpError("SMTP host not configured")
 
+        LOGGER.info(
+            "Attempting SMTP connection to %s:%d",
+            self._settings.host,
+            self._settings.port,
+        )
+
         try:
             # Create connection based on TLS/SSL preference
             if self._settings.use_tls:
-                LOGGER.debug(
-                    "Connecting to SMTP server %s:%d with STARTTLS",
-                    self._settings.host,
-                    self._settings.port,
-                )
+                LOGGER.debug("Using STARTTLS for SMTP connection")
                 self._connection = smtplib.SMTP(
                     self._settings.host,
                     self._settings.port,
                     timeout=30,
                 )
+                self._connection.set_debuglevel(1)  # Enable SMTP debug output
                 self._connection.starttls()
             else:
-                LOGGER.debug(
-                    "Connecting to SMTP server %s:%d with SSL",
-                    self._settings.host,
-                    self._settings.port,
-                )
+                LOGGER.debug("Using SSL for SMTP connection")
                 self._connection = smtplib.SMTP_SSL(
                     self._settings.host,
                     self._settings.port,
                     timeout=30,
                 )
+                self._connection.set_debuglevel(1)  # Enable SMTP debug output
 
             # Authenticate if credentials provided
             if self._settings.username and self._settings.password:
@@ -116,33 +116,31 @@ class SmtpClient:
                     self._settings.username,
                     self._settings.password,
                 )
+                LOGGER.info("SMTP authentication successful")
 
-            LOGGER.info(
-                "Successfully connected to SMTP server: %s", self._settings.host
-            )
+            LOGGER.info("Connected to SMTP server: %s", self._settings.host)
 
         except smtplib.SMTPAuthenticationError as exc:
-            msg = f"SMTP authentication failed: {exc}"
-            LOGGER.error(msg)
-            raise SmtpError(msg) from exc
+            LOGGER.error("SMTP authentication failed: %s", exc)
+            raise SmtpError(f"SMTP authentication failed: {exc}") from exc
+        except smtplib.SMTPConnectError as exc:
+            LOGGER.error("SMTP connection failed: %s", exc)
+            raise SmtpError(f"Failed to connect to SMTP server: {exc}") from exc
         except smtplib.SMTPException as exc:
-            msg = f"SMTP connection error: {exc}"
-            LOGGER.error(msg)
-            raise SmtpError(msg) from exc
+            LOGGER.error("SMTP error: %s", exc)
+            raise SmtpError(f"SMTP error: {exc}") from exc
         except OSError as exc:
-            msg = f"Network error connecting to SMTP server: {exc}"
-            LOGGER.error(msg)
-            raise SmtpError(msg) from exc
+            LOGGER.error("Network error connecting to SMTP server: %s", exc)
+            raise SmtpError(f"Network error: {exc}") from exc
 
     def disconnect(self) -> None:
         """Close SMTP connection gracefully."""
         if self._connection:
             try:
                 self._connection.quit()
-                LOGGER.debug("Disconnected from SMTP server")
-            except smtplib.SMTPException:
-                # Connection already closed or error occurred
-                pass
+                LOGGER.debug("SMTP connection closed")
+            except smtplib.SMTPException as exc:
+                LOGGER.warning("Error closing SMTP connection: %s", exc)
             finally:
                 self._connection = None
 
@@ -158,32 +156,38 @@ class SmtpClient:
         if not self._connection:
             raise SmtpError("Not connected to SMTP server")
 
+        LOGGER.info("Preparing to send email to %s: %s", message.to, message.subject)
+
         try:
             mime_message = self._build_mime_message(message)
-            self._connection.send_message(mime_message)
+
+            # Log the full message for debugging
+            LOGGER.debug("Email headers: %s", dict(mime_message.items()))
+            LOGGER.debug("Email body preview: %s", message.body[:200])
+
+            # Send the message and get the result
+            refused = self._connection.send_message(mime_message)
+
+            if refused:
+                LOGGER.warning("Some recipients were refused: %s", refused)
+                raise SmtpError(f"Some recipients were refused: {refused}")
+
             LOGGER.info(
-                "Sent email to %s: %s (reply: %s)",
-                message.to,
-                message.subject,
-                bool(message.in_reply_to),
+                "Email sent successfully to %s: %s", message.to, message.subject
             )
 
         except smtplib.SMTPRecipientsRefused as exc:
-            msg = f"Recipient rejected: {message.to}"
-            LOGGER.error(msg)
-            raise SmtpError(msg) from exc
+            LOGGER.error("All recipients refused: %s", exc)
+            raise SmtpError(f"All recipients refused: {exc}") from exc
         except smtplib.SMTPSenderRefused as exc:
-            msg = f"Sender rejected: {self._settings.username}"
-            LOGGER.error(msg)
-            raise SmtpError(msg) from exc
+            LOGGER.error("Sender refused: %s", exc)
+            raise SmtpError(f"Sender refused: {exc}") from exc
         except smtplib.SMTPDataError as exc:
-            msg = f"SMTP data error: {exc}"
-            LOGGER.error(msg)
-            raise SmtpError(msg) from exc
+            LOGGER.error("SMTP data error: %s", exc)
+            raise SmtpError(f"SMTP data error: {exc}") from exc
         except smtplib.SMTPException as exc:
-            msg = f"Failed to send email: {exc}"
-            LOGGER.error(msg)
-            raise SmtpError(msg) from exc
+            LOGGER.error("Failed to send email: %s", exc)
+            raise SmtpError(f"Failed to send email: {exc}") from exc
 
     def _build_mime_message(self, message: EmailMessage) -> MIMEMultipart:
         """Build MIME message from EmailMessage.
@@ -205,17 +209,28 @@ class SmtpClient:
         mime_msg["To"] = message.to
         mime_msg["Subject"] = message.subject
 
+        LOGGER.debug(
+            "Building MIME message: From=%s, To=%s, Subject=%s",
+            from_address,
+            message.to,
+            message.subject,
+        )
+
         # Thread headers for proper email threading
         if message.in_reply_to:
             mime_msg["In-Reply-To"] = message.in_reply_to
+            LOGGER.debug("Added In-Reply-To: %s", message.in_reply_to)
         if message.references:
             mime_msg["References"] = message.references
+            LOGGER.debug("Added References: %s", message.references)
 
         # Body content
         if message.html:
             mime_msg.attach(MIMEText(message.body, "html", "utf-8"))
+            LOGGER.debug("Added HTML body (%d chars)", len(message.body))
         else:
             mime_msg.attach(MIMEText(message.body, "plain", "utf-8"))
+            LOGGER.debug("Added plain text body (%d chars)", len(message.body))
 
         return mime_msg
 

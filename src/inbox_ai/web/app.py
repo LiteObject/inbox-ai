@@ -1107,6 +1107,71 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                 content={"detail": outcome.message},
             )
 
+    @app.post("/api/smtp/test")
+    async def test_smtp_connection() -> dict[str, Any]:
+        """Test SMTP connection and configuration.
+
+        Returns diagnostic information about SMTP setup.
+        """
+        diagnostics = {
+            "configured": False,
+            "connection": "not_attempted",
+            "authentication": "not_attempted",
+            "test_email": "not_attempted",
+            "errors": [],
+            "config": {},
+        }
+
+        # Check configuration
+        if not app_settings.smtp.host:
+            diagnostics["errors"].append("SMTP host not configured")
+            return diagnostics
+
+        diagnostics["configured"] = True
+        diagnostics["config"] = {
+            "host": app_settings.smtp.host,
+            "port": app_settings.smtp.port,
+            "username": app_settings.smtp.username,
+            "use_tls": app_settings.smtp.use_tls,
+            "from_name": app_settings.smtp.from_name or "(not set)",
+        }
+
+        # Test connection
+        try:
+            with SmtpClient(app_settings.smtp) as smtp:
+                diagnostics["connection"] = "success"
+                diagnostics["authentication"] = "success"
+
+                # Try sending a test email to the configured username
+                if not app_settings.smtp.username:
+                    diagnostics["errors"].append("SMTP username not configured")
+                    diagnostics["test_email"] = "skipped"
+                    return diagnostics
+
+                test_message = EmailMessage(
+                    to=app_settings.smtp.username,
+                    subject="Inbox AI SMTP Test",
+                    body="This is a test email from Inbox AI to verify SMTP configuration.\n\nIf you received this, your SMTP settings are working correctly!",
+                    html=False,
+                )
+
+                smtp.send(test_message)
+                diagnostics["test_email"] = "success"
+                diagnostics["message"] = (
+                    f"Test email sent successfully to {app_settings.smtp.username}"
+                )
+
+        except SmtpError as exc:
+            diagnostics["connection"] = "failed"
+            diagnostics["errors"].append(str(exc))
+            LOGGER.error("SMTP test failed: %s", exc, exc_info=True)
+        except Exception as exc:  # noqa: BLE001
+            diagnostics["connection"] = "failed"
+            diagnostics["errors"].append(f"Unexpected error: {exc}")
+            LOGGER.exception("Unexpected error during SMTP test")
+
+        return diagnostics
+
     @app.post("/follow-ups/{follow_up_id}/status")
     async def update_follow_up_status(
         request: Request,
