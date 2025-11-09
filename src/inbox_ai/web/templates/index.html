@@ -46,6 +46,8 @@
         data-categorize-message="{{ categorize_message | default('', true) | e }}"
         data-draft-status="{{ draft_status | default('', true) }}"
         data-draft-message="{{ draft_message | default('', true) | e }}"
+        data-send-status="{{ send_status | default('', true) }}"
+        data-send-message="{{ send_message | default('', true) | e }}"
         data-config-status="{{ config_status | default('', true) }}"
         data-config-message="{{ config_message | default('', true) | e }}"
         data-clear-status="{{ clear_status | default('', true) }}"
@@ -297,32 +299,95 @@
                                     </form>
                                 </header>
 
-                                <section class="md3-detail-section">
-                                    <h4>
-                                        <span class="material-icons" aria-hidden="true">summarize</span>
-                                        Summary
-                                    </h4>
-                                    <p>{{ item.summary or "No summary available for this email." }}</p>
-                                </section>
+                                <div class="md3-detail-section md3-detail-section--tabs">
+                                    <div class="md3-tabs" role="tablist">
+                                        <button class="md3-tab md3-tab--active" role="tab" aria-selected="true"
+                                            aria-controls="summary-panel-{{ item.uid }}" id="summary-tab-{{ item.uid }}"
+                                            data-tab="summary">
+                                            <span class="md3-tab__content">
+                                                <span class="material-icons" aria-hidden="true">summarize</span>
+                                                <span class="md3-tab__text-label">Summary</span>
+                                            </span>
+                                            <span class="md3-tab__indicator"></span>
+                                        </button>
 
-                                <section class="md3-detail-section">
-                                    <h4>
-                                        <span class="material-icons" aria-hidden="true">flag</span>
-                                        Key Actions
-                                    </h4>
-                                    {% if item.actionItems %}
-                                    <ul class="md3-detail-list">
-                                        {% for action in item.actionItems %}
-                                        <li>
-                                            <span class="material-icons" aria-hidden="true">task_alt</span>
-                                            <span>{{ action }}</span>
-                                        </li>
-                                        {% endfor %}
-                                    </ul>
-                                    {% else %}
-                                    <p>No recommended actions for this email.</p>
-                                    {% endif %}
-                                </section>
+                                        <button class="md3-tab" role="tab" aria-selected="false"
+                                            aria-controls="original-panel-{{ item.uid }}"
+                                            id="original-tab-{{ item.uid }}" data-tab="original" tabindex="-1">
+                                            <span class="md3-tab__content">
+                                                <span class="material-icons" aria-hidden="true">mail</span>
+                                                <span class="md3-tab__text-label">Original Email</span>
+                                            </span>
+                                            <span class="md3-tab__indicator"></span>
+                                        </button>
+                                    </div>
+
+                                    <div class="md3-tab-panels">
+                                        <!-- Summary Panel (Default Active) -->
+                                        <div class="md3-tab-panel md3-tab-panel--active" role="tabpanel"
+                                            id="summary-panel-{{ item.uid }}"
+                                            aria-labelledby="summary-tab-{{ item.uid }}">
+
+                                            <div class="md3-detail-subsection">
+                                                <h4>
+                                                    <span class="material-icons" aria-hidden="true">smart_toy</span>
+                                                    AI Summary
+                                                </h4>
+                                                <p>{{ item.summary or "No summary available for this email." }}</p>
+                                            </div>
+
+                                            {% if item.actionItems %}
+                                            <div class="md3-detail-subsection">
+                                                <h4>
+                                                    <span class="material-icons" aria-hidden="true">flag</span>
+                                                    Key Actions
+                                                </h4>
+                                                <ul class="md3-detail-list">
+                                                    {% for action in item.actionItems %}
+                                                    <li>
+                                                        <span class="material-icons" aria-hidden="true">task_alt</span>
+                                                        <span>{{ action }}</span>
+                                                    </li>
+                                                    {% endfor %}
+                                                </ul>
+                                            </div>
+                                            {% endif %}
+                                        </div>
+
+                                        <!-- Original Email Panel -->
+                                        <div class="md3-tab-panel" role="tabpanel" id="original-panel-{{ item.uid }}"
+                                            aria-labelledby="original-tab-{{ item.uid }}" hidden>
+
+                                            <div class="email-original">
+                                                <div class="email-meta">
+                                                    <dl>
+                                                        <dt>From:</dt>
+                                                        <dd>{{ item.sender or "Unknown sender" }}</dd>
+
+                                                        <dt>Subject:</dt>
+                                                        <dd>{{ item.subject or "(no subject)" }}</dd>
+
+                                                        <dt>Received:</dt>
+                                                        <dd>{{ item.receivedAtDisplay or "Not available" }}</dd>
+                                                    </dl>
+                                                </div>
+
+                                                <div class="email-body" data-uid="{{ item.uid }}">
+                                                    <div class="loading-placeholder">
+                                                        <div class="md3-circular-progress" role="status"
+                                                            aria-label="Loading email content">
+                                                            <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+                                                                <circle cx="24" cy="24" r="18" fill="none"
+                                                                    stroke-width="4"></circle>
+                                                            </svg>
+                                                        </div>
+                                                        <span class="sr-only">Loading email content...</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
 
                                 <section class="md3-detail-section">
                                     <h4>
@@ -387,6 +452,12 @@
                                                 Save Draft
                                             </button>
                                             {% if item.draft %}
+                                            <button class="md3-button md3-button--filled md3-button--primary"
+                                                type="submit" formaction="/emails/{{ item.uid }}/draft/send"
+                                                data-confirm="Send this email reply?">
+                                                <span class="material-icons" aria-hidden="true">send</span>
+                                                Send Reply
+                                            </button>
                                             <button class="md3-button md3-button--tonal" type="submit"
                                                 formaction="/emails/{{ item.uid }}/draft/regenerate">
                                                 <span class="material-icons" aria-hidden="true">auto_fix_high</span>
@@ -416,6 +487,81 @@
         </section>
     </main>
 
+    <!-- Floating Action Button for Compose -->
+    <button class="md3-fab md3-fab--primary" id="compose-fab" type="button" aria-label="Compose new email"
+        title="Compose new email">
+        <span class="material-icons" aria-hidden="true">edit</span>
+    </button>
+
+    <!-- Compose Email Modal Dialog -->
+    <dialog id="compose-dialog" class="compose-dialog">
+        <form method="post" action="/emails/send" id="compose-form" class="compose-dialog__form" data-spinner>
+            <header class="compose-dialog__header">
+                <h2 class="compose-dialog__title">New Message</h2>
+                <button type="button" class="md3-icon-button close-dialog" aria-label="Close dialog">
+                    <span class="material-icons" aria-hidden="true">close</span>
+                </button>
+            </header>
+
+            <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
+            <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
+
+            <div class="compose-dialog__content">
+                <div class="md3-text-field">
+                    <input type="email" id="compose-to" name="to" class="md3-text-field__input" required placeholder=" "
+                        autocomplete="email" />
+                    <label for="compose-to" class="md3-text-field__label">To</label>
+                </div>
+
+                <div class="md3-text-field">
+                    <input type="text" id="compose-subject" name="subject" class="md3-text-field__input" required
+                        placeholder=" " autocomplete="off" />
+                    <label for="compose-subject" class="md3-text-field__label">Subject</label>
+                </div>
+
+                <div class="md3-text-field">
+                    <textarea id="compose-body" name="body"
+                        class="md3-text-field__input md3-text-field__input--textarea" rows="8" required
+                        placeholder=" "></textarea>
+                    <label for="compose-body" class="md3-text-field__label">Message</label>
+                </div>
+            </div>
+
+            <footer class="compose-dialog__actions">
+                <button type="button" class="md3-button md3-button--text cancel-compose">
+                    Cancel
+                </button>
+                <button type="submit" class="md3-button md3-button--filled md3-button--primary">
+                    <span class="material-icons" aria-hidden="true">send</span>
+                    <span>Send</span>
+                </button>
+            </footer>
+        </form>
+    </dialog>
+
+    <!-- Confirmation Dialog -->
+    <dialog id="confirm-dialog" class="confirm-dialog">
+        <div class="confirm-dialog__container">
+            <header class="confirm-dialog__header">
+                <span class="material-icons confirm-dialog__icon" aria-hidden="true">help_outline</span>
+                <h3 class="confirm-dialog__title">Send Email?</h3>
+            </header>
+            <div class="confirm-dialog__content">
+                <p id="confirm-dialog-message">Are you sure you want to send this email?</p>
+            </div>
+            <footer class="confirm-dialog__actions">
+                <button type="button" class="md3-button md3-button--text" id="confirm-cancel">
+                    Cancel
+                </button>
+                <button type="button" class="md3-button md3-button--filled md3-button--primary" id="confirm-ok">
+                    Send
+                </button>
+            </footer>
+        </div>
+    </dialog>
+
+    <script src="{{ url_for('static', path='js/tabs.js') }}"></script>
+    <script src="{{ url_for('static', path='js/compose.js') }}"></script>
     <script type="module" src="{{ url_for('static', path='js/dashboard.js') }}"></script>
 </body>
 

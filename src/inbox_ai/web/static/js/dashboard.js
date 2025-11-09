@@ -94,6 +94,7 @@ const STATUS_PARAM_PAIRS = [
     ["delete_status", "delete_message"],
     ["categorize_status", "categorize_message"],
     ["draft_status", "draft_message"],
+    ["send_status", "send_message"],
     ["config_status", "config_message"],
     ["clear_status", "clear_message"],
 ];
@@ -470,6 +471,13 @@ document.addEventListener("DOMContentLoaded", async () => {
             templateContainer,
             onDetailChanged: () => {
                 bindInteractiveForms();
+                // Initialize tabs for the newly loaded detail view
+                if (typeof window.initializeTabs === 'function') {
+                    window.initializeTabs();
+                } else {
+                    // Dispatch custom event for tabs.js to handle
+                    window.dispatchEvent(new CustomEvent('content-loaded'));
+                }
             },
             onSelect: (uid) => {
                 // Lazy load email detail when selected

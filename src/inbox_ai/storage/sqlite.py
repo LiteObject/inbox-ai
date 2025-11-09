@@ -455,6 +455,57 @@ class SqliteEmailRepository(EmailRepository):
             )
         return cur.rowcount > 0
 
+    def fetch_draft(self, draft_id: int) -> DraftRecord | None:
+        """Fetch a specific draft by ID.
+
+        Args:
+            draft_id: The draft ID to fetch
+
+        Returns:
+            DraftRecord if found, None otherwise
+        """
+        cur = self._connection.execute(
+            """
+            SELECT id, email_uid, body, provider, generated_at, confidence, used_fallback
+            FROM drafts
+            WHERE id = ?
+            """,
+            (draft_id,),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return None
+
+        return DraftRecord(
+            id=row["id"],
+            email_uid=row["email_uid"],
+            body=row["body"],
+            provider=row["provider"],
+            generated_at=cast(
+                datetime, parse_datetime(row["generated_at"], assume_utc=True)
+            ),
+            confidence=row["confidence"],
+            used_fallback=bool(row["used_fallback"]),
+        )
+
+    def mark_draft_sent(self, draft_id: int) -> bool:
+        """Mark a draft as sent by recording the timestamp.
+
+        Args:
+            draft_id: The draft ID to mark as sent
+
+        Returns:
+            True if draft was found and updated, False otherwise
+        """
+        now = datetime.now(UTC).isoformat()
+        LOGGER.debug("Marking draft %d as sent at %s", draft_id, now)
+        with self._connection:
+            cur = self._connection.execute(
+                "UPDATE drafts SET sent_at = ? WHERE id = ?",
+                (now, draft_id),
+            )
+        return cur.rowcount > 0
+
     def list_recent_insights(
         self,
         limit: int,
