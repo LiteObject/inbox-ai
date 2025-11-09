@@ -487,7 +487,61 @@
         </section>
     </main>
 
+    <!-- Floating Action Button for Compose -->
+    <button class="md3-fab md3-fab--primary" id="compose-fab" type="button" aria-label="Compose new email"
+        title="Compose new email">
+        <span class="material-icons" aria-hidden="true">edit</span>
+    </button>
+
+    <!-- Compose Email Modal Dialog -->
+    <dialog id="compose-dialog" class="compose-dialog">
+        <form method="post" action="/emails/send" id="compose-form" class="compose-dialog__form" data-spinner>
+            <header class="compose-dialog__header">
+                <h2 class="compose-dialog__title">New Message</h2>
+                <button type="button" class="md3-icon-button close-dialog" aria-label="Close dialog">
+                    <span class="material-icons" aria-hidden="true">close</span>
+                </button>
+            </header>
+
+            <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
+            <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
+
+            <div class="compose-dialog__content">
+                <div class="md3-text-field">
+                    <input type="email" id="compose-to" name="to" class="md3-text-field__input" required placeholder=" "
+                        autocomplete="email" />
+                    <label for="compose-to" class="md3-text-field__label">To</label>
+                </div>
+
+                <div class="md3-text-field">
+                    <input type="text" id="compose-subject" name="subject" class="md3-text-field__input" required
+                        placeholder=" " autocomplete="off" />
+                    <label for="compose-subject" class="md3-text-field__label">Subject</label>
+                </div>
+
+                <div class="md3-text-field">
+                    <textarea id="compose-body" name="body"
+                        class="md3-text-field__input md3-text-field__input--textarea" rows="8" required
+                        placeholder=" "></textarea>
+                    <label for="compose-body" class="md3-text-field__label">Message</label>
+                </div>
+            </div>
+
+            <footer class="compose-dialog__actions">
+                <button type="button" class="md3-button md3-button--text cancel-compose">
+                    Cancel
+                </button>
+                <button type="submit" class="md3-button md3-button--filled md3-button--primary"
+                    data-confirm="Send this email?">
+                    <span class="material-icons" aria-hidden="true">send</span>
+                    <span>Send</span>
+                </button>
+            </footer>
+        </form>
+    </dialog>
+
     <script src="{{ url_for('static', path='js/tabs.js') }}"></script>
+    <script src="{{ url_for('static', path='js/compose.js') }}"></script>
     <script type="module" src="{{ url_for('static', path='js/dashboard.js') }}"></script>
 </body>
 

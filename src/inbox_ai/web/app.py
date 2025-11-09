@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import time
 from collections import deque
 from collections.abc import Iterable, Iterator, Mapping, Sequence
@@ -18,7 +19,12 @@ from datetime import UTC, datetime
 
 from fastapi import Depends, FastAPI, Form, Request, status as http_status
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import (
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+    StreamingResponse,
+)
 from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
 from dotenv import dotenv_values
@@ -1054,6 +1060,53 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         target = _append_query_param(target, "send_message", outcome.message)
         return RedirectResponse(url=target, status_code=http_status.HTTP_303_SEE_OTHER)
 
+    @app.post("/emails/send", response_model=None)
+    async def send_email(
+        request: Request,
+    ) -> JSONResponse | dict[str, Any]:
+        """Send a new email (not a reply)."""
+        form = await request.form()
+        raw_token = form.get(csrf.field_name)
+        token = raw_token if isinstance(raw_token, str) else None
+        csrf.validate(request, token)
+
+        # Extract form data
+        to = _coerce_form_value(form.get("to", "")).strip()
+        subject = _coerce_form_value(form.get("subject", "")).strip()
+        body = _coerce_form_value(form.get("body", "")).strip()
+
+        # Validate required fields
+        if not to or not subject or not body:
+            return JSONResponse(
+                status_code=http_status.HTTP_400_BAD_REQUEST,
+                content={"detail": "All fields (to, subject, body) are required."},
+            )
+
+        # Validate email format
+        email_regex = r"^[^\s@]+@[^\s@]+\.[^\s@]+$"
+        if not re.match(email_regex, to):
+            return JSONResponse(
+                status_code=http_status.HTTP_400_BAD_REQUEST,
+                content={"detail": "Invalid recipient email address."},
+            )
+
+        # Send the email
+        outcome = await asyncio.to_thread(
+            _send_new_email,
+            app_settings,
+            to,
+            subject,
+            body,
+        )
+
+        if outcome.success:
+            return {"message": outcome.message, "redirect": "/"}
+        else:
+            return JSONResponse(
+                status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+                content={"detail": outcome.message},
+            )
+
     @app.post("/follow-ups/{follow_up_id}/status")
     async def update_follow_up_status(
         request: Request,
@@ -1577,6 +1630,65 @@ def _send_draft_email(
         )
     except Exception as exc:  # noqa: BLE001
         LOGGER.exception("Unexpected error sending draft %d: %s", draft_id, exc)
+        return SendDraftOutcome(
+            success=False,
+            message="Failed to send email. Check server logs for details.",
+        )
+
+
+def _send_new_email(
+    settings: AppSettings,
+    to: str,
+    subject: str,
+    body: str,
+) -> SendDraftOutcome:
+    """Send a new email (not a reply).
+
+    Args:
+        settings: Application settings with SMTP configuration
+        to: Recipient email address
+        subject: Email subject
+        body: Email body
+
+    Returns:
+        SendDraftOutcome with success status and message
+    """
+    # Validate SMTP configuration
+    if not settings.smtp.is_configured():
+        return SendDraftOutcome(
+            success=False,
+            message="SMTP not configured. Update settings to enable email sending.",
+        )
+
+    try:
+        # Build message
+        message = EmailMessage(
+            to=to,
+            subject=subject,
+            body=body,
+            in_reply_to=None,  # Not a reply
+            references=None,  # Not a reply
+            html=False,
+        )
+
+        # Send via SMTP
+        with SmtpClient(settings.smtp) as smtp:
+            smtp.send(message)
+
+        LOGGER.info("Sent new email to %s with subject '%s'", to, subject)
+        return SendDraftOutcome(
+            success=True,
+            message="Email sent successfully.",
+        )
+
+    except SmtpError as exc:
+        LOGGER.warning("Failed to send email to %s: %s", to, exc)
+        return SendDraftOutcome(
+            success=False,
+            message=f"Failed to send email: {exc}",
+        )
+    except Exception as exc:  # noqa: BLE001
+        LOGGER.exception("Unexpected error sending email to %s: %s", to, exc)
         return SendDraftOutcome(
             success=False,
             message="Failed to send email. Check server logs for details.",

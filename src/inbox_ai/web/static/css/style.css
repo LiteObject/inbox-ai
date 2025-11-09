@@ -2698,6 +2698,240 @@ a {
     }
 }
 
+/* ===================================
+   FAB (Floating Action Button)
+   =================================== */
+
+.md3-fab {
+    position: fixed;
+    bottom: var(--md3-spacing-24);
+    right: var(--md3-spacing-24);
+    width: 56px;
+    height: 56px;
+    border-radius: 16px;
+    border: none;
+    background: var(--md3-color-primary-container);
+    color: var(--md3-color-on-primary-container);
+    box-shadow: var(--md3-elevation-3);
+    cursor: pointer;
+    transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.md3-fab:hover {
+    box-shadow: var(--md3-elevation-4);
+    background: color-mix(in srgb, var(--md3-color-primary-container) 92%, black);
+}
+
+.md3-fab:active {
+    box-shadow: var(--md3-elevation-2);
+}
+
+.md3-fab--primary {
+    background: var(--md3-color-primary);
+    color: var(--md3-color-on-primary);
+}
+
+.md3-fab--primary:hover {
+    background: color-mix(in srgb, var(--md3-color-primary) 92%, black);
+}
+
+.md3-fab .material-icons {
+    font-size: 24px;
+}
+
+/* ===================================
+   Dialog / Modal
+   =================================== */
+
+.compose-dialog {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+    z-index: 200;
+}
+
+.compose-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+}
+
+.compose-dialog__form {
+    display: flex;
+    flex-direction: column;
+    width: min(600px, 92vw);
+    max-height: 80vh;
+    background: var(--md3-color-surface-container-high);
+    border-radius: var(--md3-radius-extra-large);
+    box-shadow: var(--md3-elevation-4);
+    overflow: hidden;
+    transform: scale(0.96);
+    transition: transform 180ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.compose-dialog[open] .compose-dialog__form {
+    transform: scale(1);
+}
+
+.compose-dialog__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--md3-spacing-24);
+    padding-bottom: var(--md3-spacing-16);
+    background: var(--md3-color-surface-container-highest);
+    border-bottom: 1px solid var(--md3-color-outline-variant);
+}
+
+.compose-dialog__title {
+    margin: 0;
+    font-size: 24px;
+    font-weight: 500;
+    color: var(--md3-color-on-surface);
+}
+
+.compose-dialog__content {
+    flex: 1 1 auto;
+    padding: 0 var(--md3-spacing-24) var(--md3-spacing-24);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--md3-spacing-20);
+}
+
+.compose-dialog__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--md3-spacing-12);
+    padding: var(--md3-spacing-16) var(--md3-spacing-24);
+    background: var(--md3-color-surface-container);
+    border-top: 1px solid var(--md3-color-outline-variant);
+}
+
+.md3-icon-button.close-dialog {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+    color: var(--md3-color-on-surface-variant);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 160ms ease;
+}
+
+.md3-icon-button.close-dialog:hover {
+    background: var(--md3-color-surface-container-high);
+}
+
+/* ===================================
+   MD3 Text Fields
+   =================================== */
+
+.md3-text-field {
+    position: relative;
+}
+
+.md3-text-field__input {
+    width: 100%;
+    padding: 18px 16px 14px;
+    border: 1px solid var(--md3-color-outline);
+    border-radius: var(--md3-radius-small);
+    background: var(--md3-color-surface);
+    color: var(--md3-color-on-surface);
+    font-family: inherit;
+    font-size: 16px;
+    line-height: 1.5;
+    outline: none;
+    transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.md3-text-field__input:hover {
+    border-color: var(--md3-color-on-surface-variant);
+}
+
+.md3-text-field__input:focus {
+    border-color: var(--md3-color-primary);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--md3-color-primary) 80%, transparent);
+}
+
+.md3-text-field__label {
+    position: absolute;
+    top: 18px;
+    left: 16px;
+    padding: 0 6px;
+    background: var(--md3-color-surface-container-high);
+    color: var(--md3-color-on-surface-variant);
+    font-size: 14px;
+    pointer-events: none;
+    transform-origin: left center;
+    transition: color 160ms ease, transform 160ms ease, top 160ms ease;
+}
+
+.md3-text-field__input:focus + .md3-text-field__label,
+.md3-text-field__input:not(:placeholder-shown) + .md3-text-field__label {
+    top: -8px;
+    transform: scale(0.85);
+    color: var(--md3-color-primary);
+}
+
+.md3-text-field__input:not(:focus):not(:placeholder-shown) + .md3-text-field__label {
+    color: var(--md3-color-on-surface-variant);
+}
+
+.md3-text-field__input--textarea {
+    min-height: 160px;
+    max-height: 320px;
+    resize: vertical;
+}
+
+.md3-button--text {
+    border: none;
+    background: transparent;
+    color: var(--md3-color-primary);
+    padding: var(--md3-spacing-8) var(--md3-spacing-16);
+    height: 40px;
+    border-radius: var(--md3-radius-pill);
+}
+
+.md3-button--text:hover {
+    background: color-mix(in srgb, var(--md3-color-primary) 10%, transparent);
+}
+
+@media (max-width: 640px) {
+    .md3-fab {
+        bottom: var(--md3-spacing-16);
+        right: var(--md3-spacing-16);
+    }
+
+    .compose-dialog__form {
+        width: min(480px, 94vw);
+        max-height: 90vh;
+        border-radius: var(--md3-radius-large);
+    }
+
+    .compose-dialog__header,
+    .compose-dialog__content,
+    .compose-dialog__actions {
+        padding-left: var(--md3-spacing-16);
+        padding-right: var(--md3-spacing-16);
+    }
+
+    .compose-dialog__content {
+        padding-bottom: var(--md3-spacing-16);
+    }
+}
+
 @media (prefers-reduced-motion: reduce) {
     .settings-page .settings-header a,
     .settings-page .md3-button {
