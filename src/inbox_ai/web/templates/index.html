@@ -261,6 +261,10 @@
                                         <h3>{{ item.subject or "(no subject)" }}</h3>
                                         <div class="md3-detail-meta-extended">
                                             <div class="meta-row">
+                                                <span class="material-icons" aria-hidden="true">tag</span>
+                                                <span>UID: {{ item.uid }}</span>
+                                            </div>
+                                            <div class="meta-row">
                                                 <span class="material-icons" aria-hidden="true">person</span>
                                                 <span>{{ item.sender or "Unknown sender" }}</span>
                                             </div>
