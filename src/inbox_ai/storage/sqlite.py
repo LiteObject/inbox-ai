@@ -1021,6 +1021,56 @@ class SqliteEmailRepository(EmailRepository):
             LOGGER.debug("Deleted user preference: %s", key)
         return deleted
 
+    def fetch_contact_suggestions(self, limit: int = 50) -> list[dict[str, str]]:
+        """Fetch frequently used email addresses for autocomplete.
+
+        Extracts unique sender addresses from the emails table,
+        sorted by communication frequency and recency.
+
+        Args:
+            limit: Maximum number of contacts to return
+
+        Returns:
+            List of contact dictionaries with email, name, and frequency
+        """
+        query = """
+        SELECT 
+            sender AS email,
+            sender AS name,
+            COUNT(*) as frequency,
+            MAX(received_at) as last_contact
+        FROM emails
+        WHERE sender IS NOT NULL 
+            AND sender != ''
+            AND sender LIKE '%@%'
+        GROUP BY sender
+        ORDER BY frequency DESC, last_contact DESC
+        LIMIT ?
+        """
+
+        cursor = self._connection.execute(query, (limit,))
+        rows = cursor.fetchall()
+
+        contacts = []
+        for row in rows:
+            email = row["email"]
+            # Extract name from "Name <email>" format if present
+            name = email
+            if "<" in email and ">" in email:
+                parts = email.split("<")
+                name = parts[0].strip().strip('"')
+                email = parts[1].strip(">").strip()
+
+            contacts.append(
+                {
+                    "email": email,
+                    "name": name if name else email,
+                    "frequency": row["frequency"],
+                }
+            )
+
+        return contacts
+
     def close(self) -> None:
         """Close the underlying SQLite connection."""
         self._connection.close()

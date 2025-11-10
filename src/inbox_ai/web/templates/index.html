@@ -507,10 +507,14 @@
             <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
 
             <div class="compose-dialog__content">
-                <div class="md3-text-field">
+                <div class="md3-text-field md3-text-field--with-autocomplete">
                     <input type="email" id="compose-to" name="to" class="md3-text-field__input" required placeholder=" "
-                        autocomplete="email" />
+                        autocomplete="off" aria-autocomplete="list" aria-controls="to-autocomplete-list"
+                        aria-expanded="false" />
                     <label for="compose-to" class="md3-text-field__label">To</label>
+
+                    <!-- Autocomplete dropdown -->
+                    <ul id="to-autocomplete-list" class="md3-autocomplete-list" role="listbox" hidden></ul>
                 </div>
 
                 <div class="md3-text-field">

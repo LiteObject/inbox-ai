@@ -1172,6 +1172,39 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
 
         return diagnostics
 
+    @app.get("/api/contacts/suggestions")
+    async def get_contact_suggestions(
+        query: str = "",
+        limit: int = 10,
+        repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
+    ) -> list[dict[str, Any]]:
+        """Get contact suggestions for autocomplete.
+
+        Args:
+            query: Optional search query to filter contacts
+            limit: Maximum number of suggestions to return
+
+        Returns:
+            List of contact dictionaries with email, name, and frequency
+        """
+        # Fetch more contacts from database, we'll filter in Python
+        contacts = await asyncio.to_thread(
+            repository.fetch_contact_suggestions,
+            50,  # Fetch 50, we'll filter and limit in Python
+        )
+
+        # Filter by query if provided
+        if query:
+            query_lower = query.lower()
+            contacts = [
+                c
+                for c in contacts
+                if query_lower in c["email"].lower() or query_lower in c["name"].lower()
+            ]
+
+        # Return only the requested limit
+        return contacts[:limit]
+
     @app.post("/follow-ups/{follow_up_id}/status")
     async def update_follow_up_status(
         request: Request,
