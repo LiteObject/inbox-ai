@@ -394,6 +394,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             filters.priority_filter,
             filters.category_key,
             filters.follow_only,
+            filters.follow_status_filter,
             request.query_params.get("config_status"),
             request.query_params.get("sync_status"),
             request.query_params.get("delete_status"),
@@ -439,6 +440,20 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         draft_lookup = repository.fetch_latest_drafts(insight_uids)
         category_lookup = repository.get_categories_for_uids(insight_uids)
         follow_up_lookup = repository.fetch_follow_ups_for_uids(insight_uids)
+
+        # Filter insights by follow-up status if specified
+        if filters.follow_status_filter is not None:
+            filtered_insights = []
+            for email, insight in insights:
+                follow_ups = follow_up_lookup.get(email.uid, ())
+                # Check if any follow-up matches the selected status
+                has_matching_status = any(
+                    task.status == filters.follow_status_filter for task in follow_ups
+                )
+                if has_matching_status:
+                    filtered_insights.append((email, insight))
+            insights = filtered_insights
+
         category_options = repository.list_categories()
         total_email_count = repository.count_emails()
         csrf_token = csrf.generate_token()
