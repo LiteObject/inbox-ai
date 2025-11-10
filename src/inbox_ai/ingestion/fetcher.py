@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Callable, Protocol
 
+from ..core.config import FollowUpSettings
 from ..core.interfaces import (
     CategoryService,
     DraftingService,
@@ -44,6 +45,7 @@ class MailFetcher:
         drafting_service: DraftingService | None = None,
         follow_up_planner: FollowUpPlanner | None = None,
         category_service: CategoryService | None = None,
+        follow_up_settings: FollowUpSettings | None = None,
         progress_callback: Callable[[str], None] | None = None,
         user_email: str | None = None,
     ) -> None:
@@ -60,6 +62,7 @@ class MailFetcher:
         self._drafting_service = drafting_service
         self._follow_up_planner = follow_up_planner
         self._category_service = category_service
+        self._follow_up_settings = follow_up_settings or FollowUpSettings()
         self._progress_callback = progress_callback
         self._user_email = user_email
 
@@ -144,6 +147,12 @@ class MailFetcher:
                         self._category_service.categorize(envelope, insight)
                     )
                     self._repository.replace_categories(envelope.uid, categories)
+                    category_info = [f"{cat.key} ({cat.label})" for cat in categories]
+                    LOGGER.debug(
+                        "Assigned categories to UID %s: %s",
+                        envelope.uid,
+                        category_info,
+                    )
                 except Exception as exc:  # pylint: disable=broad-except
                     LOGGER.warning(
                         "Failed to assign categories for UID %s: %s",
@@ -180,7 +189,8 @@ class MailFetcher:
                     )
 
             # Check if draft should be skipped
-            excluded_categories = {"marketing", "notification", "spam"}
+            # Use the configured exclude categories from .env (same as follow-ups)
+            excluded_categories = set(self._follow_up_settings.exclude_categories)
             is_personal = False
             if self._user_email:
                 is_personal = (
@@ -215,10 +225,20 @@ class MailFetcher:
                     )
 
             if self._follow_up_planner is not None and insight is not None:
-                # Skip follow-ups for spam emails
-                excluded_categories = {"marketing", "notification", "spam"}
+                # Skip follow-ups for configured excluded categories
+                excluded_categories = set(self._follow_up_settings.exclude_categories)
+                email_category_info = [f"{cat.key} ({cat.label})" for cat in categories]
                 skip_follow_ups = any(
                     cat.key in excluded_categories for cat in categories
+                )
+
+                # Log categorization and exclusion checks with both key and label
+                LOGGER.debug(
+                    "Follow-up check for UID %s: categories=%s, excluded_keys=%s, skip=%s",
+                    envelope.uid,
+                    email_category_info,
+                    list(excluded_categories),
+                    skip_follow_ups,
                 )
 
                 if not skip_follow_ups:
@@ -226,11 +246,26 @@ class MailFetcher:
                         tasks = self._follow_up_planner.plan_follow_ups(
                             envelope, insight
                         )
-                        if tasks is not None:
+                        task_count = len(tasks) if tasks else 0
+                        action_items = [item.strip() for item in insight.action_items]
+
+                        LOGGER.debug(
+                            "Generated follow-ups for UID %s: task_count=%s, action_items=%s",
+                            envelope.uid,
+                            task_count,
+                            action_items,
+                        )
+
+                        if tasks:
                             self._repository.replace_follow_ups(envelope.uid, tasks)
+                            LOGGER.info(
+                                "Stored %s follow-up task(s) for UID %s",
+                                task_count,
+                                envelope.uid,
+                            )
                         else:
-                            LOGGER.warning(
-                                "Follow-up planning returned None for UID %s",
+                            LOGGER.debug(
+                                "No follow-up tasks generated for UID %s (empty action items)",
                                 envelope.uid,
                             )
                     except Exception as exc:  # pylint: disable=broad-except
@@ -240,6 +275,12 @@ class MailFetcher:
                             exc,
                             exc_info=True,
                         )
+                else:
+                    LOGGER.debug(
+                        "Skipped follow-ups for UID %s due to excluded categories: %s",
+                        envelope.uid,
+                        email_category_info,
+                    )
 
             new_last_uid = chunk.uid
             self._repository.upsert_checkpoint(

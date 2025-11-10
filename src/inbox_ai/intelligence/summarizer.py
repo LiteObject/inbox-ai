@@ -29,11 +29,13 @@ class SummarizationService(InsightService):
         priority_fn: Callable[
             [EmailEnvelope, str, Sequence[str]], int
         ] = score_priority,
+        exclude_categories: Sequence[str] | None = None,
     ) -> None:
         """Prepare the insight generator with optional LLM and heuristics."""
         self._llm_client = llm_client
         self._fallback_enabled = fallback_enabled
         self._priority_fn = priority_fn
+        self._exclude_categories = set(exclude_categories or [])
 
     def generate_insight(
         self, email: EmailEnvelope, categories: Sequence[EmailCategory] | None = None
@@ -46,11 +48,12 @@ class SummarizationService(InsightService):
             provider = "none"
             used_fallback = False
 
-            # Check if email should be treated as spam (skip actions)
-            is_spam = False
-            if categories is not None:
-                excluded_categories = {"marketing", "notification", "spam"}
-                is_spam = any(cat.key in excluded_categories for cat in categories)
+            # Check if email should be excluded based on category
+            is_excluded = False
+            if categories is not None and self._exclude_categories:
+                is_excluded = any(
+                    cat.key in self._exclude_categories for cat in categories
+                )
 
             if self._llm_client is not None:
                 prompt = build_insight_prompt(email, body_text=body_text)
@@ -75,13 +78,28 @@ class SummarizationService(InsightService):
             if summary is None or not summary:
                 summary = "No summary available."
 
-            # Filter out actions for spam emails
-            if is_spam:
+            # Filter out actions for excluded categories ONLY
+            if is_excluded:
+                LOGGER.debug(
+                    "Filtered out %d action items for excluded category email UID %s",
+                    len(action_items),
+                    email.uid,
+                )
                 action_items = []
 
             cleaned_actions = [item.strip() for item in action_items if item.strip()]
             priority = self._priority_fn(email, summary, cleaned_actions)
             generated_at = datetime.now(tz=UTC)
+
+            LOGGER.debug(
+                "Generated insight for UID %s: summary_len=%s, action_items=%d, priority=%s, provider=%s, used_fallback=%s",
+                email.uid,
+                len(summary) if summary else 0,
+                len(cleaned_actions),
+                priority,
+                provider,
+                used_fallback,
+            )
 
             return EmailInsight(
                 email_uid=email.uid,

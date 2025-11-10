@@ -51,7 +51,9 @@
         data-config-status="{{ config_status | default('', true) }}"
         data-config-message="{{ config_message | default('', true) | e }}"
         data-clear-status="{{ clear_status | default('', true) }}"
-        data-clear-message="{{ clear_message | default('', true) | e }}">
+        data-clear-message="{{ clear_message | default('', true) | e }}"
+        data-followup-status="{{ followup_status | default('', true) }}"
+        data-followup-message="{{ followup_message | default('', true) | e }}">
     </div>
 
     <div id="toast-container" class="toast-container" aria-live="assertive" aria-atomic="true"></div>
@@ -394,6 +396,15 @@
                                         <span class="material-icons" aria-hidden="true">assignment_turned_in</span>
                                         Follow-up Tasks
                                     </h4>
+                                    <form method="post" action="/emails/{{ item.uid }}/follow-ups/generate"
+                                        data-scroll-restore data-spinner class="generate-followups-form">
+                                        <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
+                                        <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
+                                        <button class="md3-button md3-button--tonal" type="submit">
+                                            <span class="material-icons" aria-hidden="true">playlist_add</span>
+                                            Generate Follow-ups
+                                        </button>
+                                    </form>
                                     {% if item.followUps %}
                                     <ul class="md3-detail-list">
                                         {% for task in item.followUps %}
