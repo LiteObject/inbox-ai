@@ -1468,7 +1468,7 @@ a {
     display: flex;
     align-items: flex-start;
     gap: var(--md3-spacing-12);
-    padding: var(--md3-spacing-16);
+    padding: var(--md3-spacing-2);
     background-color: var(--md3-color-surface-container-low);
     border-radius: var(--md3-radius-md);
 }
