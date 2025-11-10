@@ -392,19 +392,22 @@
                                 </div>
 
                                 <section class="md3-detail-section">
-                                    <h4>
-                                        <span class="material-icons" aria-hidden="true">assignment_turned_in</span>
-                                        Follow-up Tasks
-                                    </h4>
-                                    <form method="post" action="/emails/{{ item.uid }}/follow-ups/generate"
-                                        data-scroll-restore data-spinner class="generate-followups-form">
-                                        <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
-                                        <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-                                        <button class="md3-button md3-button--tonal" type="submit">
-                                            <span class="material-icons" aria-hidden="true">playlist_add</span>
-                                            Generate Follow-ups
-                                        </button>
-                                    </form>
+                                    <div class="section-header-with-action">
+                                        <h4>
+                                            <span class="material-icons" aria-hidden="true">assignment_turned_in</span>
+                                            Follow-up Tasks
+                                        </h4>
+                                        <form method="post" action="/emails/{{ item.uid }}/follow-ups/generate"
+                                            data-scroll-restore data-spinner class="generate-followups-form">
+                                            <input type="hidden" name="{{ csrf_field_name }}"
+                                                value="{{ csrf_token }}" />
+                                            <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
+                                            <button class="md3-button md3-button--tonal" type="submit">
+                                                <span class="material-icons" aria-hidden="true">playlist_add</span>
+                                                Generate Follow-ups
+                                            </button>
+                                        </form>
+                                    </div>
                                     {% if item.followUps %}
                                     <ul class="md3-detail-list">
                                         {% for task in item.followUps %}

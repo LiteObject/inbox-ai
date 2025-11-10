@@ -1407,6 +1407,28 @@ a {
     background: var(--md3-color-surface-container);
 }
 
+.section-header-with-action {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--md3-spacing-12);
+}
+
+.section-header-with-action h4 {
+    display: flex;
+    align-items: center;
+    gap: var(--md3-spacing-8);
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0;
+    flex: 1;
+}
+
+.section-header-with-action .generate-followups-form {
+    margin: 0;
+    flex-shrink: 0;
+}
+
 .md3-detail-section h4 {
     display: flex;
     align-items: center;
@@ -1414,6 +1436,10 @@ a {
     font-size: 16px;
     font-weight: 600;
     margin: 0;
+}
+
+.md3-detail-section h4 .material-icons {
+    color: var(--md3-color-primary);
 }
 
 .md3-metadata-list {
@@ -1442,6 +1468,9 @@ a {
     display: flex;
     align-items: flex-start;
     gap: var(--md3-spacing-12);
+    padding: var(--md3-spacing-16);
+    background-color: var(--md3-color-surface-container-low);
+    border-radius: var(--md3-radius-md);
 }
 
 .md3-detail-list .material-icons {
