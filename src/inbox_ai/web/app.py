@@ -1312,6 +1312,7 @@ def _serialize_follow_up(task: FollowUpTask) -> dict[str, Any]:
         "emailUid": task.email_uid,
         "action": task.action,
         "dueAt": serialize_datetime(task.due_at),
+        "dueAtDisplay": display_datetime(task.due_at),
         "status": task.status,
         "createdAt": serialize_datetime(task.created_at),
         "completedAt": serialize_datetime(task.completed_at),

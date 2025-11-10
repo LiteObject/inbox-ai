@@ -148,10 +148,6 @@
                         data-spinner-label="Rebuilding categories...">
                         <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
                         <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-                        <button class="md3-button md3-button--tonal" type="submit">
-                            <span class="material-icons" aria-hidden="true">category</span>
-                            Rebuild Categories
-                        </button>
                     </form>
                     <form method="post" action="/sync" data-spinner data-scroll-restore
                         data-spinner-label="Sync in progress...">
@@ -416,7 +412,8 @@
                                             <span class="material-icons" aria-hidden="true">schedule</span>
                                             <span class="item-content">
                                                 <span class="item-headline">{{ task.action }}</span>
-                                                <span class="item-supporting">{% if task.dueAt %}Due {{ task.dueAt }}{%
+                                                <span class="item-supporting">{% if task.dueAtDisplay %}Due {{
+                                                    task.dueAtDisplay }}{%
                                                     else %}No due date{% endif %}</span>
                                             </span>
                                             <form method="post" action="/follow-ups/{{ task.id }}/status"
