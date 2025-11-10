@@ -26,12 +26,23 @@ class FollowUpPlannerService(FollowUpPlannerProtocol):
         now = datetime.now(tz=UTC)
         tasks: list[FollowUpTask] = []
         seen: set[str] = set()
+
+        LOGGER.debug(
+            "Planning follow-ups for UID %s with %d action items (priority=%s)",
+            email.uid,
+            len(insight.action_items),
+            insight.priority,
+        )
+
         for raw_item in insight.action_items:
             action = raw_item.strip()
             if not action:
                 continue
             lowered = action.lower()
             if lowered in seen:
+                LOGGER.debug(
+                    "Skipped duplicate action for UID %s: %s", email.uid, action
+                )
                 continue
             seen.add(lowered)
             due_at = _estimate_due_at(
@@ -51,8 +62,17 @@ class FollowUpPlannerService(FollowUpPlannerProtocol):
                     completed_at=None,
                 )
             )
+
         if not tasks:
-            LOGGER.debug("No follow-up tasks derived for UID %s", email.uid)
+            LOGGER.debug(
+                "No follow-up tasks derived for UID %s (no non-empty action items)",
+                email.uid,
+            )
+        else:
+            LOGGER.debug(
+                "Created %d follow-up task(s) for UID %s", len(tasks), email.uid
+            )
+
         return tuple(tasks)
 
 

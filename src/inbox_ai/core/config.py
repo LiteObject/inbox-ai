@@ -126,6 +126,17 @@ class FollowUpSettings(BaseModel):
         le=10,
         description="Insight priority triggering the accelerated due date",
     )
+    exclude_categories: list[str] = Field(
+        default=["marketing", "spam"],
+        description="Email categories for which follow-ups should not be generated",
+    )
+
+    @field_validator("exclude_categories", mode="before")
+    @classmethod
+    def parse_exclude_categories(cls, v: Any) -> list[str]:
+        if isinstance(v, str):
+            return [cat.strip().lower() for cat in v.split(",") if cat.strip()]
+        return v
 
 
 class UserSettings(BaseModel):

@@ -111,6 +111,7 @@ def _run_sync(settings: AppSettings) -> None:
     insight_service = SummarizationService(
         llm_client,
         fallback_enabled=settings.llm.fallback_enabled,
+        exclude_categories=settings.follow_up.exclude_categories,
     )
     category_service = KeywordCategoryService()
     try:

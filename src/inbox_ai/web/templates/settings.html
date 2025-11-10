@@ -117,6 +117,10 @@
             <h2>Maintenance</h2>
             <p>Run occasional clean-up tasks from here. These actions affect stored data immediately.</p>
             <div class="maintenance-actions">
+                <button type="button" id="test-smtp-btn" class="md3-button md3-button--tonal">
+                    <span class="material-icons" aria-hidden="true">send</span>
+                    Test SMTP Connection
+                </button>
                 <form method="post" action="/categories/regenerate">
                     <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
                     <input type="hidden" name="redirect_to" value="{{ redirect_to }}#maintenance" />
@@ -136,10 +140,73 @@
                     </button>
                 </form>
             </div>
+
+            <!-- SMTP Test Results -->
+            <div id="smtp-test-results" style="display: none; margin-top: 16px;"></div>
         </div>
     </div>
 
     <script>
+        // SMTP Test Handler
+        document.getElementById('test-smtp-btn')?.addEventListener('click', async () => {
+            const button = document.getElementById('test-smtp-btn');
+            const resultsDiv = document.getElementById('smtp-test-results');
+
+            button.disabled = true;
+            button.innerHTML = '<span class="material-icons" aria-hidden="true">hourglass_empty</span> Testing...';
+
+            try {
+                const response = await fetch('/api/smtp/test', { method: 'POST' });
+                const data = await response.json();
+
+                resultsDiv.style.display = 'block';
+
+                if (data.test_email === 'success') {
+                    resultsDiv.innerHTML = `
+                        <div class="md3-snackbar success">
+                            <span class="material-icons">check_circle</span>
+                            <div>
+                                <strong>SMTP Test Successful!</strong>
+                                <p>${data.message}</p>
+                                <p>Check your inbox (${data.config.username}) for the test email.</p>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    resultsDiv.innerHTML = `
+                        <div class="md3-snackbar error">
+                            <span class="material-icons">error</span>
+                            <div>
+                                <strong>SMTP Test Failed</strong>
+                                <p><strong>Configuration:</strong></p>
+                                <ul style="margin: 8px 0; padding-left: 20px;">
+                                    <li>Host: ${data.config.host || 'Not configured'}</li>
+                                    <li>Port: ${data.config.port || 'Not configured'}</li>
+                                    <li>Username: ${data.config.username || 'Not configured'}</li>
+                                    <li>TLS: ${data.config.use_tls ? 'Enabled' : 'Disabled'}</li>
+                                </ul>
+                                <p><strong>Errors:</strong></p>
+                                <ul style="margin: 8px 0; padding-left: 20px;">
+                                    ${data.errors.map(err => `<li>${err}</li>`).join('')}
+                                </ul>
+                            </div>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                resultsDiv.style.display = 'block';
+                resultsDiv.innerHTML = `
+                    <div class="md3-snackbar error">
+                        <span class="material-icons">error</span>
+                        Failed to test SMTP: ${error.message}
+                    </div>
+                `;
+            } finally {
+                button.disabled = false;
+                button.innerHTML = '<span class="material-icons" aria-hidden="true">send</span> Test SMTP Connection';
+            }
+        });
+
         // Theme management for settings page
         const THEME_STORAGE_KEY = "dashboard.theme";
         let AVAILABLE_THEMES = ["default", "plant", "dark", "high-contrast", "vibrant", "teal"];

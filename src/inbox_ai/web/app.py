@@ -318,6 +318,12 @@ CONFIG_SECTIONS: tuple[ConfigSection, ...] = (
                 "Priority Threshold",
                 input_type="number",
             ),
+            ConfigField(
+                "INBOX_AI_FOLLOW_UP__EXCLUDE_CATEGORIES",
+                "Skip Follow-ups for Categories",
+                input_type="text",
+                description="Comma-separated list of email categories where follow-ups should not be generated (e.g., marketing, notification, spam)",
+            ),
         ),
     ),
     ConfigSection(
@@ -388,6 +394,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             filters.priority_filter,
             filters.category_key,
             filters.follow_only,
+            filters.follow_status_filter,
             request.query_params.get("config_status"),
             request.query_params.get("sync_status"),
             request.query_params.get("delete_status"),
@@ -433,6 +440,20 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         draft_lookup = repository.fetch_latest_drafts(insight_uids)
         category_lookup = repository.get_categories_for_uids(insight_uids)
         follow_up_lookup = repository.fetch_follow_ups_for_uids(insight_uids)
+
+        # Filter insights by follow-up status if specified
+        if filters.follow_status_filter is not None:
+            filtered_insights = []
+            for email, insight in insights:
+                follow_ups = follow_up_lookup.get(email.uid, ())
+                # Check if any follow-up matches the selected status
+                has_matching_status = any(
+                    task.status == filters.follow_status_filter for task in follow_ups
+                )
+                if has_matching_status:
+                    filtered_insights.append((email, insight))
+            insights = filtered_insights
+
         category_options = repository.list_categories()
         total_email_count = repository.count_emails()
         csrf_token = csrf.generate_token()
@@ -1107,6 +1128,104 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                 content={"detail": outcome.message},
             )
 
+    @app.post("/api/smtp/test")
+    async def test_smtp_connection() -> dict[str, Any]:
+        """Test SMTP connection and configuration.
+
+        Returns diagnostic information about SMTP setup.
+        """
+        diagnostics = {
+            "configured": False,
+            "connection": "not_attempted",
+            "authentication": "not_attempted",
+            "test_email": "not_attempted",
+            "errors": [],
+            "config": {},
+        }
+
+        # Check configuration
+        if not app_settings.smtp.host:
+            diagnostics["errors"].append("SMTP host not configured")
+            return diagnostics
+
+        diagnostics["configured"] = True
+        diagnostics["config"] = {
+            "host": app_settings.smtp.host,
+            "port": app_settings.smtp.port,
+            "username": app_settings.smtp.username,
+            "use_tls": app_settings.smtp.use_tls,
+            "from_name": app_settings.smtp.from_name or "(not set)",
+        }
+
+        # Test connection
+        try:
+            with SmtpClient(app_settings.smtp) as smtp:
+                diagnostics["connection"] = "success"
+                diagnostics["authentication"] = "success"
+
+                # Try sending a test email to the configured username
+                if not app_settings.smtp.username:
+                    diagnostics["errors"].append("SMTP username not configured")
+                    diagnostics["test_email"] = "skipped"
+                    return diagnostics
+
+                test_message = EmailMessage(
+                    to=app_settings.smtp.username,
+                    subject="Inbox AI SMTP Test",
+                    body="This is a test email from Inbox AI to verify SMTP configuration.\n\nIf you received this, your SMTP settings are working correctly!",
+                    html=False,
+                )
+
+                smtp.send(test_message)
+                diagnostics["test_email"] = "success"
+                diagnostics["message"] = (
+                    f"Test email sent successfully to {app_settings.smtp.username}"
+                )
+
+        except SmtpError as exc:
+            diagnostics["connection"] = "failed"
+            diagnostics["errors"].append(str(exc))
+            LOGGER.error("SMTP test failed: %s", exc, exc_info=True)
+        except Exception as exc:  # noqa: BLE001
+            diagnostics["connection"] = "failed"
+            diagnostics["errors"].append(f"Unexpected error: {exc}")
+            LOGGER.exception("Unexpected error during SMTP test")
+
+        return diagnostics
+
+    @app.get("/api/contacts/suggestions")
+    async def get_contact_suggestions(
+        query: str = "",
+        limit: int = 10,
+        repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
+    ) -> list[dict[str, Any]]:
+        """Get contact suggestions for autocomplete.
+
+        Args:
+            query: Optional search query to filter contacts
+            limit: Maximum number of suggestions to return
+
+        Returns:
+            List of contact dictionaries with email, name, and frequency
+        """
+        # Fetch more contacts from database, we'll filter in Python
+        contacts = await asyncio.to_thread(
+            repository.fetch_contact_suggestions,
+            50,  # Fetch 50, we'll filter and limit in Python
+        )
+
+        # Filter by query if provided
+        if query:
+            query_lower = query.lower()
+            contacts = [
+                c
+                for c in contacts
+                if query_lower in c["email"].lower() or query_lower in c["name"].lower()
+            ]
+
+        # Return only the requested limit
+        return contacts[:limit]
+
     @app.post("/follow-ups/{follow_up_id}/status")
     async def update_follow_up_status(
         request: Request,
@@ -1124,6 +1243,29 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             url=redirect_target,
             status_code=http_status.HTTP_303_SEE_OTHER,
         )
+
+    @app.post("/emails/{email_uid}/follow-ups/generate")
+    async def generate_follow_ups(
+        email_uid: int,
+        request: Request,
+    ) -> RedirectResponse:
+        form = await request.form()
+        raw_token = form.get(csrf.field_name)
+        token = raw_token if isinstance(raw_token, str) else None
+        csrf.validate(request, token)
+
+        redirect_raw = _coerce_form_value(form.get("redirect_to"))
+        redirect_target = _sanitize_redirect(redirect_raw or None) or "/"
+
+        outcome = await asyncio.to_thread(
+            _generate_follow_ups,
+            app_settings,
+            email_uid,
+        )
+        status_value = "ok" if outcome.success else "error"
+        target = _append_query_param(redirect_target, "followup_status", status_value)
+        target = _append_query_param(target, "followup_message", outcome.message)
+        return RedirectResponse(url=target, status_code=http_status.HTTP_303_SEE_OTHER)
 
     _ensure_route_names(app)
     return app
@@ -1185,6 +1327,7 @@ def _serialize_follow_up(task: FollowUpTask) -> dict[str, Any]:
         "emailUid": task.email_uid,
         "action": task.action,
         "dueAt": serialize_datetime(task.due_at),
+        "dueAtDisplay": display_datetime(task.due_at),
         "status": task.status,
         "createdAt": serialize_datetime(task.created_at),
         "completedAt": serialize_datetime(task.completed_at),
@@ -1329,7 +1472,9 @@ def _run_sync_cycle(
     )
     follow_up_planner = FollowUpPlannerService(settings.follow_up)
     insight_service = SummarizationService(
-        llm_client, fallback_enabled=settings.llm.fallback_enabled
+        llm_client,
+        fallback_enabled=settings.llm.fallback_enabled,
+        exclude_categories=settings.follow_up.exclude_categories,
     )
     category_service = (
         LLMCategoryService(llm_client) if llm_client else KeywordCategoryService()
@@ -1361,6 +1506,7 @@ def _run_sync_cycle(
                             drafting_service=drafting_service,
                             follow_up_planner=follow_up_planner,
                             category_service=category_service,
+                            follow_up_settings=settings.follow_up,
                             progress_callback=(
                                 (
                                     lambda message, mailbox_name=mailbox_name: _enqueue(
@@ -1692,6 +1838,104 @@ def _send_new_email(
         return SendDraftOutcome(
             success=False,
             message="Failed to send email. Check server logs for details.",
+        )
+
+
+def _generate_follow_ups(
+    settings: AppSettings, email_uid: int
+) -> DraftRegenerationOutcome:
+    """Generate follow-up tasks for an email, regenerating insight if needed.
+
+    Args:
+        settings: Application settings
+        email_uid: UID of the email to generate follow-ups for
+
+    Returns:
+        DraftRegenerationOutcome with success status and message
+    """
+    try:
+        with SqliteEmailRepository(settings.storage) as repository:
+            email = repository.fetch_email(email_uid)
+            if email is None:
+                return DraftRegenerationOutcome(
+                    success=False,
+                    message="Follow-ups could not be generated. Email data is missing.",
+                )
+
+            # Fetch existing insight
+            insight = repository.fetch_insight(email_uid)
+
+            # Regenerate insight if it has no action items (likely from old configuration)
+            if insight is None or (insight and not insight.action_items):
+                categories = repository.get_categories_for_uids([email_uid]).get(
+                    email_uid, ()
+                )
+                llm_client = (
+                    OllamaClient(settings.llm)
+                    if settings.llm.base_url and settings.llm.model
+                    else None
+                )
+                # Create summarizer with current exclusion settings
+                summarizer = SummarizationService(
+                    llm_client,
+                    fallback_enabled=settings.llm.fallback_enabled,
+                    exclude_categories=settings.follow_up.exclude_categories,
+                )
+                try:
+                    regenerated_insight = summarizer.generate_insight(email, categories)
+                    LOGGER.debug(
+                        "Regenerated insight for UID %s: action_items=%d",
+                        email_uid,
+                        len(regenerated_insight.action_items),
+                    )
+                    # Store the regenerated insight
+                    repository.persist_insight(regenerated_insight)
+                    insight = regenerated_insight
+                except Exception as exc:
+                    LOGGER.warning(
+                        "Failed to regenerate insight for UID %s: %s", email_uid, exc
+                    )
+                    if insight is None:
+                        return DraftRegenerationOutcome(
+                            success=False,
+                            message="Follow-ups could not be generated. Insight data is missing.",
+                        )
+
+            follow_up_planner = FollowUpPlannerService(settings.follow_up)
+
+            try:
+                tasks = follow_up_planner.plan_follow_ups(email, insight)
+            except Exception as exc:
+                LOGGER.warning(
+                    "Follow-up generation failed for UID %s: %s",
+                    email_uid,
+                    exc,
+                )
+                return DraftRegenerationOutcome(
+                    success=False,
+                    message="Follow-ups could not be generated.",
+                )
+
+            if tasks is not None:
+                repository.replace_follow_ups(email_uid, tasks)
+                count = len(tasks)
+                return DraftRegenerationOutcome(
+                    success=True,
+                    message=f"Generated {count} follow-up task(s).",
+                )
+            else:
+                return DraftRegenerationOutcome(
+                    success=True,
+                    message="No follow-up tasks were needed for this email.",
+                )
+
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-exception-caught
+        LOGGER.exception(
+            "Unexpected error generating follow-ups for UID %s: %s", email_uid, exc
+        )
+        return DraftRegenerationOutcome(
+            success=False,
+            message="Follow-ups could not be generated.",
         )
 
 

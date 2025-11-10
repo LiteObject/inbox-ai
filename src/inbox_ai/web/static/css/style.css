@@ -1407,6 +1407,28 @@ a {
     background: var(--md3-color-surface-container);
 }
 
+.section-header-with-action {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--md3-spacing-12);
+}
+
+.section-header-with-action h4 {
+    display: flex;
+    align-items: center;
+    gap: var(--md3-spacing-8);
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0;
+    flex: 1;
+}
+
+.section-header-with-action .generate-followups-form {
+    margin: 0;
+    flex-shrink: 0;
+}
+
 .md3-detail-section h4 {
     display: flex;
     align-items: center;
@@ -1414,6 +1436,10 @@ a {
     font-size: 16px;
     font-weight: 600;
     margin: 0;
+}
+
+.md3-detail-section h4 .material-icons {
+    color: var(--md3-color-primary);
 }
 
 .md3-metadata-list {
@@ -1442,6 +1468,9 @@ a {
     display: flex;
     align-items: flex-start;
     gap: var(--md3-spacing-12);
+    padding: var(--md3-spacing-2);
+    background-color: var(--md3-color-surface-container-low);
+    border-radius: var(--md3-radius-md);
 }
 
 .md3-detail-list .material-icons {
@@ -2964,6 +2993,90 @@ a {
     min-height: 160px;
     max-height: 320px;
     resize: vertical;
+}
+
+/* ===================================
+   Autocomplete Dropdown
+   =================================== */
+
+.md3-text-field--with-autocomplete {
+    position: relative;
+}
+
+.md3-autocomplete-list {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: 4px;
+    padding: 8px 0;
+    background: var(--md3-color-surface-container);
+    border-radius: var(--md3-radius-m);
+    box-shadow: var(--md3-elevation-2);
+    max-height: 240px;
+    overflow-y: auto;
+    z-index: 1000;
+    list-style: none;
+}
+
+.md3-autocomplete-item {
+    padding: 12px 16px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    transition: background-color 200ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.md3-autocomplete-item:hover,
+.md3-autocomplete-item[aria-selected="true"] {
+    background: var(--md3-color-surface-container-highest);
+}
+
+.md3-autocomplete-item-name {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--md3-color-on-surface);
+    line-height: 20px;
+}
+
+.md3-autocomplete-item-email {
+    font-size: 12px;
+    color: var(--md3-color-on-surface-variant);
+    line-height: 16px;
+}
+
+/* Keyboard navigation highlight */
+.md3-autocomplete-item:focus {
+    outline: 2px solid var(--md3-color-primary);
+    outline-offset: -2px;
+    background: var(--md3-color-surface-container-highest);
+}
+
+/* Empty state */
+.md3-autocomplete-empty {
+    padding: 16px;
+    text-align: center;
+    color: var(--md3-color-on-surface-variant);
+    font-size: 14px;
+}
+
+@media (max-width: 640px) {
+    .md3-autocomplete-list {
+        max-height: 180px;
+    }
+    
+    .md3-autocomplete-item {
+        padding: 10px 12px;
+    }
+    
+    .md3-autocomplete-item-name {
+        font-size: 13px;
+    }
+    
+    .md3-autocomplete-item-email {
+        font-size: 11px;
+    }
 }
 
 .md3-button--text {

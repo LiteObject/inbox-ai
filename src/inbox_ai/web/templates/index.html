@@ -51,7 +51,9 @@
         data-config-status="{{ config_status | default('', true) }}"
         data-config-message="{{ config_message | default('', true) | e }}"
         data-clear-status="{{ clear_status | default('', true) }}"
-        data-clear-message="{{ clear_message | default('', true) | e }}">
+        data-clear-message="{{ clear_message | default('', true) | e }}"
+        data-followup-status="{{ followup_status | default('', true) }}"
+        data-followup-message="{{ followup_message | default('', true) | e }}">
     </div>
 
     <div id="toast-container" class="toast-container" aria-live="assertive" aria-atomic="true"></div>
@@ -146,10 +148,6 @@
                         data-spinner-label="Rebuilding categories...">
                         <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
                         <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-                        <button class="md3-button md3-button--tonal" type="submit">
-                            <span class="material-icons" aria-hidden="true">category</span>
-                            Rebuild Categories
-                        </button>
                     </form>
                     <form method="post" action="/sync" data-spinner data-scroll-restore
                         data-spinner-label="Sync in progress...">
@@ -258,6 +256,10 @@
                                     <div class="md3-detail-title-section">
                                         <h3>{{ item.subject or "(no subject)" }}</h3>
                                         <div class="md3-detail-meta-extended">
+                                            <div class="meta-row">
+                                                <span class="material-icons" aria-hidden="true">tag</span>
+                                                <span>UID: {{ item.uid }}</span>
+                                            </div>
                                             <div class="meta-row">
                                                 <span class="material-icons" aria-hidden="true">person</span>
                                                 <span>{{ item.sender or "Unknown sender" }}</span>
@@ -390,10 +392,22 @@
                                 </div>
 
                                 <section class="md3-detail-section">
-                                    <h4>
-                                        <span class="material-icons" aria-hidden="true">assignment_turned_in</span>
-                                        Follow-up Tasks
-                                    </h4>
+                                    <div class="section-header-with-action">
+                                        <h4>
+                                            <span class="material-icons" aria-hidden="true">assignment_turned_in</span>
+                                            Follow-up Tasks
+                                        </h4>
+                                        <form method="post" action="/emails/{{ item.uid }}/follow-ups/generate"
+                                            data-scroll-restore data-spinner class="generate-followups-form">
+                                            <input type="hidden" name="{{ csrf_field_name }}"
+                                                value="{{ csrf_token }}" />
+                                            <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
+                                            <button class="md3-button md3-button--tonal" type="submit">
+                                                <span class="material-icons" aria-hidden="true">playlist_add</span>
+                                                Generate Follow-ups
+                                            </button>
+                                        </form>
+                                    </div>
                                     {% if item.followUps %}
                                     <ul class="md3-detail-list">
                                         {% for task in item.followUps %}
@@ -401,7 +415,8 @@
                                             <span class="material-icons" aria-hidden="true">schedule</span>
                                             <span class="item-content">
                                                 <span class="item-headline">{{ task.action }}</span>
-                                                <span class="item-supporting">{% if task.dueAt %}Due {{ task.dueAt }}{%
+                                                <span class="item-supporting">{% if task.dueAtDisplay %}Due {{
+                                                    task.dueAtDisplay }}{%
                                                     else %}No due date{% endif %}</span>
                                             </span>
                                             <form method="post" action="/follow-ups/{{ task.id }}/status"
@@ -507,10 +522,14 @@
             <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
 
             <div class="compose-dialog__content">
-                <div class="md3-text-field">
+                <div class="md3-text-field md3-text-field--with-autocomplete">
                     <input type="email" id="compose-to" name="to" class="md3-text-field__input" required placeholder=" "
-                        autocomplete="email" />
+                        autocomplete="off" aria-autocomplete="list" aria-controls="to-autocomplete-list"
+                        aria-expanded="false" />
                     <label for="compose-to" class="md3-text-field__label">To</label>
+
+                    <!-- Autocomplete dropdown -->
+                    <ul id="to-autocomplete-list" class="md3-autocomplete-list" role="listbox" hidden></ul>
                 </div>
 
                 <div class="md3-text-field">

@@ -97,6 +97,7 @@ const STATUS_PARAM_PAIRS = [
     ["send_status", "send_message"],
     ["config_status", "config_message"],
     ["clear_status", "clear_message"],
+    ["followup_status", "followup_message"],
 ];
 
 function queueToastsForNavigation(targetUrl) {
