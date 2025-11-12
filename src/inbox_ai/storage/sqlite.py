@@ -762,7 +762,8 @@ class SqliteEmailRepository(EmailRepository):
         unique_uids = tuple(dict.fromkeys(uids))
         placeholders = ",".join("?" for _ in unique_uids)
         query = f"""
-            SELECT id, email_uid, action, due_at, status, created_at, completed_at
+            SELECT id, email_uid, action, due_at, status, created_at, completed_at,
+                   calendar_event_id, calendar_synced_at
             FROM follow_ups
             WHERE email_uid IN ({placeholders})
             ORDER BY
@@ -787,6 +788,10 @@ class SqliteEmailRepository(EmailRepository):
                         parse_datetime(row["created_at"], assume_utc=True),
                     ),
                     completed_at=parse_datetime(row["completed_at"], assume_utc=True),
+                    calendar_event_id=row["calendar_event_id"],
+                    calendar_synced_at=parse_datetime(
+                        row["calendar_synced_at"], assume_utc=True
+                    ),
                 )
             )
         results: dict[int, tuple[FollowUpTask, ...]] = {}
@@ -825,8 +830,10 @@ class SqliteEmailRepository(EmailRepository):
                         due_at,
                         status,
                         created_at,
-                        completed_at
-                    ) VALUES (?, ?, ?, ?, ?, ?)
+                        completed_at,
+                        calendar_event_id,
+                        calendar_synced_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         email_uid,
@@ -835,6 +842,12 @@ class SqliteEmailRepository(EmailRepository):
                         task.status,
                         task.created_at.isoformat(),
                         task.completed_at.isoformat() if task.completed_at else None,
+                        task.calendar_event_id,
+                        (
+                            task.calendar_synced_at.isoformat()
+                            if task.calendar_synced_at
+                            else None
+                        ),
                     ),
                 )
 
@@ -843,7 +856,8 @@ class SqliteEmailRepository(EmailRepository):
     ) -> list[FollowUpTask]:
         """Return follow-ups filtered by status and limit, ordered by due/created date."""
         query = """
-            SELECT id, email_uid, action, due_at, status, created_at, completed_at
+            SELECT id, email_uid, action, due_at, status, created_at, completed_at,
+                   calendar_event_id, calendar_synced_at
             FROM follow_ups
             {where}
             ORDER BY
@@ -877,6 +891,10 @@ class SqliteEmailRepository(EmailRepository):
                         parse_datetime(row["created_at"], assume_utc=True),
                     ),
                     completed_at=parse_datetime(row["completed_at"], assume_utc=True),
+                    calendar_event_id=row["calendar_event_id"],
+                    calendar_synced_at=parse_datetime(
+                        row["calendar_synced_at"], assume_utc=True
+                    ),
                 )
             )
         return items
@@ -894,6 +912,59 @@ class SqliteEmailRepository(EmailRepository):
                 (
                     status,
                     completed_at.isoformat() if completed_at else None,
+                    follow_up_id,
+                ),
+            )
+
+    def get_follow_up_by_id(self, follow_up_id: int) -> FollowUpTask | None:
+        """Retrieve a single follow-up task by ID."""
+        cur = self._connection.execute(
+            """
+            SELECT id, email_uid, action, due_at, status, created_at, completed_at,
+                   calendar_event_id, calendar_synced_at
+            FROM follow_ups
+            WHERE id = ?
+            """,
+            (follow_up_id,),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return None
+        return FollowUpTask(
+            id=row["id"],
+            email_uid=row["email_uid"],
+            action=row["action"],
+            due_at=parse_datetime(row["due_at"]),
+            status=row["status"],
+            created_at=cast(
+                datetime,
+                parse_datetime(row["created_at"], assume_utc=True),
+            ),
+            completed_at=parse_datetime(row["completed_at"], assume_utc=True),
+            calendar_event_id=row["calendar_event_id"],
+            calendar_synced_at=parse_datetime(
+                row["calendar_synced_at"], assume_utc=True
+            ),
+        )
+
+    def update_follow_up_calendar_sync(
+        self, follow_up_id: int, calendar_event_id: str | None
+    ) -> None:
+        """Update calendar sync info for a follow-up task.
+
+        If calendar_event_id is None, clears the sync data.
+        """
+        synced_at = datetime.now(tz=UTC) if calendar_event_id else None
+        with self._connection:
+            self._connection.execute(
+                """
+                UPDATE follow_ups
+                SET calendar_event_id = ?, calendar_synced_at = ?
+                WHERE id = ?
+                """,
+                (
+                    calendar_event_id,
+                    synced_at.isoformat() if synced_at else None,
                     follow_up_id,
                 ),
             )

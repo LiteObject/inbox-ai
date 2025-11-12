@@ -1487,6 +1487,18 @@ a {
     margin-left: auto;
 }
 
+.task-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--md3-spacing-8);
+    margin-left: auto;
+}
+
+.task-actions .calendar-sync-btn,
+.task-actions .calendar-view-btn {
+    white-space: nowrap;
+}
+
 .md3-draft-actions {
     display: flex;
     flex-wrap: wrap;
@@ -2011,6 +2023,10 @@ a {
     to {
         transform: rotate(360deg);
     }
+}
+
+.rotating {
+    animation: md3-spin 1s linear infinite;
 }
 
 #spinner-message {
@@ -2677,6 +2693,60 @@ a {
 
 .settings-page .maintenance-actions form {
     margin: 0;
+}
+
+/* Calendar Status */
+.calendar-status {
+    margin-bottom: var(--md3-spacing-16);
+}
+
+.status-message {
+    display: flex;
+    align-items: center;
+    gap: var(--md3-spacing-12);
+    padding: var(--md3-spacing-12);
+    background: var(--md3-color-surface-container-low);
+    border-radius: var(--md3-radius-md);
+}
+
+.status-message .material-icons {
+    font-size: 24px;
+}
+
+.status-loading .material-icons {
+    color: var(--md3-color-tertiary);
+}
+
+.calendar-config-note {
+    margin-top: var(--md3-spacing-16);
+}
+
+.calendar-config-note ol {
+    margin-top: var(--md3-spacing-8);
+    padding-left: 20px;
+}
+
+.calendar-list {
+    margin-top: var(--md3-spacing-16);
+}
+
+.calendar-list ul {
+    margin-top: var(--md3-spacing-8);
+    padding-left: 20px;
+    list-style: disc;
+}
+
+/* Material Design 3 Color Utilities */
+.md3-color-primary {
+    color: var(--md3-color-primary) !important;
+}
+
+.md3-color-tertiary {
+    color: var(--md3-color-tertiary) !important;
+}
+
+.md3-color-error {
+    color: var(--md3-color-error) !important;
 }
 
 .settings-page .theme-grid {

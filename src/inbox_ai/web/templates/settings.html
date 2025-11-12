@@ -113,6 +113,52 @@
             </div>
         </div>
 
+        <div class="md3-card" id="calendar">
+            <h2>Google Calendar</h2>
+            <p>Connect your Google Calendar to sync follow-up tasks as calendar events.</p>
+
+            <div id="calendar-status" class="calendar-status">
+                <div class="status-message status-loading">
+                    <span class="material-icons">hourglass_empty</span>
+                    <span>Loading calendar status...</span>
+                </div>
+            </div>
+
+            <div id="calendar-actions" class="maintenance-actions" hidden>
+                <button type="button" id="connect-calendar-btn" class="md3-button md3-button--filled" hidden>
+                    <span class="material-icons" aria-hidden="true">link</span>
+                    Connect Google Calendar
+                </button>
+
+                <button type="button" id="disconnect-calendar-btn" class="md3-button md3-button--tonal" hidden>
+                    <span class="material-icons" aria-hidden="true">link_off</span>
+                    Disconnect Calendar
+                </button>
+            </div>
+
+            <div id="calendar-config-note" class="calendar-config-note" hidden>
+                <div class="md3-snackbar info">
+                    <span class="material-icons">info</span>
+                    <div>
+                        <p><strong>Setup Required:</strong> Before connecting, add your Google OAuth credentials:</p>
+                        <ol>
+                            <li>Go to <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">Google
+                                    Cloud Console</a></li>
+                            <li>Create/select a project and enable the Google Calendar API</li>
+                            <li>Create OAuth 2.0 credentials (Web application type)</li>
+                            <li>Add <code>http://localhost:8000/calendar/callback</code> to authorized redirect URIs
+                            </li>
+                            <li>Copy the Client ID and Client Secret to the form above</li>
+                            <li>Set <code>INBOX_AI_CALENDAR__ENABLED=true</code> in your .env</li>
+                            <li>Save settings and restart the server</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+
+            <div id="calendar-list" class="calendar-list" hidden></div>
+        </div>
+
         <div class="md3-card" id="maintenance">
             <h2>Maintenance</h2>
             <p>Run occasional clean-up tasks from here. These actions affect stored data immediately.</p>
@@ -146,7 +192,12 @@
         </div>
     </div>
 
-    <script>
+    <script type="module">
+        import { DialogManager } from "{{ url_for('static', path='js/modules/dialog.js') }}";
+        import { ToastManager } from "{{ url_for('static', path='js/modules/toast.js') }}";
+
+        const dialog = new DialogManager();
+
         // SMTP Test Handler
         document.getElementById('test-smtp-btn')?.addEventListener('click', async () => {
             const button = document.getElementById('test-smtp-btn');
@@ -315,6 +366,141 @@
                 input.addEventListener('change', updateFieldStates);
             });
         });
+
+        // ===== Google Calendar Connection =====
+        async function loadCalendarStatus() {
+            try {
+                const response = await fetch('/api/calendar/status');
+                const data = await response.json();
+
+                const statusDiv = document.getElementById('calendar-status');
+                const actionsDiv = document.getElementById('calendar-actions');
+                const configNote = document.getElementById('calendar-config-note');
+                const calendarList = document.getElementById('calendar-list');
+                const connectBtn = document.getElementById('connect-calendar-btn');
+                const disconnectBtn = document.getElementById('disconnect-calendar-btn');
+
+                statusDiv.innerHTML = '';
+                actionsDiv.hidden = false;
+
+                if (!data.configured) {
+                    // Not configured - show setup instructions
+                    statusDiv.innerHTML = `
+                        <div class="status-message">
+                            <span class="material-icons md3-color-tertiary">info</span>
+                            <span>Calendar integration not configured</span>
+                        </div>
+                    `;
+                    configNote.hidden = false;
+                    calendarList.hidden = true;
+                    connectBtn.hidden = true;
+                    disconnectBtn.hidden = true;
+                } else if (!data.connected) {
+                    // Configured but not connected
+                    statusDiv.innerHTML = `
+                        <div class="status-message">
+                            <span class="material-icons md3-color-tertiary">link_off</span>
+                            <span>Not connected to Google Calendar</span>
+                        </div>
+                    `;
+                    configNote.hidden = true;
+                    calendarList.hidden = true;
+                    connectBtn.hidden = false;
+                    disconnectBtn.hidden = true;
+                } else {
+                    // Connected - show status and calendars
+                    statusDiv.innerHTML = `
+                        <div class="status-message">
+                            <span class="material-icons md3-color-primary">check_circle</span>
+                            <span>Connected to Google Calendar</span>
+                        </div>
+                    `;
+
+                    if (data.calendars && data.calendars.length > 0) {
+                        calendarList.innerHTML = `
+                            <strong>Available Calendars:</strong>
+                            <ul>
+                                ${data.calendars.map(cal => {
+                            const isSelected = cal.id === data.selected_calendar;
+                            return `<li>${cal.summary}${isSelected ? ' <strong>(selected)</strong>' : ''}</li>`;
+                        }).join('')}
+                            </ul>
+                        `;
+                        calendarList.hidden = false;
+                    } else {
+                        calendarList.hidden = true;
+                    }
+
+                    configNote.hidden = true;
+                    connectBtn.hidden = true;
+                    disconnectBtn.hidden = false;
+                }
+            } catch (error) {
+                console.error('Failed to load calendar status:', error);
+                document.getElementById('calendar-status').innerHTML = `
+                    <div class="status-message">
+                        <span class="material-icons md3-color-error">error</span>
+                        <span>Failed to load calendar status</span>
+                    </div>
+                `;
+            }
+        }
+
+        // Connect calendar button
+        document.getElementById('connect-calendar-btn')?.addEventListener('click', () => {
+            window.location.href = '/calendar/auth';
+        });
+
+        // Disconnect calendar button
+        document.getElementById('disconnect-calendar-btn')?.addEventListener('click', async () => {
+            const confirmed = await dialog.confirm(
+                'Existing synced events will remain in your calendar.',
+                'Disconnect Google Calendar?',
+                'Disconnect',
+                'Cancel'
+            );
+
+            if (!confirmed) {
+                return;
+            }
+
+            try {
+                const csrfToken = document.querySelector('input[name="{{ csrf_field_name }}"]')?.value;
+                const response = await fetch('/api/calendar/disconnect', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-Token': csrfToken
+                    }
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    await loadCalendarStatus();
+                    ToastManager.show('Calendar disconnected successfully', 'success');
+                } else {
+                    ToastManager.show('Failed to disconnect calendar', 'error');
+                }
+            } catch (error) {
+                console.error('Failed to disconnect calendar:', error);
+                ToastManager.show('Failed to disconnect calendar', 'error');
+            }
+        });
+
+        // Load calendar status on page load
+        document.addEventListener('DOMContentLoaded', loadCalendarStatus);
+
+        // Handle calendar connection callback status
+        const urlParams = new URLSearchParams(window.location.search);
+        const calendarStatus = urlParams.get('config_status');
+        if (calendarStatus === 'calendar_connected') {
+            ToastManager.show('Successfully connected to Google Calendar!', 'success');
+            // Remove query param from URL
+            window.history.replaceState({}, '', window.location.pathname);
+            setTimeout(() => loadCalendarStatus(), 500);
+        } else if (calendarStatus?.startsWith('calendar_auth_failed')) {
+            ToastManager.show('Failed to connect Google Calendar. Please try again.', 'error');
+            window.history.replaceState({}, '', window.location.pathname);
+        }
     </script>
 </body>
 

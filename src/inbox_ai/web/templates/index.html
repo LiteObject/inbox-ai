@@ -419,25 +419,45 @@
                                                     task.dueAtDisplay }}{%
                                                     else %}No due date{% endif %}</span>
                                             </span>
-                                            <form method="post" action="/follow-ups/{{ task.id }}/status"
-                                                data-scroll-restore data-spinner>
-                                                <input type="hidden" name="{{ csrf_field_name }}"
-                                                    value="{{ csrf_token }}" />
-                                                <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-                                                <input type="hidden" name="status"
-                                                    value="{% if task.status == 'done' %}open{% else %}done{% endif %}" />
-                                                {% if task.status == 'done' %}
-                                                <button class="md3-button md3-button--tonal" type="submit">
-                                                    <span class="material-icons" aria-hidden="true">undo</span>
-                                                    Reopen
-                                                </button>
+                                            <div class="task-actions">
+                                                {% if task.calendarEventId %}
+                                                <a href="javascript:void(0)"
+                                                    class="md3-button md3-button--text calendar-view-btn"
+                                                    data-event-id="{{ task.calendarEventId }}"
+                                                    data-event-url="https://calendar.google.com/calendar/r/events/{{ task.calendarEventId }}"
+                                                    data-task-id="{{ task.id }}" title="View in Google Calendar">
+                                                    <span class="material-icons" aria-hidden="true">event</span>
+                                                    View Calendar
+                                                </a>
                                                 {% else %}
-                                                <button class="md3-button md3-button--tonal" type="submit">
-                                                    <span class="material-icons" aria-hidden="true">check_circle</span>
-                                                    Complete
+                                                <button class="md3-button md3-button--text calendar-sync-btn"
+                                                    data-task-id="{{ task.id }}" type="button"
+                                                    title="Add to Google Calendar">
+                                                    <span class="material-icons" aria-hidden="true">event</span>
+                                                    Add to Calendar
                                                 </button>
                                                 {% endif %}
-                                            </form>
+                                                <form method="post" action="/follow-ups/{{ task.id }}/status"
+                                                    data-scroll-restore data-spinner style="display: inline;">
+                                                    <input type="hidden" name="{{ csrf_field_name }}"
+                                                        value="{{ csrf_token }}" />
+                                                    <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
+                                                    <input type="hidden" name="status"
+                                                        value="{% if task.status == 'done' %}open{% else %}done{% endif %}" />
+                                                    {% if task.status == 'done' %}
+                                                    <button class="md3-button md3-button--tonal" type="submit">
+                                                        <span class="material-icons" aria-hidden="true">undo</span>
+                                                        Reopen
+                                                    </button>
+                                                    {% else %}
+                                                    <button class="md3-button md3-button--tonal" type="submit">
+                                                        <span class="material-icons"
+                                                            aria-hidden="true">check_circle</span>
+                                                        Complete
+                                                    </button>
+                                                    {% endif %}
+                                                </form>
+                                            </div>
                                         </li>
                                         {% endfor %}
                                     </ul>
@@ -580,6 +600,7 @@
     </dialog>
 
     <script src="{{ url_for('static', path='js/tabs.js') }}"></script>
+    <script type="module" src="{{ url_for('static', path='js/calendar.js') }}"></script>
     <script src="{{ url_for('static', path='js/compose.js') }}"></script>
     <script type="module" src="{{ url_for('static', path='js/dashboard.js') }}"></script>
 </body>

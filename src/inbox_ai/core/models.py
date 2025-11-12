@@ -104,6 +104,8 @@ class FollowUpTask:
     status: str
     created_at: datetime
     completed_at: datetime | None
+    calendar_event_id: str | None = None
+    calendar_synced_at: datetime | None = None
 
 
 @dataclass(slots=True)

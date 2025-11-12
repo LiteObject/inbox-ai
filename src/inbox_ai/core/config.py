@@ -150,6 +150,34 @@ class UserSettings(BaseModel):
     )
 
 
+class CalendarSettings(BaseModel):
+    """Settings for Google Calendar integration."""
+
+    enabled: bool = Field(
+        default=False, description="Enable Google Calendar integration"
+    )
+    client_id: str | None = Field(
+        default=None, description="OAuth 2.0 client ID from Google Cloud Console"
+    )
+    client_secret: str | None = Field(
+        default=None, description="OAuth 2.0 client secret from Google Cloud Console"
+    )
+    selected_calendar: str = Field(
+        default="primary", description="Calendar ID to use (default: primary)"
+    )
+    event_duration_minutes: int = Field(
+        default=30, ge=15, description="Default duration for calendar events in minutes"
+    )
+    redirect_uri: str = Field(
+        default="http://localhost:8000/calendar/callback",
+        description="OAuth callback URL (must match Google Cloud Console)",
+    )
+
+    def is_configured(self) -> bool:
+        """Check if calendar is properly configured."""
+        return bool(self.enabled and self.client_id and self.client_secret)
+
+
 class AppSettings(BaseModel):
     """Aggregated application configuration."""
 
@@ -161,6 +189,7 @@ class AppSettings(BaseModel):
     sync: SyncSettings = Field(default_factory=SyncSettings)
     follow_up: FollowUpSettings = Field(default_factory=FollowUpSettings)
     user: UserSettings = Field(default_factory=UserSettings)
+    calendar: CalendarSettings = Field(default_factory=CalendarSettings)
 
 
 ENV_PREFIX = "INBOX_AI_"
@@ -253,5 +282,6 @@ __all__ = [
     "SyncSettings",
     "FollowUpSettings",
     "UserSettings",
+    "CalendarSettings",
     "load_app_settings",
 ]

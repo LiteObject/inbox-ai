@@ -6,6 +6,7 @@ import asyncio
 import logging
 import os
 import re
+import secrets
 import time
 from collections import deque
 from collections.abc import Iterable, Iterator, Mapping, Sequence
@@ -32,6 +33,7 @@ from starlette.datastructures import UploadFile
 from starlette.responses import Response
 from starlette.templating import Jinja2Templates
 
+from inbox_ai.calendar import GoogleCalendarClient
 from inbox_ai.core import AppSettings, load_app_settings
 from inbox_ai.core.datetime_utils import display_datetime, serialize_datetime
 from inbox_ai.core.models import (
@@ -456,6 +458,23 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
 
         category_options = repository.list_categories()
         total_email_count = repository.count_emails()
+
+        # Debug logging
+        LOGGER.debug(
+            "Dashboard context: %d insights, follow_ups in lookup: %s",
+            len(insights),
+            {uid: len(tasks) for uid, tasks in follow_up_lookup.items()},
+        )
+        if follow_up_lookup:
+            first_uid = next(iter(follow_up_lookup))
+            first_tasks = follow_up_lookup[first_uid]
+            if first_tasks:
+                LOGGER.debug(
+                    "Sample follow-up from DB: id=%s, action=%s, calendar_event_id=%s",
+                    first_tasks[0].id,
+                    first_tasks[0].action,
+                    first_tasks[0].calendar_event_id,
+                )
         csrf_token = csrf.generate_token()
         context = {
             "request": request,
@@ -1267,6 +1286,360 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         target = _append_query_param(target, "followup_message", outcome.message)
         return RedirectResponse(url=target, status_code=http_status.HTTP_303_SEE_OTHER)
 
+    # ===== Google Calendar Integration Routes =====
+
+    @app.get("/calendar/auth")
+    async def calendar_auth(
+        request: Request,
+        repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
+    ) -> RedirectResponse:
+        """Initiate OAuth 2.0 flow for Google Calendar."""
+        if not app_settings.calendar.is_configured():
+            return RedirectResponse(
+                url="/settings?config_status=calendar_not_configured#calendar",
+                status_code=http_status.HTTP_303_SEE_OTHER,
+            )
+
+        # Generate a random state token for CSRF protection
+        state = secrets.token_urlsafe(32)
+        repository.set_user_preference("calendar_oauth_state", state)
+
+        client = GoogleCalendarClient(app_settings.calendar)
+        auth_url = client.get_authorization_url(state)
+        return RedirectResponse(
+            url=auth_url, status_code=http_status.HTTP_303_SEE_OTHER
+        )
+
+    @app.get("/calendar/callback")
+    async def calendar_callback(
+        request: Request,
+        code: str | None = None,
+        state: str | None = None,
+        error: str | None = None,
+        repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
+    ) -> RedirectResponse:
+        """Handle OAuth 2.0 callback from Google."""
+        if error:
+            LOGGER.error("OAuth error: %s", error)
+            return RedirectResponse(
+                url=f"/settings?config_status=calendar_auth_failed&error={error}#calendar",
+                status_code=http_status.HTTP_303_SEE_OTHER,
+            )
+
+        if not code or not state:
+            return RedirectResponse(
+                url="/settings?config_status=calendar_auth_failed&error=missing_params#calendar",
+                status_code=http_status.HTTP_303_SEE_OTHER,
+            )
+
+        # Verify state token to prevent CSRF
+        stored_state = repository.get_user_preference("calendar_oauth_state")
+        if stored_state != state:
+            LOGGER.error("OAuth state mismatch")
+            return RedirectResponse(
+                url="/settings?config_status=calendar_auth_failed&error=invalid_state#calendar",
+                status_code=http_status.HTTP_303_SEE_OTHER,
+            )
+
+        try:
+            client = GoogleCalendarClient(app_settings.calendar)
+            tokens = await client.exchange_code_for_tokens(code)
+
+            # Store tokens securely
+            repository.set_user_preference(
+                "calendar_access_token", tokens["access_token"]
+            )
+            if "refresh_token" in tokens:
+                repository.set_user_preference(
+                    "calendar_refresh_token", tokens["refresh_token"]
+                )
+
+            # Clean up state token
+            repository.delete_user_preference("calendar_oauth_state")
+
+            LOGGER.info("Successfully authenticated with Google Calendar")
+            return RedirectResponse(
+                url="/settings?config_status=calendar_connected#calendar",
+                status_code=http_status.HTTP_303_SEE_OTHER,
+            )
+
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.exception("Failed to exchange OAuth code for tokens")
+            return RedirectResponse(
+                url=f"/settings?config_status=calendar_auth_failed&error={str(exc)}#calendar",
+                status_code=http_status.HTTP_303_SEE_OTHER,
+            )
+
+    @app.get("/api/calendar/status")
+    async def calendar_status(
+        repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
+    ) -> dict[str, Any]:
+        """Check calendar connection status."""
+        access_token = repository.get_user_preference("calendar_access_token")
+        is_connected = bool(access_token)
+
+        status_data: dict[str, Any] = {
+            "connected": is_connected,
+            "configured": app_settings.calendar.is_configured(),
+            "selected_calendar": app_settings.calendar.selected_calendar,
+        }
+
+        if is_connected:
+            try:
+                client = GoogleCalendarClient(app_settings.calendar)
+                client.set_tokens(
+                    access_token,
+                    repository.get_user_preference("calendar_refresh_token"),
+                )
+                calendars = await client.list_calendars()
+                status_data["calendars"] = [
+                    {"id": cal.get("id"), "summary": cal.get("summary")}
+                    for cal in calendars
+                ]
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.error("Failed to fetch calendars: %s", exc)
+                status_data["error"] = str(exc)
+
+        return status_data
+
+    @app.post("/api/calendar/disconnect")
+    async def calendar_disconnect(
+        request: Request,
+        repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
+    ) -> dict[str, Any]:
+        """Disconnect Google Calendar by removing stored tokens."""
+        csrf_token = request.headers.get("X-CSRF-Token")
+        csrf.validate(request, csrf_token)
+
+        repository.delete_user_preference("calendar_access_token")
+        repository.delete_user_preference("calendar_refresh_token")
+        repository.delete_user_preference("calendar_oauth_state")
+
+        return {"success": True, "message": "Calendar disconnected"}
+
+    @app.post("/api/follow-ups/{follow_up_id}/sync-calendar")
+    async def sync_follow_up_to_calendar(
+        follow_up_id: int,
+        request: Request,
+        repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
+    ) -> dict[str, Any]:
+        """Sync a follow-up task to Google Calendar."""
+        csrf_token = request.headers.get("X-CSRF-Token")
+        csrf.validate(request, csrf_token)
+
+        # Check calendar configuration
+        if not app_settings.calendar.is_configured():
+            return {
+                "success": False,
+                "error": "Calendar not configured. Please add client ID and secret in settings.",
+            }
+
+        # Get access token
+        access_token = repository.get_user_preference("calendar_access_token")
+        if not access_token:
+            return {
+                "success": False,
+                "error": "Not connected to Google Calendar. Please connect in settings.",
+            }
+
+        refresh_token = repository.get_user_preference("calendar_refresh_token")
+        LOGGER.info(
+            "Retrieved tokens from DB - access_token: %s..., refresh_token available: %s",
+            access_token[:10] if access_token else "None",
+            bool(refresh_token),
+        )
+
+        # Get follow-up task
+        follow_up = repository.get_follow_up_by_id(follow_up_id)
+        if not follow_up:
+            return {"success": False, "error": "Follow-up task not found"}
+
+        # Check if already synced
+        if follow_up.calendar_event_id:
+            # Get event URL
+            client = GoogleCalendarClient(app_settings.calendar)
+            event_url = client.get_event_url(follow_up.calendar_event_id)
+            return {
+                "success": True,
+                "already_synced": True,
+                "event_id": follow_up.calendar_event_id,
+                "event_url": event_url,
+                "followUp": _serialize_follow_up(follow_up),
+            }
+
+        # Get email context
+        email = repository.fetch_email(follow_up.email_uid)
+        if not email:
+            return {"success": False, "error": "Email not found"}
+
+        try:
+            # Create calendar event
+            client = GoogleCalendarClient(app_settings.calendar)
+            client.set_tokens(access_token, refresh_token)
+
+            LOGGER.info("Calendar client initialized for follow-up %d", follow_up_id)
+
+            # Use follow-up due date or default to now + 1 hour
+            due_at = follow_up.due_at or datetime.now(tz=UTC)
+
+            LOGGER.info(
+                "Creating calendar event: action=%s, due_at=%s, subject=%s",
+                follow_up.action,
+                due_at,
+                email.subject,
+            )
+
+            event = await client.create_event(
+                action=follow_up.action,
+                due_at=due_at,
+                email_subject=email.subject,
+                email_sender=email.sender,
+            )
+
+            event_id = event.get("id")
+            if not event_id:
+                return {
+                    "success": False,
+                    "error": "Failed to get event ID from response",
+                }
+
+            # Update follow-up with calendar event ID
+            repository.update_follow_up_calendar_sync(follow_up_id, event_id)
+
+            # Save potentially refreshed access token
+            if client._access_token and client._access_token != access_token:
+                LOGGER.info("Access token was refreshed, saving new token")
+                repository.set_user_preference(
+                    "calendar_access_token", client._access_token
+                )
+
+            event_url = client.get_event_url(event_id)
+
+            # Fetch updated follow-up to confirm sync was saved
+            updated_follow_up = repository.get_follow_up_by_id(follow_up_id)
+
+            LOGGER.info(
+                "Calendar sync complete for follow-up %d: event_id=%s, calendar_event_id in DB=%s",
+                follow_up_id,
+                event_id,
+                updated_follow_up.calendar_event_id if updated_follow_up else None,
+            )
+
+            # Invalidate dashboard cache so follow-up button state updates on refresh
+            response_cache.invalidate("dashboard")
+
+            return {
+                "success": True,
+                "event_id": event_id,
+                "event_url": event_url,
+                "message": "Follow-up added to calendar",
+                "followUp": (
+                    _serialize_follow_up(updated_follow_up)
+                    if updated_follow_up
+                    else None
+                ),
+            }
+
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.exception("Failed to sync follow-up to calendar")
+            return {"success": False, "error": str(exc)}
+
+    @app.get("/api/follow-ups/{follow_up_id}/check-calendar-event")
+    async def check_calendar_event_exists(
+        follow_up_id: int,
+        request: Request,
+        repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
+    ) -> dict[str, Any]:
+        """Check if a calendar event still exists and update state accordingly."""
+
+        LOGGER.debug("Checking calendar event for follow-up %d", follow_up_id)
+
+        # Ensure calendar access tokens are available
+        access_token = repository.get_user_preference("calendar_access_token")
+        refresh_token = repository.get_user_preference("calendar_refresh_token")
+        if not access_token:
+            LOGGER.warning(
+                "Calendar access token missing for follow-up %d", follow_up_id
+            )
+            return {"success": False, "error": "Not connected to Google Calendar"}
+
+        # Fetch follow-up metadata
+        follow_up = repository.get_follow_up_by_id(follow_up_id)
+        if not follow_up:
+            LOGGER.warning("Follow-up %d not found", follow_up_id)
+            return {"success": False, "error": "Follow-up not found"}
+
+        if not follow_up.calendar_event_id:
+            LOGGER.info("Follow-up %d has no calendar event associated", follow_up_id)
+            return {
+                "success": False,
+                "exists": False,
+                "error": "Follow-up is not synced to calendar",
+            }
+
+        try:
+            client = GoogleCalendarClient(app_settings.calendar)
+            client.set_tokens(access_token, refresh_token)
+
+            LOGGER.debug(
+                "Fetching calendar event %s",
+                follow_up.calendar_event_id,
+            )
+            event = await client.get_event(follow_up.calendar_event_id)
+
+            if event.get("status") == "cancelled":
+                LOGGER.info(
+                    "Calendar event %s for follow-up %d is cancelled; clearing sync",
+                    follow_up.calendar_event_id,
+                    follow_up_id,
+                )
+                repository.update_follow_up_calendar_sync(follow_up_id, None)
+                response_cache.invalidate("dashboard")
+                return {
+                    "success": False,
+                    "exists": False,
+                    "error": "Calendar event was cancelled",
+                }
+
+            event_url = client.get_event_url(follow_up.calendar_event_id)
+            LOGGER.debug("Calendar event %s exists", follow_up.calendar_event_id)
+            return {
+                "success": True,
+                "exists": True,
+                "event_id": follow_up.calendar_event_id,
+                "event_url": event_url,
+                "event_summary": event.get("summary"),
+            }
+
+        except Exception as exc:  # noqa: BLE001
+            error_str = str(exc)
+            LOGGER.warning(
+                "Failed to retrieve calendar event %s: %s",
+                follow_up.calendar_event_id,
+                error_str,
+            )
+
+            if "404" in error_str or "not found" in error_str.lower():
+                LOGGER.info(
+                    "Calendar event %s missing for follow-up %d; clearing sync",
+                    follow_up.calendar_event_id,
+                    follow_up_id,
+                )
+                repository.update_follow_up_calendar_sync(follow_up_id, None)
+                response_cache.invalidate("dashboard")
+                return {
+                    "success": False,
+                    "exists": False,
+                    "error": "Calendar event was deleted",
+                }
+
+            LOGGER.exception("Unexpected error while checking calendar event")
+            return {
+                "success": False,
+                "exists": None,
+                "error": f"Failed to verify event: {error_str}",
+            }
+
     _ensure_route_names(app)
     return app
 
@@ -1331,6 +1704,8 @@ def _serialize_follow_up(task: FollowUpTask) -> dict[str, Any]:
         "status": task.status,
         "createdAt": serialize_datetime(task.created_at),
         "completedAt": serialize_datetime(task.completed_at),
+        "calendarEventId": task.calendar_event_id,
+        "calendarSyncedAt": serialize_datetime(task.calendar_synced_at),
     }
 
 
