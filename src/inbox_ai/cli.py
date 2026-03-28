@@ -7,12 +7,13 @@ from pathlib import Path
 
 from inbox_ai.core import AppSettings, configure_logging, load_app_settings
 from inbox_ai.core.models import FollowUpTask
-from inbox_ai.ingestion import EmailParser, MailFetcher
+from inbox_ai.ingestion import EmailParser, MailFetcher, OptimizedMailFetcher
 from inbox_ai.intelligence import (
     DraftingService,
     FollowUpPlannerService,
     KeywordCategoryService,
     OllamaClient,
+    OptimizedEmailAnalyzer,
     SummarizationService,
 )
 from inbox_ai.storage import SqliteEmailRepository
@@ -103,41 +104,70 @@ def _run_sync(settings: AppSettings) -> None:
         if settings.llm.base_url and settings.llm.model
         else None
     )
-    drafting_service = DraftingService(
-        llm_client,
-        fallback_enabled=settings.llm.fallback_enabled,
-    )
-    follow_up_planner = FollowUpPlannerService(settings.follow_up)
-    insight_service = SummarizationService(
-        llm_client,
-        fallback_enabled=settings.llm.fallback_enabled,
-        exclude_categories=settings.follow_up.exclude_categories,
-    )
-    category_service = KeywordCategoryService()
+    if llm_client is not None:
+        llm_client.reset_circuit_breaker()
     try:
-        with (
-            ImapClient(settings.imap) as mailbox,
-            SqliteEmailRepository(settings.storage) as repository,
-        ):
-            fetcher = MailFetcher(
-                mailbox=mailbox,
-                repository=repository,
-                parser=email_parser,
-                batch_size=settings.sync.batch_size,
-                max_messages=settings.sync.max_messages,
-                insight_service=insight_service,
-                drafting_service=drafting_service,
-                follow_up_planner=follow_up_planner,
-                category_service=category_service,
-            )
-            result = fetcher.run()
+        processed_total = 0
+        last_uid = None
+        for mailbox_name in settings.imap.mailboxes:
+            with (
+                ImapClient(settings.imap, mailbox_name) as mailbox,
+                SqliteEmailRepository(settings.storage) as repository,
+            ):
+                drafting_service = DraftingService(
+                    llm_client,
+                    fallback_enabled=settings.llm.fallback_enabled,
+                    user_preferences=settings.user.preferences,
+                    reply_tone=settings.user.reply_tone,
+                )
+                follow_up_planner = FollowUpPlannerService(settings.follow_up)
+                insight_service = SummarizationService(
+                    llm_client,
+                    fallback_enabled=settings.llm.fallback_enabled,
+                    exclude_categories=settings.follow_up.exclude_categories,
+                    user_preferences=settings.user.preferences,
+                )
+                category_service = KeywordCategoryService()
+                optimized_analyzer = (
+                    OptimizedEmailAnalyzer(llm_client, settings)
+                    if llm_client is not None
+                    else None
+                )
+                if optimized_analyzer is not None:
+                    fetcher = OptimizedMailFetcher(
+                        mailbox=mailbox,
+                        repository=repository,
+                        parser=email_parser,
+                        analyzer=optimized_analyzer,
+                        batch_size=settings.sync.batch_size,
+                        max_messages=settings.sync.max_messages,
+                        analysis_batch_size=min(settings.sync.batch_size, 5),
+                        follow_up_settings=settings.follow_up,
+                        user_email=settings.imap.username,
+                    )
+                    result, _ = fetcher.run()
+                else:
+                    fetcher = MailFetcher(
+                        mailbox=mailbox,
+                        repository=repository,
+                        parser=email_parser,
+                        batch_size=settings.sync.batch_size,
+                        max_messages=settings.sync.max_messages,
+                        insight_service=insight_service,
+                        drafting_service=drafting_service,
+                        follow_up_planner=follow_up_planner,
+                        category_service=category_service,
+                        follow_up_settings=settings.follow_up,
+                        user_email=settings.imap.username,
+                    )
+                    result = fetcher.run()
+                processed_total += result.processed
+                last_uid = result.new_last_uid
     except ImapError as exc:
         print(f"Sync failed: {exc}")
         return
 
-    processed = result.processed
-    last_uid = result.new_last_uid
-    print(f"Processed {processed} message(s). Last UID stored: {last_uid}")
+    print(f"Processed {processed_total} message(s). Last UID stored: {last_uid}")
 
 
 def _run_follow_ups(

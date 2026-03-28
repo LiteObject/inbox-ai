@@ -14,6 +14,7 @@ from .fallback import build_deterministic_summary
 from .llm import LLMClient, LLMError
 from .priority import score_priority
 from .prompts import build_insight_prompt
+from .text import body_to_text
 
 LOGGER = logging.getLogger(__name__)
 
@@ -30,12 +31,14 @@ class SummarizationService(InsightService):
             [EmailEnvelope, str, Sequence[str]], int
         ] = score_priority,
         exclude_categories: Sequence[str] | None = None,
+        user_preferences: str = "",
     ) -> None:
         """Prepare the insight generator with optional LLM and heuristics."""
         self._llm_client = llm_client
         self._fallback_enabled = fallback_enabled
         self._priority_fn = priority_fn
         self._exclude_categories = set(exclude_categories or [])
+        self._user_preferences = user_preferences
 
     def generate_insight(
         self, email: EmailEnvelope, categories: Sequence[EmailCategory] | None = None
@@ -45,6 +48,7 @@ class SummarizationService(InsightService):
             body_text = _resolve_body_text(email.body)
             summary: str | None = None
             action_items: list[str] = []
+            llm_priority: int | None = None
             provider = "none"
             used_fallback = False
 
@@ -56,10 +60,14 @@ class SummarizationService(InsightService):
                 )
 
             if self._llm_client is not None:
-                prompt = build_insight_prompt(email, body_text=body_text)
+                prompt = build_insight_prompt(
+                    email,
+                    body_text=body_text,
+                    user_preferences=self._user_preferences,
+                )
                 try:
                     raw_output = self._llm_client.generate(prompt)
-                    summary, action_items = _parse_llm_output(raw_output)
+                    summary, action_items, llm_priority = _parse_llm_output(raw_output)
                     provider = self._llm_client.provider_id
                 except (LLMError, ValueError) as exc:
                     LOGGER.warning(
@@ -67,6 +75,7 @@ class SummarizationService(InsightService):
                     )
                     summary = None
                     action_items = []
+                    llm_priority = None
 
             if (summary is None or not summary) and self._fallback_enabled:
                 summary, action_items = build_deterministic_summary(
@@ -88,7 +97,11 @@ class SummarizationService(InsightService):
                 action_items = []
 
             cleaned_actions = [item.strip() for item in action_items if item.strip()]
-            priority = self._priority_fn(email, summary, cleaned_actions)
+            priority = (
+                llm_priority
+                if llm_priority is not None
+                else self._priority_fn(email, summary, cleaned_actions)
+            )
             generated_at = datetime.now(tz=UTC)
 
             LOGGER.debug(
@@ -117,30 +130,10 @@ class SummarizationService(InsightService):
 
 
 def _resolve_body_text(body: EmailBody) -> str:
-    if body.text:
-        return body.text
-    if body.html:
-        return _strip_html(body.html)
-    return ""
+    return body_to_text(body)
 
 
-def _strip_html(payload: str) -> str:
-    cleaned = []
-    skip = False
-    for char in payload:
-        if char == "<":
-            skip = True
-            continue
-        if char == ">":
-            skip = False
-            cleaned.append(" ")
-            continue
-        if not skip:
-            cleaned.append(char)
-    return "".join(cleaned)
-
-
-def _parse_llm_output(raw: str) -> tuple[str, list[str]]:
+def _parse_llm_output(raw: str) -> tuple[str, list[str], int | None]:
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError as exc:
@@ -148,14 +141,23 @@ def _parse_llm_output(raw: str) -> tuple[str, list[str]]:
 
     summary = payload.get("summary")
     items = payload.get("action_items", [])
+    priority_value = payload.get("priority")
 
     if not isinstance(summary, str):
         raise ValueError("LLM output missing 'summary'")
     if not isinstance(items, list) or any(not isinstance(item, str) for item in items):
         raise ValueError("LLM output 'action_items' must be a list of strings")
 
+    priority: int | None = None
+    if priority_value is not None:
+        if isinstance(priority_value, bool) or not isinstance(priority_value, int):
+            raise ValueError("LLM output 'priority' must be an integer")
+        if not 0 <= priority_value <= 10:
+            raise ValueError("LLM output 'priority' must be between 0 and 10")
+        priority = priority_value
+
     normalised_items = [item.strip() for item in items if item.strip()]
-    return summary.strip(), normalised_items
+    return summary.strip(), normalised_items, priority
 
 
 __all__ = ["SummarizationService"]

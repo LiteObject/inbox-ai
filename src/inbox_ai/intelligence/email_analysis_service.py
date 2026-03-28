@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field
+
+from .category import get_default_categories
+from .text import body_to_text
 
 if TYPE_CHECKING:
     from inbox_ai.core import AppSettings
@@ -33,11 +37,11 @@ class EmailAnalysis(BaseModel):
 
     summary: str = Field(description="2-3 sentence summary of the email content")
     priority: int = Field(
-        ge=1,
+        ge=0,
         le=10,
-        description="Priority score from 1 (low) to 10 (critical urgent)",
+        description="Priority score from 0 (low) to 10 (critical urgent)",
     )
-    priority_label: Literal["Low", "Medium", "High", "Urgent"] = Field(
+    priority_label: Literal["Low", "Normal", "High", "Urgent"] = Field(
         description="Human-readable priority label"
     )
     action_items: list[str] = Field(
@@ -123,9 +127,7 @@ class OptimizedEmailAnalyzer:
 
     def analyze_comprehensive(
         self,
-        email_text: str,
-        sender: str,
-        subject: str,
+        email: EmailEnvelope,
     ) -> EmailAnalysis:
         """
         Perform comprehensive email analysis in a single LLM call.
@@ -145,31 +147,39 @@ class OptimizedEmailAnalyzer:
         - Better consistency (single context)
 
         Args:
-            email_text: The email body content
-            sender: Email sender address
-            subject: Email subject line
+            email: Email envelope to analyze
 
         Returns:
             EmailAnalysis with all insights
         """
+        email_text = body_to_text(email.body)
+        sender = email.sender or "Unknown"
+        subject = email.subject or "(No Subject)"
+        category_list = "\n".join(
+            f"- {category.key}: {category.label}"
+            for category in get_default_categories()
+        )
+        user_preferences = self.settings.user.preferences.strip()
+        reply_tone = self.settings.user.reply_tone
+
         system_prompt = """You are an expert email analyst for a busy professional.
 Analyze emails comprehensively and provide actionable insights.
 
 Guidelines:
 - Summaries should be concise (2-3 sentences) and capture key points
-- Priority should reflect urgency and importance (1=routine, 10=drop everything)
+    - Priority should reflect urgency and importance (0=routine, 10=drop everything)
 - Action items should be specific and actionable
-- Categories should be relevant and specific (avoid generic terms)
+    - Categories must use only the provided category keys
 - Follow-ups should have realistic due dates based on email content
-- Draft replies should be professional, concise, and address all key points
+    - Draft replies should respect the requested tone and address all key points
 
 You must respond with valid JSON matching this exact structure:
 {
   "summary": "string (2-3 sentences)",
-  "priority": number (1-10),
-  "priority_label": "Low" | "Medium" | "High" | "Urgent",
-  "action_items": ["string"],
-  "categories": ["string"],
+      "priority": number (0-10),
+      "priority_label": "Low" | "Normal" | "High" | "Urgent",
+      "action_items": ["string"],
+      "categories": ["category_key"],
   "follow_ups": [{"action": "string", "due_date": "YYYY-MM-DD or null"}],
   "suggested_reply": "string"
 }"""
@@ -179,29 +189,39 @@ You must respond with valid JSON matching this exact structure:
 **From:** {sender}
 **Subject:** {subject}
 
+    **Reply Tone:** {reply_tone}
+
+    **Available Categories:**
+    {category_list}
+    """
+        if user_preferences:
+            user_prompt += f"""
+
+    **User Context:**
+    {user_preferences}
+    """
+        user_prompt += f"""
+
 **Email Body:**
 {email_text}
 
 Provide structured analysis including:
 
 1. **Summary**: Concise 2-3 sentence summary of the email
-2. **Priority**: Score 1-10 where:
-   - 1-3: Low priority (informational, no urgent action needed)
-   - 4-6: Medium priority (requires action but not urgent)
+    2. **Priority**: Score 0-10 where:
+       - 0-2: Low priority (informational, no urgent action needed)
+       - 3-5: Normal priority (requires action but not urgent)
    - 7-8: High priority (important, time-sensitive)
    - 9-10: Urgent (critical, immediate action required)
-3. **Priority Label**: One of: Low, Medium, High, Urgent
+    3. **Priority Label**: One of: Low, Normal, High, Urgent
 4. **Action Items**: Specific actions the recipient should take
-5. **Categories**: Relevant categories (e.g., "Meeting Request", "Invoice", "Customer Support")
+    5. **Categories**: Use only category keys from the provided category list
 6. **Follow-ups**: Tasks with suggested due dates (use ISO format YYYY-MM-DD)
-7. **Draft Reply**: Professional response that addresses the email appropriately
+    7. **Draft Reply**: Response that uses the requested tone and addresses the email appropriately
 
 Return ONLY valid JSON matching the specified structure."""
 
         try:
-            # Record cache miss (we're making an LLM call)
-            self.metrics.record_cache_miss()
-
             # Make single composite LLM call
             full_prompt = f"{system_prompt}\n\n{user_prompt}"
             response = self.llm.generate(
@@ -209,10 +229,6 @@ Return ONLY valid JSON matching the specified structure."""
                 temperature=0.3,  # Lower temperature for consistent analysis
                 max_tokens=1500,
             )
-
-            # Parse JSON response
-            import json
-
             analysis_dict = json.loads(response)
             analysis = EmailAnalysis(**analysis_dict)
 
@@ -237,9 +253,9 @@ Return ONLY valid JSON matching the specified structure."""
             return EmailAnalysis(
                 summary=f"Email from {sender} regarding: {subject}",
                 priority=5,
-                priority_label="Medium",
+                priority_label="Normal",
                 action_items=["Review this email"],
-                categories=["Uncategorized"],
+                categories=["general"],
                 follow_ups=[],
                 suggested_reply="Thank you for your email. I will review this and get back to you soon.",
             )
@@ -282,9 +298,7 @@ Return ONLY valid JSON matching the specified structure."""
             loop.run_in_executor(
                 None,
                 self.analyze_comprehensive,
-                envelope.body.text or envelope.body.html or "",
-                envelope.sender or "Unknown",
-                envelope.subject or "(No Subject)",
+                envelope,
             )
             for envelope in envelopes
         ]
@@ -304,9 +318,9 @@ Return ONLY valid JSON matching the specified structure."""
                     EmailAnalysis(
                         summary=f"Email from {envelopes[i].sender}",
                         priority=5,
-                        priority_label="Medium",
+                        priority_label="Normal",
                         action_items=["Review this email"],
-                        categories=["Uncategorized"],
+                        categories=["general"],
                         follow_ups=[],
                         suggested_reply="Thank you for your email.",
                     )

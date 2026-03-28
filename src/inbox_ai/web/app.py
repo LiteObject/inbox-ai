@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from urllib.parse import parse_qsl, urlencode
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from datetime import UTC, datetime
 
@@ -43,7 +43,7 @@ from inbox_ai.core.models import (
     EmailInsight,
     FollowUpTask,
 )
-from inbox_ai.ingestion import EmailParser, MailFetcher
+from inbox_ai.ingestion import EmailParser, MailFetcher, OptimizedMailFetcher
 from inbox_ai.intelligence import (
     DraftingError,
     DraftingService,
@@ -52,6 +52,7 @@ from inbox_ai.intelligence import (
     LLMCategoryService,
     LLMError,
     OllamaClient,
+    OptimizedEmailAnalyzer,
     SummarizationService,
 )
 from inbox_ai.storage import SqliteEmailRepository
@@ -210,6 +211,12 @@ _DEFAULT_ENV_FILE = _PROJECT_ROOT / ".env"
 _ENV_FILE_OVERRIDE_VAR = "INBOX_AI_DASHBOARD_ENV_FILE"
 
 _BOOLEAN_OPTIONS: tuple[str, ...] = ("true", "false")
+_REPLY_TONE_OPTIONS: tuple[str, ...] = (
+    "Professional",
+    "Casual",
+    "Concise",
+    "Detailed",
+)
 
 CONFIG_SECTIONS: tuple[ConfigSection, ...] = (
     ConfigSection(
@@ -331,6 +338,13 @@ CONFIG_SECTIONS: tuple[ConfigSection, ...] = (
     ConfigSection(
         title="User Preferences",
         fields=(
+            ConfigField(
+                "INBOX_AI_USER__REPLY_TONE",
+                "Reply Tone",
+                input_type="select",
+                options=_REPLY_TONE_OPTIONS,
+                description="Default tone used for generated reply drafts.",
+            ),
             ConfigField(
                 "INBOX_AI_USER__PREFERENCES",
                 "Guidance",
@@ -850,6 +864,10 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         csrf.validate(request, token)
         redirect_raw = _coerce_form_value(form.get("redirect_to"))
         redirect_target = _sanitize_redirect(redirect_raw or None) or "/"
+        LOGGER.info(
+            "Clear database requested from %s",
+            request.client.host if request.client else "unknown",
+        )
 
         outcome = await asyncio.to_thread(_clear_database, app_settings)
         status_value = "ok" if outcome.success else "error"
@@ -1842,18 +1860,8 @@ def _run_sync_cycle(
         if settings.llm.base_url and settings.llm.model
         else None
     )
-    drafting_service = DraftingService(
-        llm_client, fallback_enabled=settings.llm.fallback_enabled
-    )
-    follow_up_planner = FollowUpPlannerService(settings.follow_up)
-    insight_service = SummarizationService(
-        llm_client,
-        fallback_enabled=settings.llm.fallback_enabled,
-        exclude_categories=settings.follow_up.exclude_categories,
-    )
-    category_service = (
-        LLMCategoryService(llm_client) if llm_client else KeywordCategoryService()
-    )
+    if llm_client is not None:
+        llm_client.reset_circuit_breaker()
 
     try:
         processed_total = 0
@@ -1866,34 +1874,91 @@ def _run_sync_cycle(
                         ImapClient(settings.imap, mailbox_name) as mailbox,
                         SqliteEmailRepository(settings.storage) as repository,
                     ):
+                        user_guidance = (
+                            repository.get_user_preference("guidance")
+                            or settings.user.preferences
+                        )
+                        drafting_service = DraftingService(
+                            llm_client,
+                            fallback_enabled=settings.llm.fallback_enabled,
+                            user_preferences=user_guidance,
+                            reply_tone=settings.user.reply_tone,
+                        )
+                        follow_up_planner = FollowUpPlannerService(settings.follow_up)
+                        insight_service = SummarizationService(
+                            llm_client,
+                            fallback_enabled=settings.llm.fallback_enabled,
+                            exclude_categories=settings.follow_up.exclude_categories,
+                            user_preferences=user_guidance,
+                        )
+                        category_service = (
+                            LLMCategoryService(llm_client)
+                            if llm_client
+                            else KeywordCategoryService()
+                        )
+                        optimized_analyzer = (
+                            OptimizedEmailAnalyzer(
+                                llm_client,
+                                settings.model_copy(
+                                    update={
+                                        "user": settings.user.model_copy(
+                                            update={"preferences": user_guidance}
+                                        )
+                                    }
+                                ),
+                            )
+                            if llm_client is not None
+                            else None
+                        )
                         checkpoint = repository.get_checkpoint(mailbox_name)
                         last_uid = checkpoint.last_uid if checkpoint else None
                         _enqueue(
                             f"[{index}/{mailbox_total}] Last synced UID for {mailbox_name}: {last_uid or 'none'}"
                         )
-                        fetcher = MailFetcher(
-                            mailbox=mailbox,
-                            repository=repository,
-                            parser=email_parser,
-                            batch_size=settings.sync.batch_size,
-                            max_messages=settings.sync.max_messages,
-                            insight_service=insight_service,
-                            drafting_service=drafting_service,
-                            follow_up_planner=follow_up_planner,
-                            category_service=category_service,
-                            follow_up_settings=settings.follow_up,
-                            progress_callback=(
-                                (
-                                    lambda message, mailbox_name=mailbox_name: _enqueue(
-                                        f"[{mailbox_name}] {message}"
-                                    )
+                        progress_callback = (
+                            (
+                                lambda message, mailbox_name=mailbox_name: _enqueue(
+                                    f"[{mailbox_name}] {message}"
                                 )
-                                if progress_queue
-                                else None
-                            ),
-                            user_email=settings.imap.username,
+                            )
+                            if progress_queue
+                            else None
                         )
-                        result = fetcher.run()
+                        if optimized_analyzer is not None:
+                            fetcher = OptimizedMailFetcher(
+                                mailbox=mailbox,
+                                repository=repository,
+                                parser=email_parser,
+                                analyzer=optimized_analyzer,
+                                batch_size=settings.sync.batch_size,
+                                max_messages=settings.sync.max_messages,
+                                analysis_batch_size=min(settings.sync.batch_size, 5),
+                                follow_up_settings=settings.follow_up,
+                                progress_callback=progress_callback,
+                                user_email=settings.imap.username,
+                            )
+                            result, metrics = fetcher.run()
+                            LOGGER.info(
+                                "Composite analysis metrics for %s: %s",
+                                mailbox_name,
+                                metrics.get_summary(),
+                            )
+                        else:
+                            fetcher = MailFetcher(
+                                mailbox=mailbox,
+                                repository=repository,
+                                parser=email_parser,
+                                batch_size=settings.sync.batch_size,
+                                max_messages=settings.sync.max_messages,
+                                insight_service=insight_service,
+                                drafting_service=drafting_service,
+                                follow_up_planner=follow_up_planner,
+                                category_service=category_service,
+                                follow_up_settings=settings.follow_up,
+                                progress_callback=progress_callback,
+                                user_email=settings.imap.username,
+                            )
+                            result = fetcher.run()
                         processed_total += result.processed
                         _enqueue(
                             f"[{index}/{mailbox_total}] {mailbox_name}: processed {result.processed} new message(s)."
@@ -1983,7 +2048,41 @@ def _regenerate_categories(settings: AppSettings) -> CategoryRefreshOutcome:
 def _clear_database(settings: AppSettings) -> ClearDatabaseOutcome:
     try:
         with SqliteEmailRepository(settings.storage) as repository:
+            # Log counts before clearing to help debug issues where nothing seems to change
+            try:
+                cur = repository._connection.execute("SELECT COUNT(*) FROM emails")
+                before_emails = cur.fetchone()[0]
+            except Exception:
+                before_emails = None
+            try:
+                cur = repository._connection.execute("SELECT COUNT(*) FROM follow_ups")
+                before_followups = cur.fetchone()[0]
+            except Exception:
+                before_followups = None
+            LOGGER.info(
+                "Database counts before clear: emails=%s follow_ups=%s",
+                before_emails,
+                before_followups,
+            )
+
             repository.clear_all_tables()
+
+            # Log counts after clearing to verify it worked
+            try:
+                cur = repository._connection.execute("SELECT COUNT(*) FROM emails")
+                after_emails = cur.fetchone()[0]
+            except Exception:
+                after_emails = None
+            try:
+                cur = repository._connection.execute("SELECT COUNT(*) FROM follow_ups")
+                after_followups = cur.fetchone()[0]
+            except Exception:
+                after_followups = None
+            LOGGER.info(
+                "Database counts after clear: emails=%s follow_ups=%s",
+                after_emails,
+                after_followups,
+            )
         return ClearDatabaseOutcome(
             success=True,
             message="Database cleared successfully.",
@@ -2023,6 +2122,11 @@ def _regenerate_draft(
             drafting_service = DraftingService(
                 llm_client,
                 fallback_enabled=settings.llm.fallback_enabled,
+                user_preferences=(
+                    repository.get_user_preference("guidance")
+                    or settings.user.preferences
+                ),
+                reply_tone=settings.user.reply_tone,
             )
 
             try:
@@ -2255,6 +2359,10 @@ def _generate_follow_ups(
                     llm_client,
                     fallback_enabled=settings.llm.fallback_enabled,
                     exclude_categories=settings.follow_up.exclude_categories,
+                    user_preferences=(
+                        repository.get_user_preference("guidance")
+                        or settings.user.preferences
+                    ),
                 )
                 try:
                     regenerated_insight = summarizer.generate_insight(email, categories)
@@ -2509,9 +2617,20 @@ def _format_env_value(value: str) -> str:
 
 
 def _append_query_param(url: str, key: str, value: str) -> str:
-    base, separator, query = url.partition("?")
-    if separator:
-        existing = dict(parse_qsl(query, keep_blank_values=True))
-        existing[key] = value
-        return f"{base}?{urlencode(existing)}"
-    return f"{url}?{urlencode({key: value})}"
+    parts = urlsplit(url)
+    existing = dict(parse_qsl(parts.query, keep_blank_values=True))
+    existing[key] = value
+    new_query = urlencode(existing)
+
+    if parts.scheme or parts.netloc:
+        return urlunsplit(
+            (parts.scheme, parts.netloc, parts.path, new_query, parts.fragment)
+        )
+
+    path = parts.path or "/"
+    result = path
+    if new_query:
+        result = f"{result}?{new_query}"
+    if parts.fragment:
+        result = f"{result}#{parts.fragment}"
+    return result

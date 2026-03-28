@@ -148,6 +148,10 @@ class UserSettings(BaseModel):
             "Free-form guidance describing personal priorities or items to de-emphasise."
         ),
     )
+    reply_tone: str = Field(
+        default="Professional",
+        description="Preferred tone for generated reply drafts.",
+    )
 
 
 class CalendarSettings(BaseModel):

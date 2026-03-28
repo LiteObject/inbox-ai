@@ -9,13 +9,20 @@ from typing import Iterable, List, Sequence
 from inbox_ai.core.models import (
     DraftRecord,
     EmailBody,
+    EmailCategory,
     EmailEnvelope,
     EmailInsight,
     FollowUpTask,
     MessageChunk,
     SyncCheckpoint,
 )
-from inbox_ai.ingestion import MailFetcher
+from inbox_ai.core.config import StorageSettings
+from inbox_ai.ingestion import MailFetcher, OptimizedMailFetcher
+from inbox_ai.intelligence import EmailAnalysis
+from inbox_ai.intelligence.email_analysis_service import (
+    FollowUpTask as AnalyzerFollowUpTask,
+)
+from inbox_ai.storage import SqliteEmailRepository
 
 
 @dataclass
@@ -151,6 +158,28 @@ class StubParser:
         )
 
 
+class StableContentParser(StubParser):
+    """Parser that returns the same content across UIDs for cache tests."""
+
+    def parse(self, uid: int, payload: bytes, mailbox: str) -> EmailEnvelope:
+        envelope = super().parse(uid, payload, mailbox)
+        return EmailEnvelope(
+            uid=uid,
+            mailbox=mailbox,
+            message_id=envelope.message_id,
+            thread_id=envelope.thread_id,
+            subject="Cached message",
+            sender=envelope.sender,
+            to=envelope.to,
+            cc=envelope.cc,
+            bcc=envelope.bcc,
+            sent_at=envelope.sent_at,
+            received_at=envelope.received_at,
+            body=EmailBody(text="cached body", html=None),
+            attachments=envelope.attachments,
+        )
+
+
 class StubInsightService:
     """Deterministic insight generator for tests."""
 
@@ -213,6 +242,37 @@ class StubFollowUpPlanner:
             completed_at=None,
         )
         return (task,)
+
+
+class StubOptimizedAnalyzer:
+    """Composite analyzer stub returning prebuilt analysis results."""
+
+    def __init__(self, analyses: list[EmailAnalysis]) -> None:
+        self._analyses = analyses
+        self.calls: list[list[int]] = []
+        self._metrics = type(
+            "Metrics",
+            (),
+            {
+                "total_calls": 0,
+                "total_tokens_input": 0,
+                "total_tokens_output": 0,
+                "cache_hits": 0,
+                "cache_misses": 0,
+                "get_summary": lambda self: {"total_calls": self.total_calls},
+            },
+        )()
+        self.llm = type("LLM", (), {"provider_id": "stub-optimized"})()
+
+    async def analyze_batch(
+        self, envelopes: list[EmailEnvelope]
+    ) -> list[EmailAnalysis]:
+        self.calls.append([envelope.uid for envelope in envelopes])
+        self._metrics.total_calls += len(envelopes)
+        return self._analyses[: len(envelopes)]
+
+    def get_metrics(self):
+        return self._metrics
 
 
 def test_mail_fetcher_persists_messages_and_updates_checkpoint() -> None:
@@ -324,3 +384,139 @@ def test_mail_fetcher_generates_drafts_and_follow_ups() -> None:
     assert repository.drafts == [11]
     assert follow_up_planner.calls == [11]
     assert repository.follow_up_replacements == [(11, ("Follow up 11",))]
+
+
+def test_optimized_mail_fetcher_persists_composite_outputs(tmp_path) -> None:
+    mailbox = DummyMailbox(mailbox="INBOX", chunks=[MessageChunk(uid=21, raw=b"")])
+    repository = SqliteEmailRepository(
+        StorageSettings(db_path=tmp_path / "optimized.db")
+    )
+    parser = StubParser()
+    analyzer = StubOptimizedAnalyzer(
+        [
+            EmailAnalysis(
+                summary="Need support help soon.",
+                priority=8,
+                priority_label="High",
+                action_items=["Reply to the customer"],
+                categories=["support", "high_priority"],
+                follow_ups=[
+                    AnalyzerFollowUpTask(
+                        action="Reply to the customer",
+                        due_date="2026-03-28",
+                    )
+                ],
+                suggested_reply="Thanks for reaching out. We are on it.",
+            )
+        ]
+    )
+
+    fetcher = OptimizedMailFetcher(
+        mailbox=mailbox,
+        repository=repository,
+        parser=parser,
+        analyzer=analyzer,
+        batch_size=2,
+        max_messages=None,
+        analysis_batch_size=1,
+        user_email="user@example.com",
+    )
+
+    result, _ = fetcher.run()
+
+    assert result.processed == 1
+    insight = repository.fetch_insight(21)
+    assert insight is not None
+    assert insight.summary == "Need support help soon."
+    assert insight.priority == 8
+    categories = repository.get_categories_for_uids([21])[21]
+    assert categories == (
+        EmailCategory(key="high_priority", label="High Priority"),
+        EmailCategory(key="support", label="Support Request"),
+    )
+    drafts = repository.fetch_latest_drafts([21])
+    assert drafts[21].body == "Thanks for reaching out. We are on it."
+    follow_ups = repository.fetch_follow_ups_for_uids([21])[21]
+    assert len(follow_ups) == 1
+    assert follow_ups[0].action == "Reply to the customer"
+    assert follow_ups[0].status == "open"
+    repository.close()
+
+
+def test_optimized_mail_fetcher_reuses_cached_outputs(tmp_path) -> None:
+    repository = SqliteEmailRepository(StorageSettings(db_path=tmp_path / "cached.db"))
+    seed_email = StableContentParser().parse(uid=30, payload=b"", mailbox="INBOX")
+    repository.persist_email(seed_email)
+    repository.update_content_hash(
+        30, OptimizedMailFetcher._compute_content_hash(seed_email)
+    )
+    generated_at = datetime.now(tz=timezone.utc)
+    repository.persist_insight(
+        EmailInsight(
+            email_uid=30,
+            summary="Cached summary",
+            action_items=("Cached action",),
+            priority=6,
+            provider="cached-provider",
+            generated_at=generated_at,
+            used_fallback=False,
+        )
+    )
+    repository.replace_categories(
+        30,
+        (EmailCategory(key="support", label="Support Request"),),
+    )
+    repository.persist_draft(
+        DraftRecord(
+            id=None,
+            email_uid=30,
+            body="Cached draft",
+            provider="cached-provider",
+            generated_at=generated_at,
+            confidence=0.9,
+            used_fallback=False,
+        )
+    )
+    repository.replace_follow_ups(
+        30,
+        (
+            FollowUpTask(
+                id=None,
+                email_uid=30,
+                action="Cached action",
+                due_at=generated_at,
+                status="open",
+                created_at=generated_at,
+                completed_at=None,
+            ),
+        ),
+    )
+
+    mailbox = DummyMailbox(mailbox="INBOX", chunks=[MessageChunk(uid=31, raw=b"")])
+    parser = StableContentParser()
+    analyzer = StubOptimizedAnalyzer([])
+    fetcher = OptimizedMailFetcher(
+        mailbox=mailbox,
+        repository=repository,
+        parser=parser,
+        analyzer=analyzer,
+        batch_size=2,
+        max_messages=None,
+        analysis_batch_size=1,
+        user_email="user@example.com",
+    )
+
+    result, _ = fetcher.run()
+
+    assert result.processed == 1
+    assert analyzer.calls == []
+    copied_insight = repository.fetch_insight(31)
+    assert copied_insight is not None
+    assert copied_insight.summary == "Cached summary"
+    copied_categories = repository.get_categories_for_uids([31])[31]
+    assert copied_categories == (EmailCategory(key="support", label="Support Request"),)
+    copied_draft = repository.fetch_latest_drafts([31])[31]
+    assert copied_draft.body == "Cached draft"
+    copied_follow_ups = repository.fetch_follow_ups_for_uids([31])[31]
+    assert copied_follow_ups[0].action == "Cached action"
+    repository.close()

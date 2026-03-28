@@ -23,13 +23,18 @@ def test_defaults_loaded_without_env_file() -> None:
     assert settings.imap.host == "imap.gmail.com"
     assert settings.storage.db_path == Path("./inbox_ai.db")
     assert settings.sync.batch_size == 50
+    assert settings.user.reply_tone == "Professional"
 
 
 def test_env_file_overrides(tmp_path: Path) -> None:
     """Values defined in an env file should override defaults."""
 
     env_file = tmp_path / "test.env"
-    env_file.write_text("INBOX_AI_IMAP__HOST=imap.example.com\n", encoding="utf-8")
+    env_file.write_text(
+        "INBOX_AI_IMAP__HOST=imap.example.com\n" "INBOX_AI_USER__REPLY_TONE=Detailed\n",
+        encoding="utf-8",
+    )
 
     settings = load_app_settings(env_file=env_file, include_environment=False)
     assert settings.imap.host == "imap.example.com"
+    assert settings.user.reply_tone == "Detailed"

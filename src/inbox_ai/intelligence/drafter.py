@@ -27,10 +27,14 @@ class DraftingService(DraftingServiceProtocol):
         llm_client: LLMClient | None,
         *,
         fallback_enabled: bool = True,
+        user_preferences: str = "",
+        reply_tone: str = "Professional",
     ) -> None:
         """Initialise the service with an optional LLM client and fallback flag."""
         self._llm_client = llm_client
         self._fallback_enabled = fallback_enabled
+        self._user_preferences = user_preferences
+        self._reply_tone = reply_tone
 
     def generate_draft(
         self, email: EmailEnvelope, insight: EmailInsight
@@ -42,7 +46,12 @@ class DraftingService(DraftingServiceProtocol):
         used_fallback = False
 
         if self._llm_client is not None:
-            prompt = build_draft_prompt(email, insight)
+            prompt = build_draft_prompt(
+                email,
+                insight,
+                user_preferences=self._user_preferences,
+                reply_tone=self._reply_tone,
+            )
             try:
                 raw_output = self._llm_client.generate(prompt)
                 body, confidence = _parse_draft_output(raw_output)

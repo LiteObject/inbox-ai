@@ -175,8 +175,7 @@
                         Rebuild Categories
                     </button>
                 </form>
-                <form method="post" action="/clear-database"
-                    onsubmit="return confirm('This will permanently delete all emails, insights, drafts, and follow-ups. Are you sure?');">
+                <form id="clear-database-form" method="post" action="/clear-database">
                     <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
                     <input type="hidden" name="redirect_to" value="{{ redirect_to }}#maintenance" />
                     <button type="submit" class="md3-button md3-button--tonal"
@@ -486,6 +485,37 @@
             }
         });
 
+        // Clear database button - use dialog.confirm instead of browser confirm()
+        const clearDbForm = document.getElementById('clear-database-form');
+        const clearDbButton = clearDbForm?.querySelector('button[type="submit"]');
+
+        if (clearDbButton) {
+            clearDbButton.addEventListener('click', async (e) => {
+                e.preventDefault();
+
+                const confirmed = await dialog.confirm(
+                    'This will permanently delete all emails, insights, drafts, and follow-ups.',
+                    'Clear Database?',
+                    'Clear',
+                    'Cancel'
+                );
+
+                if (!confirmed) {
+                    return;
+                }
+
+                // Disable button and show loading state
+                clearDbButton.disabled = true;
+                const originalHtml = clearDbButton.innerHTML;
+                clearDbButton.innerHTML = '<span class="material-icons rotating">hourglass_empty</span> Clearing...';
+
+                console.log('Submitting clear-database form');
+
+                // Submit the form
+                clearDbForm.submit();
+            });
+        }
+
         // Load calendar status on page load
         document.addEventListener('DOMContentLoaded', loadCalendarStatus);
 
@@ -500,6 +530,16 @@
         } else if (calendarStatus?.startsWith('calendar_auth_failed')) {
             ToastManager.show('Failed to connect Google Calendar. Please try again.', 'error');
             window.history.replaceState({}, '', window.location.pathname);
+        }
+
+        // Handle clear database status when returning from server redirect
+        const clearStatus = urlParams.get('clear_status');
+        const clearMessage = urlParams.get('clear_message');
+        if (clearStatus) {
+            const variant = clearStatus === 'ok' ? 'success' : 'error';
+            ToastManager.show(clearMessage || (clearStatus === 'ok' ? 'Database cleared' : 'Failed to clear database'), variant);
+            // Remove query params from URL to keep UI clean
+            window.history.replaceState({}, '', window.location.pathname + window.location.hash);
         }
     </script>
 </body>
