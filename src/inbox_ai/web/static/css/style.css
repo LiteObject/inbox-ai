@@ -2816,7 +2816,7 @@ h2.toolbar-heading {
 }
 
 .settings-page .settings-container {
-    max-width: 960px;
+    max-width: 1440px;
     margin: 0 auto;
     width: 100%;
     padding: var(--md3-spacing-32);
@@ -2825,25 +2825,77 @@ h2.toolbar-heading {
     background: transparent;
 }
 
-.settings-page .settings-intro {
-    margin-bottom: var(--md3-spacing-32);
+.settings-page .settings-toolbar {
+    align-items: flex-start;
 }
 
-.settings-page .settings-intro__eyebrow {
-    display: inline-block;
-    margin-bottom: var(--md3-spacing-8);
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--md3-color-primary);
+.settings-page .settings-toolbar__heading {
+    display: grid;
+    gap: var(--md3-spacing-6);
 }
 
-.settings-page .settings-intro h1 {
+.settings-page .settings-toolbar__heading h1 {
     margin: 0;
     font-size: 28px;
     font-weight: 700;
+    line-height: 1.1;
     color: var(--md3-color-on-surface);
+}
+
+.settings-page .settings-toolbar__heading p {
+    margin: 0;
+    max-width: 60ch;
+    font-size: 14px;
+    color: var(--md3-color-on-surface-variant);
+}
+
+.settings-page .settings-toolbar__nav {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--md3-spacing-8);
+    margin-left: auto;
+}
+
+.settings-page .settings-anchor-chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 34px;
+    padding: 0 var(--md3-spacing-12);
+    border-radius: var(--md3-radius-pill);
+    border: 1px solid var(--md3-color-outline-variant);
+    background: color-mix(in srgb, var(--md3-color-surface) 88%, var(--md3-color-surface-container) 12%);
+    color: var(--md3-color-on-surface-variant);
+    font-size: 13px;
+    font-weight: 500;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.settings-page .settings-anchor-chip:hover,
+.settings-page .settings-anchor-chip:focus-visible {
+    border-color: var(--md3-color-primary);
+    color: var(--md3-color-primary);
+    outline: none;
+}
+
+.settings-page .settings-workspace {
+    display: grid;
+    grid-template-columns: minmax(0, 1.6fr) minmax(300px, 0.95fr);
+    gap: var(--md3-spacing-24);
+    align-items: start;
+}
+
+.settings-page .settings-column {
+    display: grid;
+    gap: var(--md3-spacing-20);
+}
+
+.settings-page .settings-panel {
+    background: color-mix(in srgb, var(--md3-color-surface) 92%, var(--md3-color-surface-container) 8%);
+    padding: var(--md3-spacing-24);
+    border-radius: var(--md3-radius-lg);
+    border: 1px solid var(--md3-color-outline-variant);
 }
 
 @media (max-width: 839px) {
@@ -2878,58 +2930,20 @@ h2.toolbar-heading {
     }
 }
 
-.settings-page .settings-intro-header {
-    display: flex;
-    align-items: center;
-    gap: var(--md3-spacing-12);
-    margin-bottom: var(--md3-spacing-8);
-}
-
-.settings-page .settings-intro-header h1 {
-    margin: 0;
-}
-
-.settings-page .settings-intro p {
-    margin: var(--md3-spacing-8) 0 0 0;
-    font-size: 14px;
-    color: var(--md3-color-on-surface-variant);
-}
-
 @media (max-width: 599px) {
-    .settings-page .settings-intro h1 {
+    .settings-page .settings-toolbar__heading h1 {
         font-size: 22px;
     }
 
-    .settings-page .settings-intro p {
+    .settings-page .settings-toolbar__heading p {
         font-size: 13px;
     }
-    
-    .settings-page .settings-intro-header {
-        gap: var(--md3-spacing-8);
-    }
-}
-
-.settings-page .md3-card {
-    background: color-mix(in srgb, var(--md3-color-surface-container-low) 88%, transparent);
-    padding: var(--md3-spacing-24);
-    margin-bottom: var(--md3-spacing-24);
-    border-radius: var(--md3-radius-lg);
-    border: 1px solid var(--md3-color-outline-variant);
-    box-shadow: none;
 }
 
 @media (max-width: 599px) {
-    .settings-page .md3-card {
+    .settings-page .settings-panel {
         padding: var(--md3-spacing-16);
-        margin-bottom: var(--md3-spacing-16);
     }
-}
-
-.settings-page .md3-card h2 {
-    margin: 0 0 var(--md3-spacing-16) 0;
-    font-size: 20px;
-    font-weight: 600;
-    color: var(--md3-color-on-surface);
 }
 
 .settings-page .settings-section-heading {
@@ -2943,19 +2957,24 @@ h2.toolbar-heading {
     margin: 0;
 }
 
-.settings-page .md3-card p {
-    margin: 0 0 var(--md3-spacing-16) 0;
+.settings-page .settings-section-heading h2 {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--md3-color-on-surface);
+}
+
+.settings-page .settings-section-heading p {
     font-size: 14px;
     color: var(--md3-color-on-surface-variant);
     line-height: 1.5;
 }
 
 @media (max-width: 599px) {
-    .settings-page .md3-card h2 {
+    .settings-page .settings-section-heading h2 {
         font-size: 18px;
     }
 
-    .settings-page .md3-card p {
+    .settings-page .settings-section-heading p {
         font-size: 13px;
     }
 }
@@ -2967,10 +2986,11 @@ h2.toolbar-heading {
 }
 
 .settings-page .config-group {
-    border: 1px solid var(--md3-color-outline-variant);
-    border-radius: 12px;
-    padding: var(--md3-spacing-16);
-    background: var(--md3-color-surface-container-low);
+    border: none;
+    border-top: 1px solid var(--md3-color-outline-variant);
+    padding: var(--md3-spacing-16) 0 0;
+    margin: 0;
+    min-width: 0;
 }
 
 .settings-page .config-group legend {
@@ -2982,6 +3002,11 @@ h2.toolbar-heading {
     padding: 0;
 }
 
+.settings-page .config-form > .config-group:first-of-type {
+    border-top: none;
+    padding-top: 0;
+}
+
 .settings-page .config-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
@@ -2989,10 +3014,6 @@ h2.toolbar-heading {
 }
 
 @media (max-width: 599px) {
-    .settings-page .config-group {
-        padding: var(--md3-spacing-12);
-    }
-
     .settings-page .config-grid {
         grid-template-columns: 1fr;
         gap: var(--md3-spacing-12);
@@ -3005,10 +3026,6 @@ h2.toolbar-heading {
 }
 
 @media (min-width: 600px) and (max-width: 839px) {
-    .settings-page .config-group {
-        padding: var(--md3-spacing-14);
-    }
-
     .settings-page .config-grid {
         grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
         gap: var(--md3-spacing-14);
@@ -3531,9 +3548,17 @@ h2.toolbar-heading {
         padding-top: calc(64px + var(--md3-spacing-16));
     }
 
-    .settings-page .settings-header {
-        flex-direction: column;
-        align-items: flex-start;
+    .settings-page .settings-toolbar {
+        gap: var(--md3-spacing-12);
+    }
+
+    .settings-page .settings-toolbar__nav {
+        margin-left: 0;
+        justify-content: flex-start;
+    }
+
+    .settings-page .settings-workspace {
+        grid-template-columns: 1fr;
     }
 
     .settings-page .config-grid {
@@ -3984,7 +4009,7 @@ h2.toolbar-heading {
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .settings-page .settings-header a,
+    .settings-page .settings-anchor-chip,
     .settings-page .md3-button {
         transition: none;
     }
