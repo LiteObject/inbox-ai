@@ -420,6 +420,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const emailList = document.getElementById('email-list');
     const detailHost = document.getElementById('detail-content');
     const templateContainer = document.getElementById('detail-templates');
+    const listPane = emailList?.closest('.md3-list-pane');
 
     if (listDetailContainer && emailList && detailHost && templateContainer) {
         // Initialize lazy loading manager
@@ -500,6 +501,33 @@ document.addEventListener("DOMContentLoaded", async () => {
             list: emailList,
             visibleCount: visibleCountTargets,
             emptyNotice: document.getElementById('insights-filter-empty'),
+            onFilterChange: ({ visibleItems, hasQuery }) => {
+                listPane?.classList.toggle('md3-list-pane--empty', visibleItems.length === 0);
+
+                if (!window.listDetailController) {
+                    return;
+                }
+
+                if (visibleItems.length === 0) {
+                    window.listDetailController.clearSelection({
+                        emptyState: hasQuery
+                            ? {
+                                icon: 'search_off',
+                                title: 'No matching emails',
+                                message: 'Try another sender, subject, or keyword to continue browsing the inbox.',
+                            }
+                            : {
+                                icon: 'draft',
+                                title: 'No email details yet',
+                                message: 'Once messages are available, this panel will show summaries, actions, and draft replies.',
+                            },
+                    });
+                    return;
+                }
+
+                const visibleUids = visibleItems.map((item) => item.dataset.uid);
+                window.listDetailController.syncVisibleItems(visibleUids);
+            },
         });
 
         // Setup sort controls

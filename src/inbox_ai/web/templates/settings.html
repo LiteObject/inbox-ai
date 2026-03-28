@@ -5,12 +5,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Inbox AI Configuration</title>
+    {% set static_asset_version = '20260328d' %}
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet" />
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet" />
-    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}" />
-    <script src="{{ url_for('static', path='js/register-sw.js') }}" defer></script>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}?v={{ static_asset_version }}" />
+    <script src="{{ url_for('static', path='js/register-sw.js') }}?v={{ static_asset_version }}" defer></script>
 </head>
 
 <body class="page-root settings-page">
@@ -25,20 +26,19 @@
     </div>
 
     {% set page_title = 'Settings' %}
+    {% set page_subtitle = 'Workspace settings' %}
+    {% set page_subtitle_icon = 'settings' %}
     {% set show_settings_button = false %}
     {% set show_back_button = true %}
     {% include 'partials/header.html' %}
 
     <div class="settings-container">
         <div class="settings-intro">
+            <span class="settings-intro__eyebrow">Workspace preferences</span>
             <div class="settings-intro-header">
-                <button id="back-button" class="md3-icon-button" type="button" onclick="window.location.href='/'">
-                    <span class="material-icons" aria-hidden="true">arrow_back</span>
-                    <span class="sr-only">Back to dashboard</span>
-                </button>
                 <h1>Configuration</h1>
             </div>
-            <p>Adjust IMAP, storage, and intelligence settings. Changes are written to your <code>.env</code> file
+            <p>Adjust email, storage, and AI settings. Changes are written to your <code>.env</code> file
                 and applied after the server restarts.</p>
         </div>
 
@@ -55,7 +55,10 @@
             </div>
             {% endif %}
 
-            <h2>Settings</h2>
+            <div class="settings-section-heading">
+                <h2>Settings</h2>
+                <p>Update email, storage, and AI behavior in one place.</p>
+            </div>
 
             <form class="config-form" method="post" action="/config" data-scroll-restore>
                 <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
@@ -105,17 +108,21 @@
             </form>
         </div>
 
-        <div class="md3-card" id="maintenance">
-            <h2>Appearance</h2>
-            <p>Choose your preferred theme. Your selection is saved automatically.</p>
+        <div class="md3-card" id="appearance">
+            <div class="settings-section-heading">
+                <h2>Appearance</h2>
+                <p>Choose your preferred theme. Your selection is saved automatically.</p>
+            </div>
             <div class="theme-grid" id="theme-grid">
                 <!-- Themes will be loaded here dynamically -->
             </div>
         </div>
 
         <div class="md3-card" id="calendar">
-            <h2>Google Calendar</h2>
-            <p>Connect your Google Calendar to sync follow-up tasks as calendar events.</p>
+            <div class="settings-section-heading">
+                <h2>Google Calendar</h2>
+                <p>Connect your Google Calendar to sync follow-up tasks as calendar events.</p>
+            </div>
 
             <div id="calendar-status" class="calendar-status">
                 <div class="status-message status-loading">
@@ -160,43 +167,47 @@
         </div>
 
         <div class="md3-card" id="quality-feedback">
-            <h2>Quality Feedback</h2>
-            <p>Track how often AI summaries and drafts are accepted, edited, sent, or discarded.</p>
-            <div class="config-grid">
-                <div class="md3-field filled">
-                    <span class="config-help">Summary helpful ratings</span>
-                    <strong>{{ feedback_metrics.get('insight_positive', 0) }}</strong>
+            <div class="settings-section-heading">
+                <h2>Quality Feedback</h2>
+                <p>Track how often AI summaries and drafts are accepted, edited, sent, or discarded.</p>
+            </div>
+            <div class="settings-metrics">
+                <div class="settings-metric">
+                    <span class="settings-metric__label">Summary helpful ratings</span>
+                    <strong class="settings-metric__value">{{ feedback_metrics.get('insight_positive', 0) }}</strong>
                 </div>
-                <div class="md3-field filled">
-                    <span class="config-help">Summary negative ratings</span>
-                    <strong>{{ feedback_metrics.get('insight_negative', 0) }}</strong>
+                <div class="settings-metric">
+                    <span class="settings-metric__label">Summary negative ratings</span>
+                    <strong class="settings-metric__value">{{ feedback_metrics.get('insight_negative', 0) }}</strong>
                 </div>
-                <div class="md3-field filled">
-                    <span class="config-help">Draft helpful ratings</span>
-                    <strong>{{ feedback_metrics.get('draft_positive', 0) }}</strong>
+                <div class="settings-metric">
+                    <span class="settings-metric__label">Draft helpful ratings</span>
+                    <strong class="settings-metric__value">{{ feedback_metrics.get('draft_positive', 0) }}</strong>
                 </div>
-                <div class="md3-field filled">
-                    <span class="config-help">Draft negative ratings</span>
-                    <strong>{{ feedback_metrics.get('draft_negative', 0) }}</strong>
+                <div class="settings-metric">
+                    <span class="settings-metric__label">Draft negative ratings</span>
+                    <strong class="settings-metric__value">{{ feedback_metrics.get('draft_negative', 0) }}</strong>
                 </div>
-                <div class="md3-field filled">
-                    <span class="config-help">Edited drafts</span>
-                    <strong>{{ feedback_metrics.get('draft_edited', 0) }}</strong>
+                <div class="settings-metric">
+                    <span class="settings-metric__label">Edited drafts</span>
+                    <strong class="settings-metric__value">{{ feedback_metrics.get('draft_edited', 0) }}</strong>
                 </div>
-                <div class="md3-field filled">
-                    <span class="config-help">Sent drafts</span>
-                    <strong>{{ feedback_metrics.get('draft_sent', 0) }}</strong>
+                <div class="settings-metric">
+                    <span class="settings-metric__label">Sent drafts</span>
+                    <strong class="settings-metric__value">{{ feedback_metrics.get('draft_sent', 0) }}</strong>
                 </div>
-                <div class="md3-field filled">
-                    <span class="config-help">Deleted drafts</span>
-                    <strong>{{ feedback_metrics.get('draft_deleted', 0) }}</strong>
+                <div class="settings-metric">
+                    <span class="settings-metric__label">Deleted drafts</span>
+                    <strong class="settings-metric__value">{{ feedback_metrics.get('draft_deleted', 0) }}</strong>
                 </div>
             </div>
         </div>
 
         <div class="md3-card" id="maintenance">
-            <h2>Maintenance</h2>
-            <p>Run occasional clean-up tasks from here. These actions affect stored data immediately.</p>
+            <div class="settings-section-heading">
+                <h2>Maintenance</h2>
+                <p>Run occasional clean-up tasks from here. These actions affect stored data immediately.</p>
+            </div>
             <div class="maintenance-actions">
                 <button type="button" id="test-smtp-btn" class="md3-button md3-button--tonal">
                     <span class="material-icons" aria-hidden="true">send</span>
@@ -213,8 +224,7 @@
                 <form id="clear-database-form" method="post" action="/clear-database">
                     <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
                     <input type="hidden" name="redirect_to" value="{{ redirect_to }}#maintenance" />
-                    <button type="submit" class="md3-button md3-button--tonal"
-                        style="background: var(--md3-color-error-container); color: var(--md3-color-on-error-container);">
+                    <button type="submit" class="md3-button md3-button--tonal settings-button--danger">
                         <span class="material-icons" aria-hidden="true">delete_outline</span>
                         Clear Database
                     </button>
@@ -222,13 +232,13 @@
             </div>
 
             <!-- SMTP Test Results -->
-            <div id="smtp-test-results" style="display: none; margin-top: 16px;"></div>
+            <div id="smtp-test-results" class="smtp-test-results" hidden></div>
         </div>
     </div>
 
     <script type="module">
-        import { DialogManager } from "{{ url_for('static', path='js/modules/dialog.js') }}";
-        import { ToastManager } from "{{ url_for('static', path='js/modules/toast.js') }}";
+        import { DialogManager } from "{{ url_for('static', path='js/modules/dialog.js') }}?v={{ static_asset_version }}";
+        import { ToastManager } from "{{ url_for('static', path='js/modules/toast.js') }}?v={{ static_asset_version }}";
 
         const dialog = new DialogManager();
 
@@ -239,12 +249,11 @@
 
             button.disabled = true;
             button.innerHTML = '<span class="material-icons" aria-hidden="true">hourglass_empty</span> Testing...';
+            resultsDiv.hidden = false;
 
             try {
                 const response = await fetch('/api/smtp/test', { method: 'POST' });
                 const data = await response.json();
-
-                resultsDiv.style.display = 'block';
 
                 if (data.test_email === 'success') {
                     resultsDiv.innerHTML = `
@@ -264,14 +273,14 @@
                             <div>
                                 <strong>SMTP Test Failed</strong>
                                 <p><strong>Configuration:</strong></p>
-                                <ul style="margin: 8px 0; padding-left: 20px;">
+                                <ul class="settings-inline-list">
                                     <li>Host: ${data.config.host || 'Not configured'}</li>
                                     <li>Port: ${data.config.port || 'Not configured'}</li>
                                     <li>Username: ${data.config.username || 'Not configured'}</li>
                                     <li>TLS: ${data.config.use_tls ? 'Enabled' : 'Disabled'}</li>
                                 </ul>
                                 <p><strong>Errors:</strong></p>
-                                <ul style="margin: 8px 0; padding-left: 20px;">
+                                <ul class="settings-inline-list">
                                     ${data.errors.map(err => `<li>${err}</li>`).join('')}
                                 </ul>
                             </div>
@@ -279,7 +288,6 @@
                     `;
                 }
             } catch (error) {
-                resultsDiv.style.display = 'block';
                 resultsDiv.innerHTML = `
                     <div class="md3-snackbar error">
                         <span class="material-icons">error</span>
@@ -327,8 +335,8 @@
 
             themeGrid.innerHTML = themesToRender.map(theme => `
                 <button type="button" class="theme-chip" data-theme-select="${theme.id}" title="${theme.title}">
-                    <div class="theme-preview" style="background: linear-gradient(135deg, ${theme.gradientStart} 0%, ${theme.gradientEnd} 100%);"></div>
-                    <span>${theme.label}</span>
+                    <div class="theme-preview ${theme.previewClass || `theme-${theme.id.replace('high-contrast', 'contrast')}`}"></div>
+                    <span class="theme-label">${theme.label}</span>
                 </button>
             `).join("");
 

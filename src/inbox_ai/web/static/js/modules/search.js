@@ -337,15 +337,13 @@ export function installInsightSearch({ input, grid, visibleCount, emptyNotice })
 
 export default installInsightSearch;
 
-export function installEmailListSearch({ input, list, visibleCount, emptyNotice }) {
+export function installEmailListSearch({ input, list, visibleCount, emptyNotice, onFilterChange }) {
     if (!input || !list) {
         return;
     }
 
     const items = Array.from(list.querySelectorAll(".email-list-item"));
-    if (!items.length) {
-        return;
-    }
+    const rows = items.map((item) => item.closest("li") || item);
 
     const indexMap = new Map();
     items.forEach((item) => {
@@ -361,22 +359,89 @@ export function installEmailListSearch({ input, list, visibleCount, emptyNotice 
         });
     };
 
+    const emptyIcon = emptyNotice?.querySelector(".material-icons") ?? null;
+    const emptyTitle = emptyNotice?.querySelector("h3") ?? null;
+    const emptyMessage = emptyNotice?.querySelector("p") ?? null;
+    const emptyActions = emptyNotice?.querySelector(".md3-empty-state__actions") ?? null;
+
+    const storeDefaultEmptyState = () => {
+        if (!emptyNotice) {
+            return;
+        }
+        if (emptyIcon && !emptyNotice.dataset.defaultIcon) {
+            emptyNotice.dataset.defaultIcon = emptyIcon.textContent?.trim() || "inbox";
+        }
+        if (emptyTitle && !emptyNotice.dataset.defaultTitle) {
+            emptyNotice.dataset.defaultTitle = emptyTitle.textContent?.trim() || "Your inbox is ready";
+        }
+        if (emptyMessage && !emptyNotice.dataset.defaultMessage) {
+            emptyNotice.dataset.defaultMessage = emptyMessage.textContent?.trim() || "Sync the mailbox to pull in the latest emails and generate a fresh set of insights.";
+        }
+    };
+
+    const setEmptyState = ({ hasQuery }) => {
+        if (!emptyNotice) {
+            return;
+        }
+
+        storeDefaultEmptyState();
+
+        if (hasQuery) {
+            if (emptyIcon) {
+                emptyIcon.textContent = "search_off";
+            }
+            if (emptyTitle) {
+                emptyTitle.textContent = "No emails match this search";
+            }
+            if (emptyMessage) {
+                emptyMessage.textContent = "Try a sender, subject, or keyword from the message to keep narrowing the list.";
+            }
+            if (emptyActions) {
+                emptyActions.hidden = true;
+            }
+            return;
+        }
+
+        if (emptyIcon) {
+            emptyIcon.textContent = emptyNotice.dataset.defaultIcon || "inbox";
+        }
+        if (emptyTitle) {
+            emptyTitle.textContent = emptyNotice.dataset.defaultTitle || "Your inbox is ready";
+        }
+        if (emptyMessage) {
+            emptyMessage.textContent = emptyNotice.dataset.defaultMessage || "Sync the mailbox to pull in the latest emails and generate a fresh set of insights.";
+        }
+        if (emptyActions) {
+            emptyActions.hidden = false;
+        }
+    };
+
     function applyFilter() {
-        const tokens = parseSearchTokens(input.value || "");
+        const query = input.value || "";
+        const tokens = parseSearchTokens(query);
+        const hasQuery = query.trim().length > 0;
         let visible = 0;
+        const visibleItems = [];
+
         items.forEach((item) => {
             const itemIndex = indexMap.get(item);
             const matches = itemIndex ? cardMatches(itemIndex, tokens) : true;
-            item.style.display = matches ? "" : "none";
+            const row = item.closest("li") || item;
+            row.hidden = !matches;
             item.toggleAttribute("data-hidden", !matches);
             if (matches) {
                 visible += 1;
+                visibleItems.push(item);
             }
         });
 
         updateVisibleCount(visible);
         if (emptyNotice) {
+            setEmptyState({ hasQuery });
             emptyNotice.hidden = visible !== 0;
+        }
+        if (typeof onFilterChange === "function") {
+            onFilterChange({ visible, visibleItems, hasQuery, query: query.trim() });
         }
     }
 

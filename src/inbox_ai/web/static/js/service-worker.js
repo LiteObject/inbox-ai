@@ -3,7 +3,7 @@
  * Provides offline caching and faster repeat visits
  */
 
-const CACHE_NAME = 'inbox-ai-v1';
+const CACHE_NAME = 'inbox-ai-v2';
 const STATIC_ASSETS = [
     '/static/css/style.css',
     '/static/js/dashboard.js',
@@ -53,9 +53,16 @@ self.addEventListener('activate', (event) => {
     );
 });
 
-// Fetch strategy: Cache-first for static assets, network-first for dynamic content
+// Fetch strategy:
+// - network-first for local static assets so UI changes propagate quickly
+// - cache-first for third-party font assets
+// - network-first for dynamic content
 self.addEventListener('fetch', (event) => {
     const { request } = event;
+    const requestUrl = new URL(request.url);
+    const isSameOrigin = requestUrl.origin === self.location.origin;
+    const isFontAsset = request.url.includes('googleapis.com') || request.url.includes('gstatic.com');
+    const isLocalStaticAsset = isSameOrigin && requestUrl.pathname.startsWith('/static/');
 
     // Only handle GET requests
     if (request.method !== 'GET') {
@@ -67,8 +74,8 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // Cache-first strategy for static assets
-    if (request.url.includes('/static/') || request.url.includes('googleapis.com') || request.url.includes('gstatic.com')) {
+    // Cache-first strategy for third-party font assets.
+    if (isFontAsset) {
         event.respondWith(
             caches.match(request)
                 .then((cachedResponse) => {
@@ -102,6 +109,40 @@ self.addEventListener('fetch', (event) => {
                             }),
                         });
                     });
+                })
+        );
+        return;
+    }
+
+    // Network-first strategy for local static assets so fresh JS/CSS wins when online.
+    if (isLocalStaticAsset) {
+        event.respondWith(
+            fetch(request)
+                .then((response) => {
+                    if (response.ok) {
+                        const responseClone = response.clone();
+                        caches.open(CACHE_NAME).then((cache) => {
+                            cache.put(request, responseClone);
+                        });
+                    }
+                    return response;
+                })
+                .catch(() => {
+                    return caches.match(request)
+                        .then((cachedResponse) => {
+                            if (cachedResponse) {
+                                console.log('[ServiceWorker] Serving cached static asset:', request.url);
+                                return cachedResponse;
+                            }
+
+                            return new Response('Offline - asset not available', {
+                                status: 503,
+                                statusText: 'Service Unavailable',
+                                headers: new Headers({
+                                    'Content-Type': 'text/plain',
+                                }),
+                            });
+                        });
                 })
         );
         return;

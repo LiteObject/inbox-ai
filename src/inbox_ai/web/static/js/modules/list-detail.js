@@ -44,7 +44,7 @@ export class ListDetailController {
         const initialItem = this.list.querySelector('.email-list-item[selected]') || this.listItems[0];
         if (initialItem) {
             this.selectItem(initialItem.dataset.uid, { scroll: false, updateHistory: false });
-        } else {
+        } else if (!this.detailHost.children.length) {
             this.renderEmptyDetail();
         }
     }
@@ -106,16 +106,24 @@ export class ListDetailController {
     }
 
     focusRelativeItem(currentItem, delta) {
-        const index = this.listItems.indexOf(currentItem);
+        const visibleItems = this.getVisibleItems();
+        const index = visibleItems.indexOf(currentItem);
         if (index === -1) {
             return;
         }
         const nextIndex = index + delta;
-        if (nextIndex < 0 || nextIndex >= this.listItems.length) {
+        if (nextIndex < 0 || nextIndex >= visibleItems.length) {
             return;
         }
-        const target = this.listItems[nextIndex];
+        const target = visibleItems[nextIndex];
         target?.focus({ preventScroll: false });
+    }
+
+    getVisibleItems() {
+        return this.listItems.filter((item) => {
+            const row = item.closest('li');
+            return !item.hasAttribute('data-hidden') && !row?.hidden;
+        });
     }
 
     handleBack(event) {
@@ -145,7 +153,17 @@ export class ListDetailController {
     }
 
     selectItem(uid, { scroll = true, updateHistory = false } = {}) {
-        if (!uid || uid === this.selectedUid) {
+        if (!uid) {
+            return;
+        }
+
+        if (uid === this.selectedUid) {
+            if (this.mediaQuery.matches) {
+                this.showDetail();
+                if (updateHistory) {
+                    history.pushState({ view: 'detail', uid }, '', '#detail');
+                }
+            }
             return;
         }
 
@@ -197,11 +215,51 @@ export class ListDetailController {
         }
     }
 
-    renderEmptyDetail() {
+    renderEmptyDetail(options = {}) {
         if (!this.detailHost) {
             return;
         }
-        this.detailHost.innerHTML = '<div class="md3-empty-state"><span class="material-icons" aria-hidden="true">mail</span><p>Select an email to view details.</p></div>';
+        const icon = options.icon || 'draft';
+        const title = options.title || 'Select an email';
+        const message = options.message || 'Open a message from the list to review the summary, follow-up tasks, and reply draft.';
+        this.detailHost.innerHTML = `<div class="md3-empty-state md3-empty-state--detail"><span class="material-icons" aria-hidden="true">${icon}</span><h3>${title}</h3><p>${message}</p></div>`;
+
+        if (typeof this.onDetailChanged === 'function') {
+            this.onDetailChanged(this.detailHost);
+        }
+    }
+
+    clearSelection({ emptyState, hideMobileDetail = false } = {}) {
+        this.listItems.forEach((item) => {
+            item.removeAttribute('selected');
+            item.dataset.selected = 'false';
+        });
+
+        this.selectedUid = null;
+        this.renderEmptyDetail(emptyState);
+
+        if (hideMobileDetail) {
+            this.container?.classList.remove('detail-active');
+        }
+    }
+
+    syncVisibleItems(visibleUids = [], { emptyState } = {}) {
+        if (!visibleUids.length) {
+            this.clearSelection({ emptyState, hideMobileDetail: true });
+            return;
+        }
+
+        const visibleSet = new Set(visibleUids);
+        const selectedStillVisible = this.selectedUid && visibleSet.has(this.selectedUid);
+
+        if (selectedStillVisible) {
+            return;
+        }
+
+        const firstVisibleItem = this.listItems.find((item) => visibleSet.has(item.dataset.uid));
+        if (firstVisibleItem) {
+            this.selectItem(firstVisibleItem.dataset.uid, { scroll: false, updateHistory: false });
+        }
     }
 
     showDetail() {
@@ -213,6 +271,8 @@ export class ListDetailController {
             return;
         }
         this.container?.classList.remove('detail-active');
+        const selectedItem = this.listItems.find((item) => item.dataset.uid === this.selectedUid && !item.hasAttribute('data-hidden'));
+        selectedItem?.focus({ preventScroll: true });
         history.pushState({ view: 'list' }, '', '#list');
     }
 }

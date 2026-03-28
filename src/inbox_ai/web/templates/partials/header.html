@@ -1,9 +1,15 @@
 <header class="md3-top-app-bar" id="dashboard-app-bar">
     <div class="md3-app-bar-title-section">
         <div class="md3-app-bar-title">{{ page_title | default('Inbox AI', true) }}</div>
+        {% if page_subtitle %}
+        <div class="md3-app-bar-subtitle">
+            <span class="material-icons" aria-hidden="true">{{ page_subtitle_icon | default('inbox', true) }}</span>
+            <span>{{ page_subtitle }}</span>
+        </div>
+        {% endif %}
     </div>
     <div class="md3-top-app-bar-actions">
-        <div class="md3-app-bar-username">
+        <div class="md3-app-bar-username" title="{{ imap_username | default('No account configured', true) }}">
             <span class="material-icons" aria-hidden="true">account_circle</span>
             <span>{{ imap_username | default('No account configured', true) }}</span>
         </div>
