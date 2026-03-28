@@ -23,6 +23,7 @@ from ..core.models import (
     EmailInsight,
     FollowUpTask,
     SyncCheckpoint,
+    ThreadSummary,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -299,7 +300,7 @@ class SqliteEmailRepository(EmailRepository):
         cur = self._connection.execute(
             """
             SELECT ei.email_uid, ei.summary, ei.action_items, ei.priority_score, 
-                   ei.provider, ei.generated_at, ei.used_fallback
+                     ei.provider, ei.generated_at, ei.used_fallback, ei.user_rating
             FROM email_insights ei
             JOIN emails e ON ei.email_uid = e.uid
             WHERE e.content_hash = ?
@@ -322,13 +323,14 @@ class SqliteEmailRepository(EmailRepository):
                 datetime, parse_datetime(row["generated_at"], assume_utc=True)
             ),
             used_fallback=bool(row["used_fallback"]),
+            user_rating=row["user_rating"],
         )
 
     def fetch_insight(self, email_uid: int) -> EmailInsight | None:
         """Fetch the stored insight row for the supplied email UID."""
         cur = self._connection.execute(
             """
-            SELECT summary, action_items, priority_score, provider, generated_at, used_fallback
+            SELECT summary, action_items, priority_score, provider, generated_at, used_fallback, user_rating
             FROM email_insights
             WHERE email_uid = ?
             """,
@@ -349,7 +351,18 @@ class SqliteEmailRepository(EmailRepository):
                 datetime, parse_datetime(row["generated_at"], assume_utc=True)
             ),
             used_fallback=bool(row["used_fallback"]),
+            user_rating=row["user_rating"],
         )
+
+    def set_insight_rating(self, email_uid: int, rating: int | None) -> bool:
+        """Persist user feedback for an email insight."""
+        _validate_rating(rating)
+        with self._connection:
+            cur = self._connection.execute(
+                "UPDATE email_insights SET user_rating = ? WHERE email_uid = ?",
+                (rating, email_uid),
+            )
+        return cur.rowcount > 0
 
     def persist_draft(self, draft: DraftRecord) -> DraftRecord:
         """Insert a new draft row and return the stored record with identifier."""
@@ -363,8 +376,12 @@ class SqliteEmailRepository(EmailRepository):
                     provider,
                     generated_at,
                     confidence,
-                    used_fallback
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                    used_fallback,
+                    user_rating,
+                    user_edited,
+                    sent_at,
+                    deleted_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 RETURNING id
                 """,
                 (
@@ -374,6 +391,10 @@ class SqliteEmailRepository(EmailRepository):
                     draft.generated_at.isoformat(),
                     draft.confidence,
                     1 if draft.used_fallback else 0,
+                    draft.user_rating,
+                    1 if draft.user_edited else 0,
+                    serialize_datetime(draft.sent_at),
+                    serialize_datetime(draft.deleted_at),
                 ),
             )
             row = cur.fetchone()
@@ -386,6 +407,10 @@ class SqliteEmailRepository(EmailRepository):
             generated_at=draft.generated_at,
             confidence=draft.confidence,
             used_fallback=draft.used_fallback,
+            user_rating=draft.user_rating,
+            user_edited=draft.user_edited,
+            sent_at=draft.sent_at,
+            deleted_at=draft.deleted_at,
         )
 
     def update_draft_body(
@@ -398,6 +423,7 @@ class SqliteEmailRepository(EmailRepository):
         generated_at: datetime,
         confidence: float | None = None,
         used_fallback: bool = False,
+        user_edited: bool | None = None,
     ) -> DraftRecord | None:
         """Update the stored draft row, returning the refreshed record."""
         LOGGER.debug("Updating draft id %s for UID %s", draft_id, email_uid)
@@ -409,9 +435,12 @@ class SqliteEmailRepository(EmailRepository):
                     provider = ?,
                     generated_at = ?,
                     confidence = ?,
-                    used_fallback = ?
-                WHERE id = ? AND email_uid = ?
-                RETURNING id, email_uid, body, provider, generated_at, confidence, used_fallback
+                    used_fallback = ?,
+                    user_edited = COALESCE(?, user_edited),
+                    deleted_at = NULL
+                WHERE id = ? AND email_uid = ? AND deleted_at IS NULL
+                RETURNING id, email_uid, body, provider, generated_at, confidence, used_fallback,
+                          user_rating, user_edited, sent_at, deleted_at
                 """,
                 (
                     body,
@@ -419,6 +448,7 @@ class SqliteEmailRepository(EmailRepository):
                     generated_at.isoformat(),
                     confidence,
                     1 if used_fallback else 0,
+                    None if user_edited is None else (1 if user_edited else 0),
                     draft_id,
                     email_uid,
                 ),
@@ -443,15 +473,40 @@ class SqliteEmailRepository(EmailRepository):
             ),
             confidence=row["confidence"],
             used_fallback=bool(row["used_fallback"]),
+            user_rating=row["user_rating"],
+            user_edited=bool(row["user_edited"]),
+            sent_at=parse_datetime(row["sent_at"], assume_utc=True),
+            deleted_at=parse_datetime(row["deleted_at"], assume_utc=True),
         )
 
     def delete_draft(self, draft_id: int, email_uid: int) -> bool:
-        """Remove a stored draft. Returns ``True`` if a row was deleted."""
+        """Soft-delete a stored draft. Returns ``True`` if a row was updated."""
         LOGGER.debug("Deleting draft id %s for UID %s", draft_id, email_uid)
+        deleted_at = datetime.now(UTC).isoformat()
         with self._connection:
             cur = self._connection.execute(
-                "DELETE FROM drafts WHERE id = ? AND email_uid = ?",
-                (draft_id, email_uid),
+                """
+                UPDATE drafts
+                SET deleted_at = ?
+                WHERE id = ? AND email_uid = ? AND deleted_at IS NULL
+                """,
+                (deleted_at, draft_id, email_uid),
+            )
+        return cur.rowcount > 0
+
+    def set_draft_rating(
+        self, draft_id: int, email_uid: int, rating: int | None
+    ) -> bool:
+        """Persist user feedback for a stored draft."""
+        _validate_rating(rating)
+        with self._connection:
+            cur = self._connection.execute(
+                """
+                UPDATE drafts
+                SET user_rating = ?
+                WHERE id = ? AND email_uid = ? AND deleted_at IS NULL
+                """,
+                (rating, draft_id, email_uid),
             )
         return cur.rowcount > 0
 
@@ -466,9 +521,10 @@ class SqliteEmailRepository(EmailRepository):
         """
         cur = self._connection.execute(
             """
-            SELECT id, email_uid, body, provider, generated_at, confidence, used_fallback
+                 SELECT id, email_uid, body, provider, generated_at, confidence, used_fallback,
+                     user_rating, user_edited, sent_at, deleted_at
             FROM drafts
-            WHERE id = ?
+                 WHERE id = ? AND deleted_at IS NULL
             """,
             (draft_id,),
         )
@@ -486,6 +542,10 @@ class SqliteEmailRepository(EmailRepository):
             ),
             confidence=row["confidence"],
             used_fallback=bool(row["used_fallback"]),
+            user_rating=row["user_rating"],
+            user_edited=bool(row["user_edited"]),
+            sent_at=parse_datetime(row["sent_at"], assume_utc=True),
+            deleted_at=parse_datetime(row["deleted_at"], assume_utc=True),
         )
 
     def mark_draft_sent(self, draft_id: int) -> bool:
@@ -501,7 +561,7 @@ class SqliteEmailRepository(EmailRepository):
         LOGGER.debug("Marking draft %d as sent at %s", draft_id, now)
         with self._connection:
             cur = self._connection.execute(
-                "UPDATE drafts SET sent_at = ? WHERE id = ?",
+                "UPDATE drafts SET sent_at = ? WHERE id = ? AND deleted_at IS NULL",
                 (now, draft_id),
             )
         return cur.rowcount > 0
@@ -537,7 +597,8 @@ class SqliteEmailRepository(EmailRepository):
                 i.priority_score,
                 i.provider,
                 i.generated_at,
-                i.used_fallback
+                i.used_fallback,
+                i.user_rating
             FROM email_insights i
             INNER JOIN emails e ON e.uid = i.email_uid
             """
@@ -595,6 +656,7 @@ class SqliteEmailRepository(EmailRepository):
                     parse_datetime(row["generated_at"], assume_utc=True),
                 ),
                 used_fallback=bool(row["used_fallback"]),
+                user_rating=row["user_rating"],
             )
             results.append((email, insight))
         return results
@@ -650,8 +712,13 @@ class SqliteEmailRepository(EmailRepository):
                 provider,
                 generated_at,
                 confidence,
-                used_fallback
+                used_fallback,
+                user_rating,
+                user_edited,
+                sent_at,
+                deleted_at
             FROM drafts
+            WHERE deleted_at IS NULL
             ORDER BY generated_at DESC
             LIMIT ?
             """,
@@ -670,6 +737,10 @@ class SqliteEmailRepository(EmailRepository):
                     ),
                     confidence=row["confidence"],
                     used_fallback=bool(row["used_fallback"]),
+                    user_rating=row["user_rating"],
+                    user_edited=bool(row["user_edited"]),
+                    sent_at=parse_datetime(row["sent_at"], assume_utc=True),
+                    deleted_at=parse_datetime(row["deleted_at"], assume_utc=True),
                 )
             )
         return drafts
@@ -681,12 +752,13 @@ class SqliteEmailRepository(EmailRepository):
         unique_uids = tuple(dict.fromkeys(uids))
         placeholders = ",".join("?" for _ in unique_uids)
         query = f"""
-            SELECT d.id, d.email_uid, d.body, d.provider, d.generated_at, d.confidence, d.used_fallback
+            SELECT d.id, d.email_uid, d.body, d.provider, d.generated_at, d.confidence, d.used_fallback,
+                   d.user_rating, d.user_edited, d.sent_at, d.deleted_at
             FROM drafts AS d
             INNER JOIN (
                 SELECT email_uid, MAX(generated_at) AS max_generated_at
                 FROM drafts
-                WHERE email_uid IN ({placeholders})
+                WHERE email_uid IN ({placeholders}) AND deleted_at IS NULL
                 GROUP BY email_uid
             ) AS latest
             ON latest.email_uid = d.email_uid AND latest.max_generated_at = d.generated_at
@@ -705,8 +777,76 @@ class SqliteEmailRepository(EmailRepository):
                 ),
                 confidence=row["confidence"],
                 used_fallback=bool(row["used_fallback"]),
+                user_rating=row["user_rating"],
+                user_edited=bool(row["user_edited"]),
+                sent_at=parse_datetime(row["sent_at"], assume_utc=True),
+                deleted_at=parse_datetime(row["deleted_at"], assume_utc=True),
             )
         return results
+
+    def list_thread_emails(
+        self,
+        thread_id: str,
+        *,
+        exclude_uid: int | None = None,
+        limit: int = 6,
+    ) -> tuple[ThreadSummary, ...]:
+        """Return thread context entries ordered from oldest to newest."""
+        if not thread_id:
+            return ()
+
+        conditions = ["e.thread_id = ?"]
+        params: list[object] = [thread_id]
+        if exclude_uid is not None:
+            conditions.append("e.uid != ?")
+            params.append(exclude_uid)
+        params.append(limit)
+        cur = self._connection.execute(
+            f"""
+            SELECT e.uid, e.subject, e.sender, i.summary
+            FROM emails e
+            LEFT JOIN email_insights i ON i.email_uid = e.uid
+            WHERE {' AND '.join(conditions)}
+            ORDER BY COALESCE(e.received_at, e.sent_at) ASC, e.uid ASC
+            LIMIT ?
+            """,
+            params,
+        )
+        return tuple(
+            ThreadSummary(
+                email_uid=row["uid"],
+                subject=row["subject"],
+                sender=row["sender"],
+                summary=row["summary"],
+            )
+            for row in cur.fetchall()
+        )
+
+    def get_feedback_metrics(self) -> dict[str, int]:
+        """Return aggregate insight and draft quality metrics."""
+        row = self._connection.execute(
+            """
+            SELECT
+                COALESCE((SELECT COUNT(*) FROM email_insights WHERE user_rating = 1), 0) AS insight_positive,
+                COALESCE((SELECT COUNT(*) FROM email_insights WHERE user_rating = -1), 0) AS insight_negative,
+                COALESCE((SELECT COUNT(*) FROM drafts WHERE user_rating = 1), 0) AS draft_positive,
+                COALESCE((SELECT COUNT(*) FROM drafts WHERE user_rating = -1), 0) AS draft_negative,
+                COALESCE((SELECT COUNT(*) FROM drafts WHERE user_edited = 1), 0) AS draft_edited,
+                COALESCE((SELECT COUNT(*) FROM drafts WHERE sent_at IS NOT NULL), 0) AS draft_sent,
+                COALESCE((SELECT COUNT(*) FROM drafts WHERE deleted_at IS NOT NULL), 0) AS draft_deleted
+            """
+        ).fetchone()
+        if row is None:
+            return {
+                "insight_positive": 0,
+                "insight_negative": 0,
+                "draft_positive": 0,
+                "draft_negative": 0,
+                "draft_edited": 0,
+                "draft_sent": 0,
+                "draft_deleted": 0,
+            }
+        return {key: int(row[key]) for key in row.keys()}
 
     def replace_categories(
         self, email_uid: int, categories: Sequence[EmailCategory]
@@ -762,7 +902,8 @@ class SqliteEmailRepository(EmailRepository):
         unique_uids = tuple(dict.fromkeys(uids))
         placeholders = ",".join("?" for _ in unique_uids)
         query = f"""
-            SELECT id, email_uid, action, due_at, status, created_at, completed_at
+            SELECT id, email_uid, action, due_at, status, created_at, completed_at,
+                   calendar_event_id, calendar_synced_at
             FROM follow_ups
             WHERE email_uid IN ({placeholders})
             ORDER BY
@@ -787,6 +928,10 @@ class SqliteEmailRepository(EmailRepository):
                         parse_datetime(row["created_at"], assume_utc=True),
                     ),
                     completed_at=parse_datetime(row["completed_at"], assume_utc=True),
+                    calendar_event_id=row["calendar_event_id"],
+                    calendar_synced_at=parse_datetime(
+                        row["calendar_synced_at"], assume_utc=True
+                    ),
                 )
             )
         results: dict[int, tuple[FollowUpTask, ...]] = {}
@@ -825,8 +970,10 @@ class SqliteEmailRepository(EmailRepository):
                         due_at,
                         status,
                         created_at,
-                        completed_at
-                    ) VALUES (?, ?, ?, ?, ?, ?)
+                        completed_at,
+                        calendar_event_id,
+                        calendar_synced_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         email_uid,
@@ -835,6 +982,12 @@ class SqliteEmailRepository(EmailRepository):
                         task.status,
                         task.created_at.isoformat(),
                         task.completed_at.isoformat() if task.completed_at else None,
+                        task.calendar_event_id,
+                        (
+                            task.calendar_synced_at.isoformat()
+                            if task.calendar_synced_at
+                            else None
+                        ),
                     ),
                 )
 
@@ -843,7 +996,8 @@ class SqliteEmailRepository(EmailRepository):
     ) -> list[FollowUpTask]:
         """Return follow-ups filtered by status and limit, ordered by due/created date."""
         query = """
-            SELECT id, email_uid, action, due_at, status, created_at, completed_at
+            SELECT id, email_uid, action, due_at, status, created_at, completed_at,
+                   calendar_event_id, calendar_synced_at
             FROM follow_ups
             {where}
             ORDER BY
@@ -877,6 +1031,10 @@ class SqliteEmailRepository(EmailRepository):
                         parse_datetime(row["created_at"], assume_utc=True),
                     ),
                     completed_at=parse_datetime(row["completed_at"], assume_utc=True),
+                    calendar_event_id=row["calendar_event_id"],
+                    calendar_synced_at=parse_datetime(
+                        row["calendar_synced_at"], assume_utc=True
+                    ),
                 )
             )
         return items
@@ -894,6 +1052,59 @@ class SqliteEmailRepository(EmailRepository):
                 (
                     status,
                     completed_at.isoformat() if completed_at else None,
+                    follow_up_id,
+                ),
+            )
+
+    def get_follow_up_by_id(self, follow_up_id: int) -> FollowUpTask | None:
+        """Retrieve a single follow-up task by ID."""
+        cur = self._connection.execute(
+            """
+            SELECT id, email_uid, action, due_at, status, created_at, completed_at,
+                   calendar_event_id, calendar_synced_at
+            FROM follow_ups
+            WHERE id = ?
+            """,
+            (follow_up_id,),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return None
+        return FollowUpTask(
+            id=row["id"],
+            email_uid=row["email_uid"],
+            action=row["action"],
+            due_at=parse_datetime(row["due_at"]),
+            status=row["status"],
+            created_at=cast(
+                datetime,
+                parse_datetime(row["created_at"], assume_utc=True),
+            ),
+            completed_at=parse_datetime(row["completed_at"], assume_utc=True),
+            calendar_event_id=row["calendar_event_id"],
+            calendar_synced_at=parse_datetime(
+                row["calendar_synced_at"], assume_utc=True
+            ),
+        )
+
+    def update_follow_up_calendar_sync(
+        self, follow_up_id: int, calendar_event_id: str | None
+    ) -> None:
+        """Update calendar sync info for a follow-up task.
+
+        If calendar_event_id is None, clears the sync data.
+        """
+        synced_at = datetime.now(tz=UTC) if calendar_event_id else None
+        with self._connection:
+            self._connection.execute(
+                """
+                UPDATE follow_ups
+                SET calendar_event_id = ?, calendar_synced_at = ?
+                WHERE id = ?
+                """,
+                (
+                    calendar_event_id,
+                    synced_at.isoformat() if synced_at else None,
                     follow_up_id,
                 ),
             )
@@ -1089,7 +1300,10 @@ class SqliteEmailRepository(EmailRepository):
             script = migration.read_text(encoding="utf-8")
             try:
                 handler(script)
-            except Exception as exc:  # pragma: no cover - logged for visibility
+            except (
+                OSError,
+                sqlite3.Error,
+            ) as exc:  # pragma: no cover - logged for visibility
                 LOGGER.warning(
                     "Migration %s failed (possibly already applied): %s",
                     migration.name,
@@ -1101,6 +1315,7 @@ class SqliteEmailRepository(EmailRepository):
         return {
             "005_mailbox": self._apply_mailbox_migration,
             "006_content_hash": self._apply_content_hash_migration,
+            "011_feedback": self._apply_feedback_migration,
         }.get(name, self._apply_default_migration)
 
     def _apply_default_migration(self, script: str) -> None:
@@ -1158,12 +1373,56 @@ class SqliteEmailRepository(EmailRepository):
             with self._connection:
                 self._connection.execute(line)
 
+    def _apply_feedback_migration(self, script: str) -> None:
+        """Apply feedback columns/indexes while tolerating already-added columns."""
+        lines = [
+            line.strip()
+            for line in script.split("\n")
+            if line.strip() and not line.strip().startswith("--")
+        ]
+
+        existing_email_columns = {
+            row["name"]
+            for row in self._connection.execute("PRAGMA table_info(email_insights)")
+        }
+        existing_draft_columns = {
+            row["name"] for row in self._connection.execute("PRAGMA table_info(drafts)")
+        }
+
+        for line in lines:
+            upper_line = line.upper()
+            if (
+                upper_line.startswith(
+                    "ALTER TABLE EMAIL_INSIGHTS ADD COLUMN USER_RATING"
+                )
+                and "user_rating" in existing_email_columns
+            ):
+                continue
+            if upper_line.startswith("ALTER TABLE DRAFTS ADD COLUMN USER_RATING"):
+                if "user_rating" in existing_draft_columns:
+                    continue
+                existing_draft_columns.add("user_rating")
+            if upper_line.startswith("ALTER TABLE DRAFTS ADD COLUMN USER_EDITED"):
+                if "user_edited" in existing_draft_columns:
+                    continue
+                existing_draft_columns.add("user_edited")
+            if upper_line.startswith("ALTER TABLE DRAFTS ADD COLUMN DELETED_AT"):
+                if "deleted_at" in existing_draft_columns:
+                    continue
+                existing_draft_columns.add("deleted_at")
+
+            with self._connection:
+                self._connection.execute(line)
+
     def _ensure_indexes(self) -> None:
         """Create supporting indexes that may be missing from older schemas."""
         index_statements = (
             "CREATE INDEX IF NOT EXISTS idx_email_categories_uid ON email_categories(email_uid)",
             "CREATE INDEX IF NOT EXISTS idx_email_insights_priority_generated ON email_insights(priority_score, generated_at DESC)",
             "CREATE INDEX IF NOT EXISTS idx_follow_ups_status_due ON follow_ups(status, due_at, email_uid)",
+            "CREATE INDEX IF NOT EXISTS idx_email_insights_user_rating ON email_insights(user_rating)",
+            "CREATE INDEX IF NOT EXISTS idx_drafts_user_rating ON drafts(user_rating)",
+            "CREATE INDEX IF NOT EXISTS idx_drafts_deleted_at ON drafts(deleted_at DESC)",
         )
         with self._connection:
             for statement in index_statements:
@@ -1185,6 +1444,13 @@ def _split_recipients(value: str | None) -> tuple[str, ...]:
     return tuple(
         part for part in (segment.strip() for segment in value.split(",")) if part
     )
+
+
+def _validate_rating(rating: int | None) -> None:
+    if rating is None:
+        return
+    if rating not in (-1, 1):
+        raise ValueError("Ratings must use -1, 1, or None")
 
 
 __all__ = ["SqliteEmailRepository"]

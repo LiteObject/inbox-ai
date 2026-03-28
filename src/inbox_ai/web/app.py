@@ -6,6 +6,7 @@ import asyncio
 import logging
 import os
 import re
+import secrets
 import time
 from collections import deque
 from collections.abc import Iterable, Iterator, Mapping, Sequence
@@ -13,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from urllib.parse import parse_qsl, urlencode
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from datetime import UTC, datetime
 
@@ -32,6 +33,7 @@ from starlette.datastructures import UploadFile
 from starlette.responses import Response
 from starlette.templating import Jinja2Templates
 
+from inbox_ai.calendar import GoogleCalendarClient
 from inbox_ai.core import AppSettings, load_app_settings
 from inbox_ai.core.datetime_utils import display_datetime, serialize_datetime
 from inbox_ai.core.models import (
@@ -41,7 +43,7 @@ from inbox_ai.core.models import (
     EmailInsight,
     FollowUpTask,
 )
-from inbox_ai.ingestion import EmailParser, MailFetcher
+from inbox_ai.ingestion import EmailParser, MailFetcher, OptimizedMailFetcher
 from inbox_ai.intelligence import (
     DraftingError,
     DraftingService,
@@ -50,6 +52,7 @@ from inbox_ai.intelligence import (
     LLMCategoryService,
     LLMError,
     OllamaClient,
+    OptimizedEmailAnalyzer,
     SummarizationService,
 )
 from inbox_ai.storage import SqliteEmailRepository
@@ -109,8 +112,14 @@ _STATUS_QUERY_KEYS: tuple[str, ...] = (
     "config_status",
     "draft_status",
     "draft_message",
+    "send_status",
+    "send_message",
     "clear_status",
     "clear_message",
+    "followup_status",
+    "followup_message",
+    "feedback_status",
+    "feedback_message",
 )
 
 
@@ -208,6 +217,12 @@ _DEFAULT_ENV_FILE = _PROJECT_ROOT / ".env"
 _ENV_FILE_OVERRIDE_VAR = "INBOX_AI_DASHBOARD_ENV_FILE"
 
 _BOOLEAN_OPTIONS: tuple[str, ...] = ("true", "false")
+_REPLY_TONE_OPTIONS: tuple[str, ...] = (
+    "Professional",
+    "Casual",
+    "Concise",
+    "Detailed",
+)
 
 CONFIG_SECTIONS: tuple[ConfigSection, ...] = (
     ConfigSection(
@@ -329,6 +344,13 @@ CONFIG_SECTIONS: tuple[ConfigSection, ...] = (
     ConfigSection(
         title="User Preferences",
         fields=(
+            ConfigField(
+                "INBOX_AI_USER__REPLY_TONE",
+                "Reply Tone",
+                input_type="select",
+                options=_REPLY_TONE_OPTIONS,
+                description="Default tone used for generated reply drafts.",
+            ),
             ConfigField(
                 "INBOX_AI_USER__PREFERENCES",
                 "Guidance",
@@ -456,6 +478,23 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
 
         category_options = repository.list_categories()
         total_email_count = repository.count_emails()
+
+        # Debug logging
+        LOGGER.debug(
+            "Dashboard context: %d insights, follow_ups in lookup: %s",
+            len(insights),
+            {uid: len(tasks) for uid, tasks in follow_up_lookup.items()},
+        )
+        if follow_up_lookup:
+            first_uid = next(iter(follow_up_lookup))
+            first_tasks = follow_up_lookup[first_uid]
+            if first_tasks:
+                LOGGER.debug(
+                    "Sample follow-up from DB: id=%s, action=%s, calendar_event_id=%s",
+                    first_tasks[0].id,
+                    first_tasks[0].action,
+                    first_tasks[0].calendar_event_id,
+                )
         csrf_token = csrf.generate_token()
         context = {
             "request": request,
@@ -484,8 +523,14 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             "categorize_message": request.query_params.get("categorize_message"),
             "draft_status": request.query_params.get("draft_status"),
             "draft_message": request.query_params.get("draft_message"),
+            "send_status": request.query_params.get("send_status"),
+            "send_message": request.query_params.get("send_message"),
             "clear_status": request.query_params.get("clear_status"),
             "clear_message": request.query_params.get("clear_message"),
+            "followup_status": request.query_params.get("followup_status"),
+            "followup_message": request.query_params.get("followup_message"),
+            "feedback_status": request.query_params.get("feedback_status"),
+            "feedback_message": request.query_params.get("feedback_message"),
             "total_email_count": total_email_count,
             "csrf_token": csrf_token,
             "csrf_field_name": csrf.field_name,
@@ -503,7 +548,10 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                 request.query_params.get("delete_status"),
                 request.query_params.get("categorize_status"),
                 request.query_params.get("draft_status"),
+                request.query_params.get("send_status"),
                 request.query_params.get("clear_status"),
+                request.query_params.get("followup_status"),
+                request.query_params.get("feedback_status"),
             ]
         ):
             # Access response body directly for caching
@@ -535,6 +583,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         env_file = _resolve_env_file()
         config_values = _load_env_values(env_file)
         user_preferences = repository.get_all_user_preferences()
+        feedback_metrics = repository.get_feedback_metrics()
         redirect_target = _build_redirect_target(request)
         csrf_token = csrf.generate_token()
         context = {
@@ -542,6 +591,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             "config_sections": CONFIG_SECTIONS,
             "config_values": config_values,
             "user_preferences": user_preferences,
+            "feedback_metrics": feedback_metrics,
             "config_status": request.query_params.get("config_status"),
             "config_env_path": str(env_file),
             "redirect_to": redirect_target,
@@ -831,6 +881,10 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         csrf.validate(request, token)
         redirect_raw = _coerce_form_value(form.get("redirect_to"))
         redirect_target = _sanitize_redirect(redirect_raw or None) or "/"
+        LOGGER.info(
+            "Clear database requested from %s",
+            request.client.host if request.client else "unknown",
+        )
 
         outcome = await asyncio.to_thread(_clear_database, app_settings)
         status_value = "ok" if outcome.success else "error"
@@ -921,11 +975,18 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         generated_at = datetime.now(UTC)
 
         draft_id: int | None = None
+        existing_draft: DraftRecord | None = None
         if draft_id_raw:
             try:
                 draft_id = int(draft_id_raw)
             except ValueError:
                 draft_id = None
+        if draft_id is not None:
+            existing_draft = repository.fetch_draft(draft_id)
+
+        user_edited = existing_draft is None or existing_draft.body != body_raw
+        if user_edited:
+            provider = MANUAL_DRAFT_PROVIDER
 
         updated = False
         if draft_id is not None:
@@ -937,6 +998,11 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                 generated_at=generated_at,
                 confidence=None,
                 used_fallback=False,
+                user_edited=(
+                    (existing_draft.user_edited or user_edited)
+                    if existing_draft is not None
+                    else user_edited
+                ),
             )
             updated = updated_record is not None
 
@@ -950,6 +1016,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                     generated_at=generated_at,
                     confidence=None,
                     used_fallback=False,
+                    user_edited=True,
                 )
             )
 
@@ -1031,6 +1098,64 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         message = "Draft deleted." if deleted else "Draft could not be deleted."
         target = _append_query_param(redirect_target, "draft_status", status_key)
         target = _append_query_param(target, "draft_message", message)
+        return RedirectResponse(url=target, status_code=http_status.HTTP_303_SEE_OTHER)
+
+    @app.post("/emails/{email_uid}/insight/rating")
+    async def rate_insight(
+        email_uid: int,
+        request: Request,
+        repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
+    ) -> RedirectResponse:
+        form = await request.form()
+        raw_token = form.get(csrf.field_name)
+        token = raw_token if isinstance(raw_token, str) else None
+        csrf.validate(request, token)
+
+        redirect_raw = _coerce_form_value(form.get("redirect_to"))
+        redirect_target = _sanitize_redirect(redirect_raw or None) or "/"
+        rating = _parse_feedback_rating(form.get("rating"))
+
+        updated = repository.set_insight_rating(email_uid, rating)
+        status_value = "ok" if updated else "error"
+        message = (
+            "Summary feedback saved."
+            if updated
+            else "Summary feedback could not be saved."
+        )
+        target = _append_query_param(redirect_target, "feedback_status", status_value)
+        target = _append_query_param(target, "feedback_message", message)
+        return RedirectResponse(url=target, status_code=http_status.HTTP_303_SEE_OTHER)
+
+    @app.post("/emails/{email_uid}/draft/rating")
+    async def rate_draft(
+        email_uid: int,
+        request: Request,
+        repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
+    ) -> RedirectResponse:
+        form = await request.form()
+        raw_token = form.get(csrf.field_name)
+        token = raw_token if isinstance(raw_token, str) else None
+        csrf.validate(request, token)
+
+        redirect_raw = _coerce_form_value(form.get("redirect_to"))
+        redirect_target = _sanitize_redirect(redirect_raw or None) or "/"
+        rating = _parse_feedback_rating(form.get("rating"))
+
+        draft_id_raw = _coerce_form_value(form.get("draft_id")).strip()
+        try:
+            draft_id = int(draft_id_raw)
+        except ValueError:
+            draft_id = 0
+
+        updated = draft_id > 0 and repository.set_draft_rating(
+            draft_id, email_uid, rating
+        )
+        status_value = "ok" if updated else "error"
+        message = (
+            "Draft feedback saved." if updated else "Draft feedback could not be saved."
+        )
+        target = _append_query_param(redirect_target, "feedback_status", status_value)
+        target = _append_query_param(target, "feedback_message", message)
         return RedirectResponse(url=target, status_code=http_status.HTTP_303_SEE_OTHER)
 
     @app.post("/emails/{email_uid}/draft/send")
@@ -1267,6 +1392,360 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         target = _append_query_param(target, "followup_message", outcome.message)
         return RedirectResponse(url=target, status_code=http_status.HTTP_303_SEE_OTHER)
 
+    # ===== Google Calendar Integration Routes =====
+
+    @app.get("/calendar/auth")
+    async def calendar_auth(
+        request: Request,
+        repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
+    ) -> RedirectResponse:
+        """Initiate OAuth 2.0 flow for Google Calendar."""
+        if not app_settings.calendar.is_configured():
+            return RedirectResponse(
+                url="/settings?config_status=calendar_not_configured#calendar",
+                status_code=http_status.HTTP_303_SEE_OTHER,
+            )
+
+        # Generate a random state token for CSRF protection
+        state = secrets.token_urlsafe(32)
+        repository.set_user_preference("calendar_oauth_state", state)
+
+        client = GoogleCalendarClient(app_settings.calendar)
+        auth_url = client.get_authorization_url(state)
+        return RedirectResponse(
+            url=auth_url, status_code=http_status.HTTP_303_SEE_OTHER
+        )
+
+    @app.get("/calendar/callback")
+    async def calendar_callback(
+        request: Request,
+        code: str | None = None,
+        state: str | None = None,
+        error: str | None = None,
+        repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
+    ) -> RedirectResponse:
+        """Handle OAuth 2.0 callback from Google."""
+        if error:
+            LOGGER.error("OAuth error: %s", error)
+            return RedirectResponse(
+                url=f"/settings?config_status=calendar_auth_failed&error={error}#calendar",
+                status_code=http_status.HTTP_303_SEE_OTHER,
+            )
+
+        if not code or not state:
+            return RedirectResponse(
+                url="/settings?config_status=calendar_auth_failed&error=missing_params#calendar",
+                status_code=http_status.HTTP_303_SEE_OTHER,
+            )
+
+        # Verify state token to prevent CSRF
+        stored_state = repository.get_user_preference("calendar_oauth_state")
+        if stored_state != state:
+            LOGGER.error("OAuth state mismatch")
+            return RedirectResponse(
+                url="/settings?config_status=calendar_auth_failed&error=invalid_state#calendar",
+                status_code=http_status.HTTP_303_SEE_OTHER,
+            )
+
+        try:
+            client = GoogleCalendarClient(app_settings.calendar)
+            tokens = await client.exchange_code_for_tokens(code)
+
+            # Store tokens securely
+            repository.set_user_preference(
+                "calendar_access_token", tokens["access_token"]
+            )
+            if "refresh_token" in tokens:
+                repository.set_user_preference(
+                    "calendar_refresh_token", tokens["refresh_token"]
+                )
+
+            # Clean up state token
+            repository.delete_user_preference("calendar_oauth_state")
+
+            LOGGER.info("Successfully authenticated with Google Calendar")
+            return RedirectResponse(
+                url="/settings?config_status=calendar_connected#calendar",
+                status_code=http_status.HTTP_303_SEE_OTHER,
+            )
+
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.exception("Failed to exchange OAuth code for tokens")
+            return RedirectResponse(
+                url=f"/settings?config_status=calendar_auth_failed&error={str(exc)}#calendar",
+                status_code=http_status.HTTP_303_SEE_OTHER,
+            )
+
+    @app.get("/api/calendar/status")
+    async def calendar_status(
+        repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
+    ) -> dict[str, Any]:
+        """Check calendar connection status."""
+        access_token = repository.get_user_preference("calendar_access_token")
+        is_connected = bool(access_token)
+
+        status_data: dict[str, Any] = {
+            "connected": is_connected,
+            "configured": app_settings.calendar.is_configured(),
+            "selected_calendar": app_settings.calendar.selected_calendar,
+        }
+
+        if is_connected:
+            try:
+                client = GoogleCalendarClient(app_settings.calendar)
+                client.set_tokens(
+                    access_token,
+                    repository.get_user_preference("calendar_refresh_token"),
+                )
+                calendars = await client.list_calendars()
+                status_data["calendars"] = [
+                    {"id": cal.get("id"), "summary": cal.get("summary")}
+                    for cal in calendars
+                ]
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.error("Failed to fetch calendars: %s", exc)
+                status_data["error"] = str(exc)
+
+        return status_data
+
+    @app.post("/api/calendar/disconnect")
+    async def calendar_disconnect(
+        request: Request,
+        repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
+    ) -> dict[str, Any]:
+        """Disconnect Google Calendar by removing stored tokens."""
+        csrf_token = request.headers.get("X-CSRF-Token")
+        csrf.validate(request, csrf_token)
+
+        repository.delete_user_preference("calendar_access_token")
+        repository.delete_user_preference("calendar_refresh_token")
+        repository.delete_user_preference("calendar_oauth_state")
+
+        return {"success": True, "message": "Calendar disconnected"}
+
+    @app.post("/api/follow-ups/{follow_up_id}/sync-calendar")
+    async def sync_follow_up_to_calendar(
+        follow_up_id: int,
+        request: Request,
+        repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
+    ) -> dict[str, Any]:
+        """Sync a follow-up task to Google Calendar."""
+        csrf_token = request.headers.get("X-CSRF-Token")
+        csrf.validate(request, csrf_token)
+
+        # Check calendar configuration
+        if not app_settings.calendar.is_configured():
+            return {
+                "success": False,
+                "error": "Calendar not configured. Please add client ID and secret in settings.",
+            }
+
+        # Get access token
+        access_token = repository.get_user_preference("calendar_access_token")
+        if not access_token:
+            return {
+                "success": False,
+                "error": "Not connected to Google Calendar. Please connect in settings.",
+            }
+
+        refresh_token = repository.get_user_preference("calendar_refresh_token")
+        LOGGER.info(
+            "Retrieved tokens from DB - access_token: %s..., refresh_token available: %s",
+            access_token[:10] if access_token else "None",
+            bool(refresh_token),
+        )
+
+        # Get follow-up task
+        follow_up = repository.get_follow_up_by_id(follow_up_id)
+        if not follow_up:
+            return {"success": False, "error": "Follow-up task not found"}
+
+        # Check if already synced
+        if follow_up.calendar_event_id:
+            # Get event URL
+            client = GoogleCalendarClient(app_settings.calendar)
+            event_url = client.get_event_url(follow_up.calendar_event_id)
+            return {
+                "success": True,
+                "already_synced": True,
+                "event_id": follow_up.calendar_event_id,
+                "event_url": event_url,
+                "followUp": _serialize_follow_up(follow_up),
+            }
+
+        # Get email context
+        email = repository.fetch_email(follow_up.email_uid)
+        if not email:
+            return {"success": False, "error": "Email not found"}
+
+        try:
+            # Create calendar event
+            client = GoogleCalendarClient(app_settings.calendar)
+            client.set_tokens(access_token, refresh_token)
+
+            LOGGER.info("Calendar client initialized for follow-up %d", follow_up_id)
+
+            # Use follow-up due date or default to now + 1 hour
+            due_at = follow_up.due_at or datetime.now(tz=UTC)
+
+            LOGGER.info(
+                "Creating calendar event: action=%s, due_at=%s, subject=%s",
+                follow_up.action,
+                due_at,
+                email.subject,
+            )
+
+            event = await client.create_event(
+                action=follow_up.action,
+                due_at=due_at,
+                email_subject=email.subject,
+                email_sender=email.sender,
+            )
+
+            event_id = event.get("id")
+            if not event_id:
+                return {
+                    "success": False,
+                    "error": "Failed to get event ID from response",
+                }
+
+            # Update follow-up with calendar event ID
+            repository.update_follow_up_calendar_sync(follow_up_id, event_id)
+
+            # Save potentially refreshed access token
+            if client._access_token and client._access_token != access_token:
+                LOGGER.info("Access token was refreshed, saving new token")
+                repository.set_user_preference(
+                    "calendar_access_token", client._access_token
+                )
+
+            event_url = client.get_event_url(event_id)
+
+            # Fetch updated follow-up to confirm sync was saved
+            updated_follow_up = repository.get_follow_up_by_id(follow_up_id)
+
+            LOGGER.info(
+                "Calendar sync complete for follow-up %d: event_id=%s, calendar_event_id in DB=%s",
+                follow_up_id,
+                event_id,
+                updated_follow_up.calendar_event_id if updated_follow_up else None,
+            )
+
+            # Invalidate dashboard cache so follow-up button state updates on refresh
+            response_cache.invalidate("dashboard")
+
+            return {
+                "success": True,
+                "event_id": event_id,
+                "event_url": event_url,
+                "message": "Follow-up added to calendar",
+                "followUp": (
+                    _serialize_follow_up(updated_follow_up)
+                    if updated_follow_up
+                    else None
+                ),
+            }
+
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.exception("Failed to sync follow-up to calendar")
+            return {"success": False, "error": str(exc)}
+
+    @app.get("/api/follow-ups/{follow_up_id}/check-calendar-event")
+    async def check_calendar_event_exists(
+        follow_up_id: int,
+        request: Request,
+        repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
+    ) -> dict[str, Any]:
+        """Check if a calendar event still exists and update state accordingly."""
+
+        LOGGER.debug("Checking calendar event for follow-up %d", follow_up_id)
+
+        # Ensure calendar access tokens are available
+        access_token = repository.get_user_preference("calendar_access_token")
+        refresh_token = repository.get_user_preference("calendar_refresh_token")
+        if not access_token:
+            LOGGER.warning(
+                "Calendar access token missing for follow-up %d", follow_up_id
+            )
+            return {"success": False, "error": "Not connected to Google Calendar"}
+
+        # Fetch follow-up metadata
+        follow_up = repository.get_follow_up_by_id(follow_up_id)
+        if not follow_up:
+            LOGGER.warning("Follow-up %d not found", follow_up_id)
+            return {"success": False, "error": "Follow-up not found"}
+
+        if not follow_up.calendar_event_id:
+            LOGGER.info("Follow-up %d has no calendar event associated", follow_up_id)
+            return {
+                "success": False,
+                "exists": False,
+                "error": "Follow-up is not synced to calendar",
+            }
+
+        try:
+            client = GoogleCalendarClient(app_settings.calendar)
+            client.set_tokens(access_token, refresh_token)
+
+            LOGGER.debug(
+                "Fetching calendar event %s",
+                follow_up.calendar_event_id,
+            )
+            event = await client.get_event(follow_up.calendar_event_id)
+
+            if event.get("status") == "cancelled":
+                LOGGER.info(
+                    "Calendar event %s for follow-up %d is cancelled; clearing sync",
+                    follow_up.calendar_event_id,
+                    follow_up_id,
+                )
+                repository.update_follow_up_calendar_sync(follow_up_id, None)
+                response_cache.invalidate("dashboard")
+                return {
+                    "success": False,
+                    "exists": False,
+                    "error": "Calendar event was cancelled",
+                }
+
+            event_url = client.get_event_url(follow_up.calendar_event_id)
+            LOGGER.debug("Calendar event %s exists", follow_up.calendar_event_id)
+            return {
+                "success": True,
+                "exists": True,
+                "event_id": follow_up.calendar_event_id,
+                "event_url": event_url,
+                "event_summary": event.get("summary"),
+            }
+
+        except Exception as exc:  # noqa: BLE001
+            error_str = str(exc)
+            LOGGER.warning(
+                "Failed to retrieve calendar event %s: %s",
+                follow_up.calendar_event_id,
+                error_str,
+            )
+
+            if "404" in error_str or "not found" in error_str.lower():
+                LOGGER.info(
+                    "Calendar event %s missing for follow-up %d; clearing sync",
+                    follow_up.calendar_event_id,
+                    follow_up_id,
+                )
+                repository.update_follow_up_calendar_sync(follow_up_id, None)
+                response_cache.invalidate("dashboard")
+                return {
+                    "success": False,
+                    "exists": False,
+                    "error": "Calendar event was deleted",
+                }
+
+            LOGGER.exception("Unexpected error while checking calendar event")
+            return {
+                "success": False,
+                "exists": None,
+                "error": f"Failed to verify event: {error_str}",
+            }
+
     _ensure_route_names(app)
     return app
 
@@ -1304,6 +1783,7 @@ def _serialize_insight(
         "provider": insight.provider,
         "generatedAt": serialize_datetime(insight.generated_at),
         "generatedAtDisplay": display_datetime(insight.generated_at),
+        "userRating": insight.user_rating,
         "draft": _serialize_draft(draft) if draft is not None else None,
     }
 
@@ -1318,6 +1798,9 @@ def _serialize_draft(draft: DraftRecord) -> dict[str, Any]:
         "generatedAt": serialize_datetime(draft.generated_at),
         "generatedAtDisplay": display_datetime(draft.generated_at),
         "usedFallback": draft.used_fallback,
+        "userRating": draft.user_rating,
+        "userEdited": draft.user_edited,
+        "sentAt": serialize_datetime(draft.sent_at),
     }
 
 
@@ -1331,6 +1814,8 @@ def _serialize_follow_up(task: FollowUpTask) -> dict[str, Any]:
         "status": task.status,
         "createdAt": serialize_datetime(task.created_at),
         "completedAt": serialize_datetime(task.completed_at),
+        "calendarEventId": task.calendar_event_id,
+        "calendarSyncedAt": serialize_datetime(task.calendar_synced_at),
     }
 
 
@@ -1424,6 +1909,17 @@ def _build_redirect_target(
     return f"{base}?{urlencode(filtered)}"
 
 
+def _parse_feedback_rating(value: object) -> int:
+    raw_value = value if isinstance(value, str) else ""
+    try:
+        rating = int(raw_value)
+    except ValueError as exc:
+        raise ValueError("Rating must be -1 or 1") from exc
+    if rating not in (-1, 1):
+        raise ValueError("Rating must be -1 or 1")
+    return rating
+
+
 def _format_sync_error(exc: Exception) -> str:
     if isinstance(exc, ImapError):
         return (
@@ -1467,18 +1963,8 @@ def _run_sync_cycle(
         if settings.llm.base_url and settings.llm.model
         else None
     )
-    drafting_service = DraftingService(
-        llm_client, fallback_enabled=settings.llm.fallback_enabled
-    )
-    follow_up_planner = FollowUpPlannerService(settings.follow_up)
-    insight_service = SummarizationService(
-        llm_client,
-        fallback_enabled=settings.llm.fallback_enabled,
-        exclude_categories=settings.follow_up.exclude_categories,
-    )
-    category_service = (
-        LLMCategoryService(llm_client) if llm_client else KeywordCategoryService()
-    )
+    if llm_client is not None:
+        llm_client.reset_circuit_breaker()
 
     try:
         processed_total = 0
@@ -1491,34 +1977,104 @@ def _run_sync_cycle(
                         ImapClient(settings.imap, mailbox_name) as mailbox,
                         SqliteEmailRepository(settings.storage) as repository,
                     ):
+                        user_guidance = (
+                            repository.get_user_preference("guidance")
+                            or settings.user.preferences
+                        )
+
+                        def thread_context_provider(
+                            thread_id: str,
+                            email_uid: int,
+                            repository: SqliteEmailRepository = repository,
+                        ):
+                            return repository.list_thread_emails(
+                                thread_id,
+                                exclude_uid=email_uid,
+                            )
+
+                        drafting_service = DraftingService(
+                            llm_client,
+                            fallback_enabled=settings.llm.fallback_enabled,
+                            user_preferences=user_guidance,
+                            reply_tone=settings.user.reply_tone,
+                            thread_context_provider=thread_context_provider,
+                        )
+                        follow_up_planner = FollowUpPlannerService(settings.follow_up)
+                        insight_service = SummarizationService(
+                            llm_client,
+                            fallback_enabled=settings.llm.fallback_enabled,
+                            exclude_categories=settings.follow_up.exclude_categories,
+                            user_preferences=user_guidance,
+                            thread_context_provider=thread_context_provider,
+                        )
+                        category_service = (
+                            LLMCategoryService(llm_client)
+                            if llm_client
+                            else KeywordCategoryService()
+                        )
+                        optimized_analyzer = (
+                            OptimizedEmailAnalyzer(
+                                llm_client,
+                                settings.model_copy(
+                                    update={
+                                        "user": settings.user.model_copy(
+                                            update={"preferences": user_guidance}
+                                        )
+                                    }
+                                ),
+                            )
+                            if llm_client is not None
+                            else None
+                        )
                         checkpoint = repository.get_checkpoint(mailbox_name)
                         last_uid = checkpoint.last_uid if checkpoint else None
                         _enqueue(
                             f"[{index}/{mailbox_total}] Last synced UID for {mailbox_name}: {last_uid or 'none'}"
                         )
-                        fetcher = MailFetcher(
-                            mailbox=mailbox,
-                            repository=repository,
-                            parser=email_parser,
-                            batch_size=settings.sync.batch_size,
-                            max_messages=settings.sync.max_messages,
-                            insight_service=insight_service,
-                            drafting_service=drafting_service,
-                            follow_up_planner=follow_up_planner,
-                            category_service=category_service,
-                            follow_up_settings=settings.follow_up,
-                            progress_callback=(
-                                (
-                                    lambda message, mailbox_name=mailbox_name: _enqueue(
-                                        f"[{mailbox_name}] {message}"
-                                    )
+                        progress_callback = (
+                            (
+                                lambda message, mailbox_name=mailbox_name: _enqueue(
+                                    f"[{mailbox_name}] {message}"
                                 )
-                                if progress_queue
-                                else None
-                            ),
-                            user_email=settings.imap.username,
+                            )
+                            if progress_queue
+                            else None
                         )
-                        result = fetcher.run()
+                        if optimized_analyzer is not None:
+                            fetcher = OptimizedMailFetcher(
+                                mailbox=mailbox,
+                                repository=repository,
+                                parser=email_parser,
+                                analyzer=optimized_analyzer,
+                                batch_size=settings.sync.batch_size,
+                                max_messages=settings.sync.max_messages,
+                                analysis_batch_size=min(settings.sync.batch_size, 5),
+                                follow_up_settings=settings.follow_up,
+                                progress_callback=progress_callback,
+                                user_email=settings.imap.username,
+                            )
+                            result, metrics = fetcher.run()
+                            LOGGER.info(
+                                "Composite analysis metrics for %s: %s",
+                                mailbox_name,
+                                metrics.get_summary(),
+                            )
+                        else:
+                            fetcher = MailFetcher(
+                                mailbox=mailbox,
+                                repository=repository,
+                                parser=email_parser,
+                                batch_size=settings.sync.batch_size,
+                                max_messages=settings.sync.max_messages,
+                                insight_service=insight_service,
+                                drafting_service=drafting_service,
+                                follow_up_planner=follow_up_planner,
+                                category_service=category_service,
+                                follow_up_settings=settings.follow_up,
+                                progress_callback=progress_callback,
+                                user_email=settings.imap.username,
+                            )
+                            result = fetcher.run()
                         processed_total += result.processed
                         _enqueue(
                             f"[{index}/{mailbox_total}] {mailbox_name}: processed {result.processed} new message(s)."
@@ -1608,7 +2164,41 @@ def _regenerate_categories(settings: AppSettings) -> CategoryRefreshOutcome:
 def _clear_database(settings: AppSettings) -> ClearDatabaseOutcome:
     try:
         with SqliteEmailRepository(settings.storage) as repository:
+            # Log counts before clearing to help debug issues where nothing seems to change
+            try:
+                cur = repository._connection.execute("SELECT COUNT(*) FROM emails")
+                before_emails = cur.fetchone()[0]
+            except Exception:
+                before_emails = None
+            try:
+                cur = repository._connection.execute("SELECT COUNT(*) FROM follow_ups")
+                before_followups = cur.fetchone()[0]
+            except Exception:
+                before_followups = None
+            LOGGER.info(
+                "Database counts before clear: emails=%s follow_ups=%s",
+                before_emails,
+                before_followups,
+            )
+
             repository.clear_all_tables()
+
+            # Log counts after clearing to verify it worked
+            try:
+                cur = repository._connection.execute("SELECT COUNT(*) FROM emails")
+                after_emails = cur.fetchone()[0]
+            except Exception:
+                after_emails = None
+            try:
+                cur = repository._connection.execute("SELECT COUNT(*) FROM follow_ups")
+                after_followups = cur.fetchone()[0]
+            except Exception:
+                after_followups = None
+            LOGGER.info(
+                "Database counts after clear: emails=%s follow_ups=%s",
+                after_emails,
+                after_followups,
+            )
         return ClearDatabaseOutcome(
             success=True,
             message="Database cleared successfully.",
@@ -1645,9 +2235,26 @@ def _regenerate_draft(
                 if settings.llm.base_url and settings.llm.model
                 else None
             )
+
+            def thread_context_provider(
+                thread_id: str,
+                current_uid: int,
+                repository: SqliteEmailRepository = repository,
+            ):
+                return repository.list_thread_emails(
+                    thread_id,
+                    exclude_uid=current_uid,
+                )
+
             drafting_service = DraftingService(
                 llm_client,
                 fallback_enabled=settings.llm.fallback_enabled,
+                user_preferences=(
+                    repository.get_user_preference("guidance")
+                    or settings.user.preferences
+                ),
+                reply_tone=settings.user.reply_tone,
+                thread_context_provider=thread_context_provider,
             )
 
             try:
@@ -1673,6 +2280,7 @@ def _regenerate_draft(
                     generated_at=generated.generated_at,
                     confidence=generated.confidence,
                     used_fallback=generated.used_fallback,
+                    user_edited=False,
                 )
                 persisted = updated is not None
 
@@ -1880,6 +2488,16 @@ def _generate_follow_ups(
                     llm_client,
                     fallback_enabled=settings.llm.fallback_enabled,
                     exclude_categories=settings.follow_up.exclude_categories,
+                    user_preferences=(
+                        repository.get_user_preference("guidance")
+                        or settings.user.preferences
+                    ),
+                    thread_context_provider=(
+                        lambda thread_id, current_uid, repository=repository: repository.list_thread_emails(
+                            thread_id,
+                            exclude_uid=current_uid,
+                        )
+                    ),
                 )
                 try:
                     regenerated_insight = summarizer.generate_insight(email, categories)
@@ -2134,9 +2752,20 @@ def _format_env_value(value: str) -> str:
 
 
 def _append_query_param(url: str, key: str, value: str) -> str:
-    base, separator, query = url.partition("?")
-    if separator:
-        existing = dict(parse_qsl(query, keep_blank_values=True))
-        existing[key] = value
-        return f"{base}?{urlencode(existing)}"
-    return f"{url}?{urlencode({key: value})}"
+    parts = urlsplit(url)
+    existing = dict(parse_qsl(parts.query, keep_blank_values=True))
+    existing[key] = value
+    new_query = urlencode(existing)
+
+    if parts.scheme or parts.netloc:
+        return urlunsplit(
+            (parts.scheme, parts.netloc, parts.path, new_query, parts.fragment)
+        )
+
+    path = parts.path or "/"
+    result = path
+    if new_query:
+        result = f"{result}?{new_query}"
+    if parts.fragment:
+        result = f"{result}#{parts.fragment}"
+    return result

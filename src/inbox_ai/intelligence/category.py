@@ -455,4 +455,11 @@ def _get_default_rules() -> Sequence[_CategoryRule]:
     )
 
 
-__all__ = ["KeywordCategoryService", "LLMCategoryService"]
+def get_default_categories() -> tuple[EmailCategory, ...]:
+    """Return the standard category keys and labels used by the application."""
+    return tuple(
+        EmailCategory(key=rule.key, label=rule.label) for rule in _get_default_rules()
+    )
+
+
+__all__ = ["KeywordCategoryService", "LLMCategoryService", "get_default_categories"]

@@ -634,6 +634,21 @@ a {
     display: contents;
 }
 
+.md3-app-bar-link {
+    min-height: 40px;
+    padding: 0 var(--md3-spacing-12);
+    white-space: nowrap;
+}
+
+.md3-app-bar-link .material-icons {
+    font-size: 18px;
+}
+
+.md3-app-bar-link__label {
+    display: inline-flex;
+    align-items: center;
+}
+
 .md3-icon-button {
     width: 40px;
     height: 40px;
@@ -1487,11 +1502,70 @@ a {
     margin-left: auto;
 }
 
+.task-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--md3-spacing-8);
+    margin-left: auto;
+}
+
+.task-actions .calendar-sync-btn,
+.task-actions .calendar-view-btn {
+    white-space: nowrap;
+}
+
 .md3-draft-actions {
     display: flex;
     flex-wrap: wrap;
     gap: var(--md3-spacing-12);
     margin-top: var(--md3-spacing-12);
+}
+
+.feedback-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--md3-spacing-8);
+    margin-top: var(--md3-spacing-16);
+}
+
+.feedback-actions form {
+    margin: 0;
+}
+
+.feedback-actions__label {
+    margin: 0;
+    color: var(--md3-color-on-surface-variant);
+    font-size: 13px;
+    line-height: 18px;
+}
+
+.feedback-actions__note {
+    margin: var(--md3-spacing-12) 0 0;
+    color: var(--md3-color-on-surface-variant);
+    font-size: 13px;
+    line-height: 18px;
+}
+
+.feedback-button {
+    transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
+}
+
+.feedback-button[aria-pressed="true"],
+.feedback-button--selected {
+    background: var(--md3-color-secondary-container);
+    color: var(--md3-color-on-secondary-container);
+}
+
+.feedback-button[aria-pressed="true"] .material-icons,
+.feedback-button--selected .material-icons {
+    color: inherit;
+}
+
+.md3-draft-actions > .feedback-actions__label {
+    display: inline-flex;
+    align-items: center;
+    min-height: 40px;
 }
 
 .md3-textarea {
@@ -2011,6 +2085,10 @@ a {
     to {
         transform: rotate(360deg);
     }
+}
+
+.rotating {
+    animation: md3-spin 1s linear infinite;
 }
 
 #spinner-message {
@@ -2679,6 +2757,60 @@ a {
     margin: 0;
 }
 
+/* Calendar Status */
+.calendar-status {
+    margin-bottom: var(--md3-spacing-16);
+}
+
+.status-message {
+    display: flex;
+    align-items: center;
+    gap: var(--md3-spacing-12);
+    padding: var(--md3-spacing-12);
+    background: var(--md3-color-surface-container-low);
+    border-radius: var(--md3-radius-md);
+}
+
+.status-message .material-icons {
+    font-size: 24px;
+}
+
+.status-loading .material-icons {
+    color: var(--md3-color-tertiary);
+}
+
+.calendar-config-note {
+    margin-top: var(--md3-spacing-16);
+}
+
+.calendar-config-note ol {
+    margin-top: var(--md3-spacing-8);
+    padding-left: 20px;
+}
+
+.calendar-list {
+    margin-top: var(--md3-spacing-16);
+}
+
+.calendar-list ul {
+    margin-top: var(--md3-spacing-8);
+    padding-left: 20px;
+    list-style: disc;
+}
+
+/* Material Design 3 Color Utilities */
+.md3-color-primary {
+    color: var(--md3-color-primary) !important;
+}
+
+.md3-color-tertiary {
+    color: var(--md3-color-tertiary) !important;
+}
+
+.md3-color-error {
+    color: var(--md3-color-error) !important;
+}
+
 .settings-page .theme-grid {
     display: flex;
     flex-wrap: wrap;
@@ -3093,6 +3225,10 @@ a {
 }
 
 @media (max-width: 640px) {
+    .md3-app-bar-link__label {
+        display: none;
+    }
+
     .md3-fab {
         bottom: var(--md3-spacing-16);
         right: var(--md3-spacing-16);

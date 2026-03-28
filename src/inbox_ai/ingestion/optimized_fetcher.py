@@ -5,8 +5,11 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import re
+from datetime import UTC, datetime
 from typing import Callable
 
+from ..core.config import FollowUpSettings
 from ..core.interfaces import EmailRepository, MailboxProvider
 from ..core.models import (
     DraftRecord,
@@ -17,6 +20,7 @@ from ..core.models import (
     EmailCategory,
     FollowUpTask as CoreFollowUpTask,
 )
+from ..intelligence import EmailAnalysis, get_default_categories
 from ..intelligence.email_analysis_service import OptimizedEmailAnalyzer, LLMMetrics
 from .fetcher import EmailParserProtocol
 
@@ -44,6 +48,7 @@ class OptimizedMailFetcher:
         batch_size: int = 50,
         max_messages: int | None = None,
         analysis_batch_size: int = 5,
+        follow_up_settings: FollowUpSettings | None = None,
         progress_callback: Callable[[str], None] | None = None,
         user_email: str | None = None,
     ) -> None:
@@ -73,9 +78,13 @@ class OptimizedMailFetcher:
         self._batch_size = batch_size
         self._max_messages = max_messages
         self._analysis_batch_size = analysis_batch_size
+        self._follow_up_settings = follow_up_settings or FollowUpSettings()
         self._progress_callback = progress_callback
         self._user_email = user_email
         self._metrics = LLMMetrics()
+        self._default_categories = {
+            category.key: category for category in get_default_categories()
+        }
 
     def run(self) -> tuple[FetchReport, LLMMetrics]:
         """
@@ -166,22 +175,33 @@ class OptimizedMailFetcher:
                 LOGGER.debug(
                     "Cache hit for UID %s (hash %s)", envelope.uid, content_hash[:8]
                 )
-                self._metrics.cache_hits += 1
+                self._metrics.record_cache_hit()
                 cached_results[envelope.uid] = cached_analysis
             else:
                 LOGGER.debug(
                     "Cache miss for UID %s (hash %s)", envelope.uid, content_hash[:8]
                 )
-                self._metrics.cache_misses += 1
+                self._metrics.record_cache_miss()
                 analyses_needed.append(envelope)
 
         # Analyze uncached emails in parallel
         if analyses_needed:
+            thread_history_by_uid = {
+                envelope.uid: self._repository.list_thread_emails(
+                    envelope.thread_id,
+                    exclude_uid=envelope.uid,
+                )
+                for envelope in analyses_needed
+                if envelope.thread_id
+            }
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             try:
                 results = loop.run_until_complete(
-                    self._analyzer.analyze_batch(analyses_needed)
+                    self._analyzer.analyze_batch(
+                        analyses_needed,
+                        conversation_history_by_uid=thread_history_by_uid,
+                    )
                 )
             finally:
                 loop.close()
@@ -192,33 +212,15 @@ class OptimizedMailFetcher:
 
         # Use cached results
         for uid, cached_analysis in cached_results.items():
-            envelope = next(e for e in envelopes if e.uid == uid)
-            # Copy cached analysis to new email UID
-            new_insight = EmailInsight(
-                email_uid=uid,
-                summary=cached_analysis.summary,
-                action_items=cached_analysis.action_items,
-                priority=cached_analysis.priority,
-                provider=f"{cached_analysis.provider} (cached)",
-                generated_at=cached_analysis.generated_at,
-                used_fallback=cached_analysis.used_fallback,
-            )
-            self._repository.persist_insight(new_insight)
+            envelope = next(item for item in envelopes if item.uid == uid)
+            self._copy_cached_results(envelope, cached_analysis)
 
-            # Store categories
-            categories = tuple(
-                EmailCategory(key=cat["key"], label=cat["label"])
-                for cat in [
-                    {"key": c, "label": c.replace("_", " ").title()}
-                    for c in cached_analysis.summary.split()[:3]  # Placeholder
-                ]
-            )
-            self._repository.replace_categories(uid, categories)
+        analyzer_metrics = self._analyzer.get_metrics()
+        self._metrics.total_calls = analyzer_metrics.total_calls
+        self._metrics.total_tokens_input = analyzer_metrics.total_tokens_input
+        self._metrics.total_tokens_output = analyzer_metrics.total_tokens_output
 
-        # Merge analyzer metrics
-        self._metrics.merge(self._analyzer.get_metrics())
-
-    def _store_analysis(self, envelope: EmailEnvelope, analysis) -> None:
+    def _store_analysis(self, envelope: EmailEnvelope, analysis: EmailAnalysis) -> None:
         """
         Store comprehensive analysis results in repository.
 
@@ -226,64 +228,137 @@ class OptimizedMailFetcher:
             envelope: Email envelope being analyzed
             analysis: EmailAnalysis result from analyzer
         """
-        # Store insight
+        generated_at = datetime.now(tz=UTC)
         insight = EmailInsight(
             email_uid=envelope.uid,
             summary=analysis.summary,
             action_items=tuple(analysis.action_items),
             priority=analysis.priority,
-            provider="ollama-optimized",
-            generated_at=analysis.generated_at,
+            provider=f"{self._analyzer.llm.provider_id}:composite",
+            generated_at=generated_at,
             used_fallback=False,
         )
         self._repository.persist_insight(insight)
 
-        # Store categories
-        categories = tuple(
-            EmailCategory(key=cat, label=cat.replace("_", " ").title())
-            for cat in analysis.categories
-        )
+        categories = self._map_categories(analysis.categories)
         self._repository.replace_categories(envelope.uid, categories)
 
-        # Store follow-ups
         follow_ups = tuple(
             CoreFollowUpTask(
                 id=None,
                 email_uid=envelope.uid,
                 action=task.action,
-                due_at=task.due_at,
-                status="pending",
-                created_at=analysis.generated_at,
+                due_at=_parse_due_date(task.due_date),
+                status="open",
+                created_at=generated_at,
                 completed_at=None,
             )
             for task in analysis.follow_ups
+            if task.action.strip()
         )
         self._repository.replace_follow_ups(envelope.uid, follow_ups)
 
-        # Store draft if appropriate
-        excluded_categories = {"marketing", "notification", "spam"}
-        skip_draft = any(cat in excluded_categories for cat in analysis.categories)
-
-        is_personal = False
-        if self._user_email:
-            is_personal = (
-                self._user_email in envelope.to
-                or self._user_email in envelope.cc
-                or self._user_email in envelope.bcc
-            )
-            skip_draft = skip_draft or not is_personal
-
-        if not skip_draft and analysis.suggested_reply:
+        if (
+            not self._should_skip_draft(envelope, categories)
+            and analysis.suggested_reply.strip()
+        ):
             draft = DraftRecord(
                 id=None,
                 email_uid=envelope.uid,
-                body=analysis.suggested_reply,
-                provider="ollama-optimized",
-                generated_at=analysis.generated_at,
+                body=analysis.suggested_reply.strip(),
+                provider=f"{self._analyzer.llm.provider_id}:composite",
+                generated_at=generated_at,
                 confidence=None,
                 used_fallback=False,
             )
             self._repository.persist_draft(draft)
+
+    def _copy_cached_results(
+        self, envelope: EmailEnvelope, cached_analysis: EmailInsight
+    ) -> None:
+        generated_at = datetime.now(tz=UTC)
+        source_uid = cached_analysis.email_uid
+        self._repository.persist_insight(
+            EmailInsight(
+                email_uid=envelope.uid,
+                summary=cached_analysis.summary,
+                action_items=cached_analysis.action_items,
+                priority=cached_analysis.priority,
+                provider=f"{cached_analysis.provider} (cached)",
+                generated_at=generated_at,
+                used_fallback=cached_analysis.used_fallback,
+            )
+        )
+
+        source_categories = self._repository.get_categories_for_uids([source_uid]).get(
+            source_uid, ()
+        )
+        categories = tuple(
+            EmailCategory(key=category.key, label=category.label)
+            for category in source_categories
+        )
+        self._repository.replace_categories(envelope.uid, categories)
+
+        source_follow_ups = self._repository.fetch_follow_ups_for_uids(
+            [source_uid]
+        ).get(source_uid, ())
+        self._repository.replace_follow_ups(
+            envelope.uid,
+            tuple(
+                CoreFollowUpTask(
+                    id=None,
+                    email_uid=envelope.uid,
+                    action=task.action,
+                    due_at=task.due_at,
+                    status="open",
+                    created_at=generated_at,
+                    completed_at=None,
+                )
+                for task in source_follow_ups
+            ),
+        )
+
+        draft = self._repository.fetch_latest_drafts([source_uid]).get(source_uid)
+        if draft is not None and not self._should_skip_draft(envelope, categories):
+            self._repository.persist_draft(
+                DraftRecord(
+                    id=None,
+                    email_uid=envelope.uid,
+                    body=draft.body,
+                    provider=f"{draft.provider} (cached)",
+                    generated_at=generated_at,
+                    confidence=draft.confidence,
+                    used_fallback=draft.used_fallback,
+                )
+            )
+
+    def _map_categories(self, raw_categories: list[str]) -> tuple[EmailCategory, ...]:
+        categories: list[EmailCategory] = []
+        seen: set[str] = set()
+        for raw_category in raw_categories:
+            key = _normalize_category_key(raw_category)
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            category = self._default_categories.get(key)
+            if category is not None:
+                categories.append(category)
+        if not categories:
+            return (EmailCategory(key="general", label="General"),)
+        return tuple(categories)
+
+    def _should_skip_draft(
+        self, envelope: EmailEnvelope, categories: tuple[EmailCategory, ...]
+    ) -> bool:
+        excluded_categories = set(self._follow_up_settings.exclude_categories)
+        skip_draft = any(category.key in excluded_categories for category in categories)
+        if self._user_email is None:
+            return skip_draft
+
+        is_personal = self._user_email in envelope.to or self._user_email in envelope.cc
+        if not is_personal:
+            is_personal = self._user_email in envelope.bcc
+        return skip_draft or not is_personal
 
     @staticmethod
     def _compute_content_hash(envelope: EmailEnvelope) -> str:
@@ -302,6 +377,32 @@ class OptimizedMailFetcher:
             f"{envelope.body.text or envelope.body.html or ''}"
         )
         return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+def _normalize_category_key(value: str) -> str:
+    normalized = re.sub(r"[^a-z0-9]+", "_", value.strip().lower()).strip("_")
+    if normalized == "uncategorized":
+        return "general"
+    return normalized
+
+
+def _parse_due_date(value: str | None) -> datetime | None:
+    if value is None:
+        return None
+    stripped = value.strip()
+    if not stripped:
+        return None
+    try:
+        parsed = datetime.fromisoformat(stripped)
+    except ValueError:
+        try:
+            parsed = datetime.fromisoformat(f"{stripped}T00:00:00")
+        except ValueError:
+            LOGGER.debug("Ignoring invalid follow-up due date from analyzer: %s", value)
+            return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 __all__ = ["OptimizedMailFetcher"]

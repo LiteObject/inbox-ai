@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import calendar
 import logging
+import re
 from datetime import UTC, datetime, timedelta
 
 from inbox_ai.core.config import FollowUpSettings
@@ -85,6 +87,34 @@ def _estimate_due_at(
 ) -> datetime | None:
     baseline = generated_at
     text = action.lower()
+    duration_match = re.search(
+        r"\bwithin\s+(\d+)\s+(hour|hours|day|days|week|weeks)\b",
+        text,
+    )
+    if duration_match:
+        amount = int(duration_match.group(1))
+        unit = duration_match.group(2)
+        if "hour" in unit:
+            return baseline + timedelta(hours=amount)
+        if "week" in unit:
+            return baseline + timedelta(weeks=amount)
+        return baseline + timedelta(days=amount)
+
+    weekday_match = re.search(
+        r"\b(?:by|before|on)\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b",
+        text,
+    )
+    if weekday_match:
+        return _next_weekday(baseline, weekday_match.group(1))
+
+    quarter_match = re.search(r"\bend of q([1-4])\b", text)
+    if quarter_match:
+        return _quarter_end(baseline, int(quarter_match.group(1)))
+
+    if "end of month" in text:
+        return _month_end(baseline)
+    if "end of day" in text or re.search(r"\beod\b", text):
+        return baseline.replace(hour=17, minute=0, second=0, microsecond=0)
     if "today" in text:
         return baseline
     if "tomorrow" in text:
@@ -100,6 +130,53 @@ def _estimate_due_at(
     if days == 0:
         return baseline
     return baseline + timedelta(days=days)
+
+
+def _next_weekday(baseline: datetime, weekday_name: str) -> datetime:
+    weekday_index = list(calendar.day_name).index(weekday_name.capitalize())
+    days_ahead = (weekday_index - baseline.weekday()) % 7
+    candidate = baseline + timedelta(days=days_ahead)
+    return candidate.replace(hour=17, minute=0, second=0, microsecond=0)
+
+
+def _quarter_end(baseline: datetime, quarter: int) -> datetime:
+    year = baseline.year
+    month = quarter * 3
+    last_day = calendar.monthrange(year, month)[1]
+    candidate = baseline.replace(
+        year=year,
+        month=month,
+        day=last_day,
+        hour=17,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+    if candidate < baseline:
+        year += 1
+        last_day = calendar.monthrange(year, month)[1]
+        candidate = candidate.replace(year=year, day=last_day)
+    return candidate
+
+
+def _month_end(baseline: datetime) -> datetime:
+    last_day = calendar.monthrange(baseline.year, baseline.month)[1]
+    candidate = baseline.replace(
+        day=last_day,
+        hour=17,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+    if candidate < baseline:
+        next_month = baseline.month + 1
+        next_year = baseline.year
+        if next_month == 13:
+            next_month = 1
+            next_year += 1
+        last_day = calendar.monthrange(next_year, next_month)[1]
+        candidate = candidate.replace(year=next_year, month=next_month, day=last_day)
+    return candidate
 
 
 __all__ = ["FollowUpPlannerService"]

@@ -2,7 +2,7 @@
 
 from inbox_ai.core.interfaces import InsightError
 
-from .category import KeywordCategoryService, LLMCategoryService
+from .category import KeywordCategoryService, LLMCategoryService, get_default_categories
 from .drafter import DraftingError, DraftingService
 from .email_analysis_service import (
     EmailAnalysis,
@@ -27,6 +27,7 @@ __all__ = [
     "FollowUpPlannerService",
     "KeywordCategoryService",
     "LLMCategoryService",
+    "get_default_categories",
     "EmailAnalysis",
     "FollowUpTask",
     "LLMMetrics",

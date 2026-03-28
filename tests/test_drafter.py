@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from inbox_ai.core.models import EmailBody, EmailEnvelope, EmailInsight
+from inbox_ai.core.models import EmailBody, EmailEnvelope, EmailInsight, ThreadSummary
 from inbox_ai.intelligence.drafter import DraftingError, DraftingService
 from inbox_ai.intelligence.llm import LLMError
 
@@ -19,7 +19,14 @@ class StubLLM:
         self.provider_id = "stub-llm"
         self.last_prompt: str | None = None
 
-    def generate(self, prompt: str) -> str:
+    def generate(
+        self,
+        prompt: str,
+        *,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+    ) -> str:
+        del temperature, max_tokens
         self.last_prompt = prompt
         return self.response
 
@@ -29,8 +36,14 @@ class FailingLLM:
 
     provider_id = "failing-llm"
 
-    def generate(self, prompt: str) -> str:
-        del prompt
+    def generate(
+        self,
+        prompt: str,
+        *,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+    ) -> str:
+        del prompt, temperature, max_tokens
         raise LLMError("failure")
 
 
@@ -66,7 +79,11 @@ def _sample_insight() -> EmailInsight:
 
 def test_generate_draft_uses_llm_output() -> None:
     llm = StubLLM('{"draft": "Thanks!", "confidence": 0.8}')
-    service = DraftingService(llm)
+    service = DraftingService(
+        llm,
+        user_preferences="Keep replies brief and mention deadlines.",
+        reply_tone="Detailed",
+    )
 
     draft = service.generate_draft(_sample_email(), _sample_insight())
 
@@ -75,6 +92,44 @@ def test_generate_draft_uses_llm_output() -> None:
     assert draft.confidence == 0.8
     assert not draft.used_fallback
     assert draft.generated_at.tzinfo is not None
+    assert llm.last_prompt is not None
+    assert "User context:" in llm.last_prompt
+    assert "Keep replies brief and mention deadlines." in llm.last_prompt
+    assert "Tone: Detailed" in llm.last_prompt
+
+
+def test_generate_draft_includes_thread_context_in_prompt() -> None:
+    llm = StubLLM('{"draft": "Thanks!", "confidence": 0.8}')
+    service = DraftingService(
+        llm,
+        thread_context_provider=lambda thread_id, uid: (
+            ThreadSummary(
+                email_uid=uid - 1,
+                subject="Prior exchange",
+                sender="alice@example.com",
+                summary="The sender already shared the requested numbers.",
+            ),
+        ),
+    )
+    email = _sample_email()
+    email.thread_id = "thread-456"
+
+    service.generate_draft(email, _sample_insight())
+
+    assert llm.last_prompt is not None
+    assert "Thread context:" in llm.last_prompt
+    assert "maintain continuity" in llm.last_prompt.lower()
+    assert "The sender already shared the requested numbers." in llm.last_prompt
+
+
+def test_generate_draft_omits_user_context_when_preferences_empty() -> None:
+    llm = StubLLM('{"draft": "Thanks!", "confidence": 0.8}')
+    service = DraftingService(llm)
+
+    service.generate_draft(_sample_email(), _sample_insight())
+
+    assert llm.last_prompt is not None
+    assert "User context:" not in llm.last_prompt
 
 
 def test_generate_draft_falls_back_when_llm_fails() -> None:
