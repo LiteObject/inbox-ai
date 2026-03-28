@@ -913,6 +913,31 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         target = _append_query_param(target, "delete_message", outcome.message)
         return RedirectResponse(url=target, status_code=http_status.HTTP_303_SEE_OTHER)
 
+    @app.delete("/api/emails/{email_uid}")
+    async def delete_email_api(request: Request, email_uid: int) -> JSONResponse:
+        csrf_token = request.headers.get("X-CSRF-Token")
+        csrf.validate(request, csrf_token)
+
+        outcome = await asyncio.to_thread(_delete_email, app_settings, email_uid)
+
+        if outcome.success:
+            response_cache.invalidate("dashboard")
+            LOGGER.info("Invalidated cache after deleting email %s via API", email_uid)
+
+        status_code = (
+            http_status.HTTP_200_OK
+            if outcome.success
+            else http_status.HTTP_400_BAD_REQUEST
+        )
+        return JSONResponse(
+            status_code=status_code,
+            content={
+                "success": outcome.success,
+                "message": outcome.message,
+                "uid": email_uid,
+            },
+        )
+
     @app.post("/emails/bulk-delete")
     async def bulk_delete_emails(request: Request) -> RedirectResponse:
         form = await request.form()

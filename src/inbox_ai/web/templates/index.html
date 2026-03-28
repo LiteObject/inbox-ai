@@ -66,8 +66,8 @@
     <main class="md3-layout inbox-dashboard">
         <section class="md3-main-content">
             <div class="md3-toolbar">
-                <h2 class="toolbar-heading">Inbox Insights (<span id="insights-visible-count">{{ insights | length }}</span> / {{
-                    insights_total | default(0) }})</h2>
+                <h2 class="toolbar-heading">Inbox Insights (<span id="insights-visible-count">{{ insights | length }}</span> / <span
+                    id="insights-total-count">{{ insights_total | default(0) }}</span>)</h2>
 
                 <form class="filter-toolbar" id="filter-rail" method="get" data-scroll-restore
                     aria-label="Filter emails">
@@ -189,8 +189,6 @@
                             aria-label="Search insights" />
                     </div>
                     <div class="list-meta">
-                        <p>Showing <span id="insights-visible-count-2">{{ insights | length }}</span> of
-                            {{ insights_total | default(0) }} insights</p>
                         <div class="list-meta__actions">
                             <form class="secondary-form" method="post" action="/emails/bulk-delete"
                                 data-scroll-restore data-spinner data-spinner-label="Moving emails to trash..."

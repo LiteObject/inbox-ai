@@ -256,6 +256,10 @@
     --md3-elevation-1: 0 1px 1px rgba(31, 31, 36, 0.1), 0 2px 2px rgba(31, 31, 36, 0.12);
     --md3-elevation-2: 0 2px 4px rgba(31, 31, 36, 0.16);
     --md3-elevation-3: 0 6px 10px rgba(31, 31, 36, 0.16);
+
+    --overlay-edge-offset: var(--md3-spacing-24);
+    --overlay-stack-gap: var(--md3-spacing-16);
+    --fab-size: 56px;
     
     /* MD3 Shape System */
     --md3-radius-none: 0px;
@@ -2420,8 +2424,8 @@ h2.toolbar-heading {
 
 .toast-container {
     position: fixed;
-    bottom: var(--md3-spacing-24);
-    right: var(--md3-spacing-24);
+    bottom: calc(var(--overlay-edge-offset) + var(--fab-size) + var(--overlay-stack-gap));
+    right: var(--overlay-edge-offset);
     display: flex;
     flex-direction: column;
     gap: var(--md3-spacing-12);
@@ -3584,8 +3588,8 @@ h2.toolbar-heading {
 
 .md3-fab {
     position: fixed;
-    bottom: var(--md3-spacing-24);
-    right: var(--md3-spacing-24);
+    bottom: var(--overlay-edge-offset);
+    right: var(--overlay-edge-offset);
     width: 56px;
     height: 56px;
     border-radius: 16px;

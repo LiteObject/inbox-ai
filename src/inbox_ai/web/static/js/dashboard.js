@@ -397,6 +397,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     spinner.hide();
 
     const dialogManager = new DialogManager();
+    const totalCountTarget = document.getElementById('insights-total-count');
 
     const bindInteractiveForms = () => {
         installSpinnerForms(spinner, toastManager, dialogManager);
@@ -415,6 +416,70 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
 
     installSettingsNavigation();
+
+    const updateTotalCount = (delta) => {
+        if (!totalCountTarget) {
+            return;
+        }
+
+        const current = Number.parseInt(totalCountTarget.textContent || '', 10);
+        if (!Number.isFinite(current)) {
+            return;
+        }
+
+        totalCountTarget.textContent = String(Math.max(0, current + delta));
+    };
+
+    const getCsrfToken = () => {
+        const tokenInput = document.querySelector('input[name="csrf_token"]');
+        return tokenInput?.value || '';
+    };
+
+    let emailListSearch = null;
+
+    const deleteSelectedEmail = async (uid) => {
+        const csrfToken = getCsrfToken();
+        if (!uid || !csrfToken || !window.listDetailController) {
+            return;
+        }
+
+        const confirmed = await dialogManager.confirm(
+            'Move this email to trash? You can recover it from your trash folder.',
+            'Confirm Action',
+            'Delete',
+            'Cancel',
+        );
+        if (!confirmed) {
+            return;
+        }
+
+        spinner.show('Moving email to trash...');
+
+        try {
+            const response = await fetch(`/api/emails/${uid}`, {
+                method: 'DELETE',
+                headers: {
+                    Accept: 'application/json',
+                    'X-CSRF-Token': csrfToken,
+                },
+            });
+
+            const payload = await response.json();
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.message || 'Delete failed.');
+            }
+
+            window.listDetailController.removeItem(String(uid));
+            emailListSearch?.refresh();
+            updateTotalCount(-1);
+            toastManager.show(payload.message || 'Email deleted.', 'success');
+        } catch (error) {
+            console.error('Delete request failed', error);
+            toastManager.show(error.message || 'Delete failed. Please try again.', 'error');
+        } finally {
+            spinner.hide();
+        }
+    };
 
     // ── Filter toolbar: auto-submit + popover ──────────────
     const filterForm = document.getElementById('filter-rail');
@@ -516,6 +581,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             list: emailList,
             detailHost,
             templateContainer,
+            onDelete: deleteSelectedEmail,
             onDetailChanged: () => {
                 bindInteractiveForms();
                 // Initialize tabs for the newly loaded detail view
@@ -550,9 +616,9 @@ document.addEventListener("DOMContentLoaded", async () => {
             console.warn("Unable to restore previously selected email", error);
         }
 
-        const visibleCountTargets = document.querySelectorAll('#insights-visible-count, #insights-visible-count-2');
+        const visibleCountTargets = document.querySelectorAll('#insights-visible-count');
 
-        installEmailListSearch({
+        emailListSearch = installEmailListSearch({
             input: document.getElementById('insights-search'),
             list: emailList,
             visibleCount: visibleCountTargets,

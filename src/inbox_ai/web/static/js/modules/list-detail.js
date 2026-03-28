@@ -6,6 +6,7 @@ export class ListDetailController {
         this.templateContainer = options.templateContainer ?? document.getElementById('detail-templates');
         this.onDetailChanged = options.onDetailChanged;
         this.onSelect = options.onSelect;
+        this.onDelete = options.onDelete;
         this.mobileBreakpoint = options.mobileBreakpoint ?? 640;
 
         this.templates = new Map();
@@ -100,8 +101,28 @@ export class ListDetailController {
                 this.focusRelativeItem(item, 1);
                 return;
             }
+            case 'Delete': {
+                if (item.dataset.uid !== this.selectedUid) {
+                    return;
+                }
+                event.preventDefault();
+                this.requestDelete(item.dataset.uid);
+                return;
+            }
             default:
                 return;
+        }
+    }
+
+    async requestDelete(uid) {
+        if (!uid || typeof this.onDelete !== 'function') {
+            return;
+        }
+
+        try {
+            await this.onDelete(uid);
+        } catch (error) {
+            console.error('Delete action failed for UID', uid, error);
         }
     }
 
@@ -260,6 +281,53 @@ export class ListDetailController {
         if (firstVisibleItem) {
             this.selectItem(firstVisibleItem.dataset.uid, { scroll: false, updateHistory: false });
         }
+    }
+
+    removeItem(uid) {
+        if (!uid) {
+            return null;
+        }
+
+        const visibleItems = this.getVisibleItems();
+        const visibleIndex = visibleItems.findIndex((item) => item.dataset.uid === uid);
+        const nextVisibleItem = visibleItems[visibleIndex + 1] ?? visibleItems[visibleIndex - 1] ?? null;
+
+        const item = this.listItems.find((entry) => entry.dataset.uid === uid);
+        if (!item) {
+            return null;
+        }
+
+        const row = item.closest('li') || item;
+        row.remove();
+
+        const template = this.templates.get(uid);
+        if (template) {
+            template.remove();
+            this.templates.delete(uid);
+        }
+
+        this.listItems = this.listItems.filter((entry) => entry.dataset.uid !== uid);
+
+        if (this.selectedUid === uid) {
+            this.selectedUid = null;
+        }
+
+        if (nextVisibleItem && nextVisibleItem.dataset.uid !== uid) {
+            this.selectItem(nextVisibleItem.dataset.uid, { scroll: false, updateHistory: false });
+            const selectedItem = this.listItems.find((entry) => entry.dataset.uid === nextVisibleItem.dataset.uid);
+            selectedItem?.focus({ preventScroll: true });
+            return nextVisibleItem.dataset.uid;
+        }
+
+        this.clearSelection({
+            emptyState: {
+                icon: 'draft',
+                title: 'No email details yet',
+                message: 'Once messages are available, this panel will show summaries, actions, and draft replies.',
+            },
+            hideMobileDetail: true,
+        });
+        return null;
     }
 
     showDetail() {

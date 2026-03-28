@@ -1375,11 +1375,14 @@ class SqliteEmailRepository(EmailRepository):
 
     def _apply_feedback_migration(self, script: str) -> None:
         """Apply feedback columns/indexes while tolerating already-added columns."""
-        lines = [
-            line.strip()
-            for line in script.split("\n")
+        # Strip comment lines first, then split on semicolons
+        clean_lines = [
+            line
+            for line in script.splitlines()
             if line.strip() and not line.strip().startswith("--")
         ]
+        clean_script = "\n".join(clean_lines)
+        statements = [stmt.strip() for stmt in clean_script.split(";") if stmt.strip()]
 
         existing_email_columns = {
             row["name"]
@@ -1389,30 +1392,28 @@ class SqliteEmailRepository(EmailRepository):
             row["name"] for row in self._connection.execute("PRAGMA table_info(drafts)")
         }
 
-        for line in lines:
-            upper_line = line.upper()
+        for stmt in statements:
+            upper_stmt = stmt.upper()
             if (
-                upper_line.startswith(
-                    "ALTER TABLE EMAIL_INSIGHTS ADD COLUMN USER_RATING"
-                )
+                "ALTER TABLE EMAIL_INSIGHTS ADD COLUMN USER_RATING" in upper_stmt
                 and "user_rating" in existing_email_columns
             ):
                 continue
-            if upper_line.startswith("ALTER TABLE DRAFTS ADD COLUMN USER_RATING"):
+            if "ALTER TABLE DRAFTS ADD COLUMN USER_RATING" in upper_stmt:
                 if "user_rating" in existing_draft_columns:
                     continue
                 existing_draft_columns.add("user_rating")
-            if upper_line.startswith("ALTER TABLE DRAFTS ADD COLUMN USER_EDITED"):
+            if "ALTER TABLE DRAFTS ADD COLUMN USER_EDITED" in upper_stmt:
                 if "user_edited" in existing_draft_columns:
                     continue
                 existing_draft_columns.add("user_edited")
-            if upper_line.startswith("ALTER TABLE DRAFTS ADD COLUMN DELETED_AT"):
+            if "ALTER TABLE DRAFTS ADD COLUMN DELETED_AT" in upper_stmt:
                 if "deleted_at" in existing_draft_columns:
                     continue
                 existing_draft_columns.add("deleted_at")
 
             with self._connection:
-                self._connection.execute(line)
+                self._connection.execute(stmt)
 
     def _ensure_indexes(self) -> None:
         """Create supporting indexes that may be missing from older schemas."""

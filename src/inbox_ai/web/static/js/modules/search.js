@@ -339,16 +339,26 @@ export default installInsightSearch;
 
 export function installEmailListSearch({ input, list, visibleCount, emptyNotice, onFilterChange }) {
     if (!input || !list) {
-        return;
+        return {
+            applyFilter() { },
+            refresh() { },
+        };
     }
 
-    const items = Array.from(list.querySelectorAll(".email-list-item"));
-    const rows = items.map((item) => item.closest("li") || item);
+    let items = [];
+    let rows = [];
+    let indexMap = new Map();
 
-    const indexMap = new Map();
-    items.forEach((item) => {
-        indexMap.set(item, buildSearchIndex(item));
-    });
+    const rebuildIndex = () => {
+        items = Array.from(list.querySelectorAll(".email-list-item"));
+        rows = items.map((item) => item.closest("li") || item);
+        indexMap = new Map();
+        items.forEach((item) => {
+            indexMap.set(item, buildSearchIndex(item));
+        });
+    };
+
+    rebuildIndex();
 
     const counterElements = toElementArray(visibleCount);
 
@@ -448,4 +458,12 @@ export function installEmailListSearch({ input, list, visibleCount, emptyNotice,
     input.addEventListener("input", applyFilter);
     input.addEventListener("search", applyFilter);
     applyFilter();
+
+    return {
+        applyFilter,
+        refresh() {
+            rebuildIndex();
+            applyFilter();
+        },
+    };
 }

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import os
 from datetime import datetime, timezone
 
@@ -17,8 +18,10 @@ from inbox_ai.core.models import (
 )
 from inbox_ai.storage import SqliteEmailRepository
 from inbox_ai.web import create_app
-from inbox_ai.web.app import CONFIG_FIELD_KEYS
+from inbox_ai.web.app import CONFIG_FIELD_KEYS, DeleteOutcome
 from inbox_ai.web.security import CSRF_COOKIE_NAME, CSRF_FIELD_NAME
+
+web_app_module = importlib.import_module("inbox_ai.web.app")
 
 
 def _seed_data(repository: SqliteEmailRepository) -> int:
@@ -146,6 +149,39 @@ def test_follow_up_actions_and_filters(tmp_path) -> None:
     api_payload = api_response.json()
     assert api_payload["filters"]["followStatus"] == "done"
     assert api_payload["followUps"] and api_payload["followUps"][0]["status"] == "done"
+
+
+def test_delete_email_api_returns_json(tmp_path, monkeypatch) -> None:
+    db_path = tmp_path / "web_delete_api.db"
+    settings = StorageSettings(db_path=db_path)
+    repository = SqliteEmailRepository(settings)
+    _seed_data(repository)
+    repository.close()
+
+    app_settings = AppSettings(storage=settings)
+    app = create_app(app_settings)
+    client = TestClient(app)
+
+    client.get("/")
+    csrf_token = client.cookies.get(CSRF_COOKIE_NAME)
+    assert csrf_token is not None
+
+    def fake_delete_email(_settings: AppSettings, uid: int) -> DeleteOutcome:
+        return DeleteOutcome(success=True, message=f"Message UID {uid} deleted.")
+
+    monkeypatch.setattr(web_app_module, "_delete_email", fake_delete_email)
+
+    response = client.delete(
+        "/api/emails/1",
+        headers={"X-CSRF-Token": csrf_token},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "success": True,
+        "message": "Message UID 1 deleted.",
+        "uid": 1,
+    }
 
 
 def test_manual_sync_endpoint_handles_missing_credentials(tmp_path) -> None:
