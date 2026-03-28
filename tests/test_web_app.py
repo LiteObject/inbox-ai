@@ -95,7 +95,7 @@ def test_dashboard_endpoints_return_data(tmp_path) -> None:
     assert payload["insights"][0]["priorityLabel"] == "Normal"
     assert payload["drafts"][0]["emailUid"] == 1
     assert payload["followUps"][0]["action"] == "Review notes"
-    assert payload["filters"]["followStatus"] == "open"
+    assert payload["filters"]["followStatus"] == "all"
 
     html_response = client.get("/")
     assert html_response.status_code == 200

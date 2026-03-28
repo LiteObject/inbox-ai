@@ -982,8 +982,8 @@ a {
 .dashboard-filters {
     display: flex;
     flex-direction: column;
-    gap: var(--md3-spacing-12);
-    padding: var(--md3-spacing-16);
+    gap: var(--md3-spacing-8);
+    padding: var(--md3-spacing-12) var(--md3-spacing-16);
     border: 1px solid var(--md3-color-outline-variant);
     border-radius: var(--md3-radius-lg);
     background: color-mix(in srgb, var(--md3-color-surface) 88%, var(--md3-color-primary-container) 12%);
@@ -1014,33 +1014,33 @@ a {
 .filter-form--compact {
     display: flex;
     flex-direction: column;
-    gap: var(--md3-spacing-12);
+    gap: var(--md3-spacing-8);
 }
 
 .dashboard-filter-toolbar {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--md3-spacing-10);
-    padding: var(--md3-spacing-12);
+    align-items: end;
+    gap: var(--md3-spacing-8);
 }
 
 .dashboard-filter-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--md3-spacing-12);
+    gap: var(--md3-spacing-8);
 }
 
 .dashboard-filter-grid--primary {
-    flex: 1 1 520px;
+    flex: 1 1 280px;
+    max-width: 480px;
     min-width: 0;
-    gap: var(--md3-spacing-10);
 }
 
 .dashboard-filter-grid--advanced {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: var(--md3-spacing-12);
-    font-size: 15px;
-    border-top: 1px solid var(--md3-color-outline-variant);
+    grid-template-columns: repeat(3, minmax(120px, 200px));
+    gap: var(--md3-spacing-8);
+    font-size: 14px;
+    padding-top: var(--md3-spacing-4);
 }
 
 .dashboard-filter-details {
@@ -1048,20 +1048,19 @@ a {
     flex: 0 0 auto;
     min-width: 0;
     align-self: end;
-    margin-right: auto;
 }
 
 .dashboard-filter-details summary {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: var(--md3-spacing-8);
+    gap: var(--md3-spacing-6);
     cursor: pointer;
     color: var(--md3-color-on-surface-variant);
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 500;
-    min-height: 36px;
-    padding: 0 var(--md3-spacing-14);
+    height: 34px;
+    padding: 0 var(--md3-spacing-12);
     border-radius: var(--md3-radius-pill);
     border: 1px solid var(--md3-color-outline-variant);
     background: color-mix(in srgb, var(--md3-color-surface) 86%, var(--md3-color-surface-container) 14%);
@@ -1072,23 +1071,25 @@ a {
     display: none;
 }
 .dashboard-filters .md3-field {
-    gap: var(--md3-spacing-6);
+    gap: var(--md3-spacing-4);
 }
 
 .dashboard-filters .md3-field label {
     font-size: 12px;
+    line-height: 1;
 }
 
 .dashboard-filters .md3-input,
 .dashboard-filters .md3-select {
-    padding: 10px 14px;
-    border-radius: 14px;
+    padding: 8px 12px;
+    border-radius: var(--md3-radius-s);
     background: color-mix(in srgb, var(--md3-color-surface) 90%, var(--md3-color-surface-container) 10%);
+    font-size: 14px;
 }
 
 .dashboard-filters .md3-select {
-    background-position: right 10px center;
-    padding-right: 34px;
+    background-position: right 8px center;
+    padding-right: 32px;
 }
 
 .dashboard-filter-details summary .material-icons {
@@ -1099,7 +1100,7 @@ a {
 .dashboard-filter-details[open] {
     flex-basis: 100%;
     display: grid;
-    gap: var(--md3-spacing-10);
+    gap: var(--md3-spacing-6);
 }
 
 .dashboard-filter-details[open] summary .material-icons {
@@ -1109,19 +1110,14 @@ a {
 .filter-actions--inline {
     display: flex;
     flex-wrap: wrap;
-    align-items: center;
-    gap: var(--md3-spacing-10);
-    margin-top: 0;
+    align-items: end;
+    gap: var(--md3-spacing-8);
     margin-left: auto;
 }
 
 .filter-actions--inline button,
 .filter-actions--inline .md3-button {
     width: auto;
-}
-
-.filter-actions--inline .md3-button--filled {
-    min-width: 144px;
 }
 
 .active-filter-summary {

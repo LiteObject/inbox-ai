@@ -5,7 +5,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Inbox AI Dashboard</title>
-    {% set static_asset_version = '20260328d' %}
+    {% set static_asset_version = '20260328f' %}
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet" />
@@ -134,7 +134,7 @@
                         </div>
 
                         <details class="dashboard-filter-details" {% if filters.insights_limit !=20 or
-                            filters.follow_status_value !='open' or filters.follow_only %}open{% endif %}>
+                            filters.follow_status_value !='all' or filters.follow_only %}open{% endif %}>
                             <summary>
                                 <span>More filters</span>
                                 <span class="material-icons" aria-hidden="true">expand_more</span>
@@ -143,13 +143,12 @@
                                 <div class="md3-field">
                                     <label for="filter-follow-status">Follow-up status</label>
                                     <select class="md3-select" id="filter-follow-status" name="follow_status">
+                                        <option value="all" {% if filters.follow_status_value=='all' %}selected{% endif
+                                            %}>All statuses</option>
                                         <option value="open" {% if filters.follow_status_value=='open' %}selected{%
                                             endif %}>Open follow-ups</option>
                                         <option value="done" {% if filters.follow_status_value=='done' %}selected{%
                                             endif %}>Completed follow-ups</option>
-                                        <option value="all" {% if filters.follow_status_value=='all' %}selected{% endif
-                                            %}>
-                                            All statuses</option>
                                     </select>
                                 </div>
 
@@ -184,7 +183,7 @@
                     </div>
 
                     {% if filters.priority_filter != 'all' or filters.category_key or filters.follow_status_value !=
-                    'open' or filters.follow_only or filters.insights_limit != 20 %}
+                    'all' or filters.follow_only or filters.insights_limit != 20 %}
                     <div class="active-filter-summary" aria-label="Active filters">
                         <span class="active-filter-summary__label">Active</span>
                         <div class="md3-chip-set active-filter-summary__chips">
@@ -194,7 +193,7 @@
                             {% if filters.category_key %}
                             <span class="md3-chip">Category: {{ filters.category_key }}</span>
                             {% endif %}
-                            {% if filters.follow_status_value != 'open' %}
+                            {% if filters.follow_status_value != 'all' %}
                             <span class="md3-chip">Status: {{ filters.follow_status_value }}</span>
                             {% endif %}
                             {% if filters.follow_only %}
@@ -283,7 +282,7 @@
                     <div class="md3-empty-state md3-empty-state--list" id="insights-filter-empty" {% if insights |
                         length> 0 %}hidden{% endif %}>
                         {% set has_active_filters = filters.priority_filter != 'all' or filters.category_key or
-                        filters.follow_status_value != 'open' or filters.follow_only or filters.insights_limit != 20 %}
+                        filters.follow_status_value != 'all' or filters.follow_only or filters.insights_limit != 20 %}
                         <span class="material-icons" aria-hidden="true">{% if has_active_filters %}filter_alt_off{% else
                             %}inbox{% endif %}</span>
                         {% if has_active_filters %}

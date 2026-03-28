@@ -1879,9 +1879,9 @@ def _parse_limit(raw: str | None, default: int) -> int:
 
 
 def _normalize_follow_status(raw: str | None) -> tuple[str | None, str]:
-    value = (raw or "open").lower()
+    value = (raw or "all").lower()
     if value not in _FOLLOW_STATUS_OPTIONS:
-        value = "open"
+        value = "all"
     return (None if value == "all" else value, value)
 
 
