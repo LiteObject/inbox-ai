@@ -250,6 +250,7 @@
                         {% endif %}
                         <li>
                             <button type="button" class="email-list-item" data-uid="{{ item.uid }}"
+                                data-received="{{ item.receivedAt | default('', true) | e }}"
                                 data-subject="{{ item.subject | default('', true) | e }}"
                                 data-sender="{{ item.sender | default('', true) | e }}"
                                 data-summary="{{ item.summary | default('', true) | replace('\n', ' ') | e }}"

@@ -553,14 +553,13 @@ document.addEventListener("DOMContentLoaded", async () => {
 
                 if (!buttonA || !buttonB) return 0;
 
-                const uidA = buttonA.getAttribute('data-uid');
-                const uidB = buttonB.getAttribute('data-uid');
+                const dateA = buttonA.getAttribute('data-received') || '';
+                const dateB = buttonB.getAttribute('data-received') || '';
 
-                // Parse UIDs as indices (they typically have numeric components)
-                const numA = parseInt(uidA, 36) || 0;
-                const numB = parseInt(uidB, 36) || 0;
-
-                return order === 'asc' ? numA - numB : numB - numA;
+                // Compare ISO-8601 date strings lexicographically
+                if (dateA < dateB) return order === 'asc' ? -1 : 1;
+                if (dateA > dateB) return order === 'asc' ? 1 : -1;
+                return 0;
             });
 
             // Re-insert items in sorted order
