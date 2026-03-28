@@ -338,7 +338,8 @@
                                                     AI Summary
                                                 </h4>
                                                 <p>{{ item.summary or "No summary available for this email." }}</p>
-                                                <div class="md3-draft-actions feedback-actions">
+                                                <div class="feedback-actions">
+                                                    <p class="feedback-actions__label">Was this summary useful?</p>
                                                     <form method="post" action="/emails/{{ item.uid }}/insight/rating"
                                                         data-scroll-restore>
                                                         <input type="hidden" name="{{ csrf_field_name }}"
@@ -352,7 +353,7 @@
                                                             aria-pressed="{% if item.userRating == 1 %}true{% else %}false{% endif %}">
                                                             <span class="material-icons"
                                                                 aria-hidden="true">thumb_up</span>
-                                                            Helpful{% if item.userRating == 1 %} selected{% endif %}
+                                                            Useful
                                                         </button>
                                                     </form>
                                                     <form method="post" action="/emails/{{ item.uid }}/insight/rating"
@@ -368,7 +369,7 @@
                                                             aria-pressed="{% if item.userRating == -1 %}true{% else %}false{% endif %}">
                                                             <span class="material-icons"
                                                                 aria-hidden="true">thumb_down</span>
-                                                            Needs work{% if item.userRating == -1 %} selected{% endif %}
+                                                            Off target
                                                         </button>
                                                     </form>
                                                 </div>
@@ -518,7 +519,7 @@
                                         <textarea class="md3-textarea" name="body" rows="10"
                                             placeholder="Update the suggested reply before saving">{{ (item.draft.body if item.draft else '') | e }}</textarea>
                                         {% if item.draft and item.draft.userEdited %}
-                                        <p>Edited after AI generation.</p>
+                                        <p class="feedback-actions__note">Edited after AI generation.</p>
                                         {% endif %}
                                         <div class="md3-draft-actions">
                                             <button class="md3-button md3-button--filled" type="submit">
@@ -526,13 +527,14 @@
                                                 Save Draft
                                             </button>
                                             {% if item.draft %}
+                                            <span class="feedback-actions__label">How close was this draft?</span>
                                             <button
                                                 class="md3-button md3-button--text feedback-button{% if item.draft.userRating == 1 %} feedback-button--selected{% endif %}"
                                                 type="submit" formaction="/emails/{{ item.uid }}/draft/rating"
                                                 name="rating" value="1"
                                                 aria-pressed="{% if item.draft.userRating == 1 %}true{% else %}false{% endif %}">
                                                 <span class="material-icons" aria-hidden="true">thumb_up</span>
-                                                Helpful{% if item.draft.userRating == 1 %} selected{% endif %}
+                                                Use as-is
                                             </button>
                                             <button
                                                 class="md3-button md3-button--text feedback-button{% if item.draft.userRating == -1 %} feedback-button--selected{% endif %}"
@@ -540,7 +542,7 @@
                                                 name="rating" value="-1"
                                                 aria-pressed="{% if item.draft.userRating == -1 %}true{% else %}false{% endif %}">
                                                 <span class="material-icons" aria-hidden="true">thumb_down</span>
-                                                Needs work{% if item.draft.userRating == -1 %} selected{% endif %}
+                                                Needs edits
                                             </button>
                                             <button class="md3-button md3-button--filled md3-button--primary"
                                                 type="submit" formaction="/emails/{{ item.uid }}/draft/send"

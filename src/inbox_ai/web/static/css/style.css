@@ -1522,7 +1522,29 @@ a {
 }
 
 .feedback-actions {
+    display: flex;
+    flex-wrap: wrap;
     align-items: center;
+    gap: var(--md3-spacing-8);
+    margin-top: var(--md3-spacing-16);
+}
+
+.feedback-actions form {
+    margin: 0;
+}
+
+.feedback-actions__label {
+    margin: 0;
+    color: var(--md3-color-on-surface-variant);
+    font-size: 13px;
+    line-height: 18px;
+}
+
+.feedback-actions__note {
+    margin: var(--md3-spacing-12) 0 0;
+    color: var(--md3-color-on-surface-variant);
+    font-size: 13px;
+    line-height: 18px;
 }
 
 .feedback-button {
@@ -1538,6 +1560,12 @@ a {
 .feedback-button[aria-pressed="true"] .material-icons,
 .feedback-button--selected .material-icons {
     color: inherit;
+}
+
+.md3-draft-actions > .feedback-actions__label {
+    display: inline-flex;
+    align-items: center;
+    min-height: 40px;
 }
 
 .md3-textarea {

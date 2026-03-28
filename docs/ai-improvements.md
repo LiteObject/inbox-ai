@@ -310,7 +310,7 @@ Phase 3 — Advanced features (Medium effort)
   ├── #4  Thread-aware prompts
   ├── #8  Smarter follow-up due dates
   └── #6  Quality feedback loop
-```
+``
 
 ---
 
