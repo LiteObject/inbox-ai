@@ -186,11 +186,22 @@ class OptimizedMailFetcher:
 
         # Analyze uncached emails in parallel
         if analyses_needed:
+            thread_history_by_uid = {
+                envelope.uid: self._repository.list_thread_emails(
+                    envelope.thread_id,
+                    exclude_uid=envelope.uid,
+                )
+                for envelope in analyses_needed
+                if envelope.thread_id
+            }
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             try:
                 results = loop.run_until_complete(
-                    self._analyzer.analyze_batch(analyses_needed)
+                    self._analyzer.analyze_batch(
+                        analyses_needed,
+                        conversation_history_by_uid=thread_history_by_uid,
+                    )
                 )
             finally:
                 loop.close()

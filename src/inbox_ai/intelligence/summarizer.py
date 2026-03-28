@@ -8,7 +8,13 @@ from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 
 from inbox_ai.core.interfaces import InsightError, InsightService
-from inbox_ai.core.models import EmailBody, EmailEnvelope, EmailInsight, EmailCategory
+from inbox_ai.core.models import (
+    EmailBody,
+    EmailCategory,
+    EmailEnvelope,
+    EmailInsight,
+    ThreadSummary,
+)
 
 from .fallback import build_deterministic_summary
 from .llm import LLMClient, LLMError
@@ -32,6 +38,9 @@ class SummarizationService(InsightService):
         ] = score_priority,
         exclude_categories: Sequence[str] | None = None,
         user_preferences: str = "",
+        thread_context_provider: (
+            Callable[[str, int], Sequence[ThreadSummary]] | None
+        ) = None,
     ) -> None:
         """Prepare the insight generator with optional LLM and heuristics."""
         self._llm_client = llm_client
@@ -39,6 +48,7 @@ class SummarizationService(InsightService):
         self._priority_fn = priority_fn
         self._exclude_categories = set(exclude_categories or [])
         self._user_preferences = user_preferences
+        self._thread_context_provider = thread_context_provider
 
     def generate_insight(
         self, email: EmailEnvelope, categories: Sequence[EmailCategory] | None = None
@@ -60,10 +70,15 @@ class SummarizationService(InsightService):
                 )
 
             if self._llm_client is not None:
+                conversation_history = _load_thread_context(
+                    email,
+                    provider=self._thread_context_provider,
+                )
                 prompt = build_insight_prompt(
                     email,
                     body_text=body_text,
                     user_preferences=self._user_preferences,
+                    conversation_history=conversation_history,
                 )
                 try:
                     raw_output = self._llm_client.generate(prompt)
@@ -131,6 +146,26 @@ class SummarizationService(InsightService):
 
 def _resolve_body_text(body: EmailBody) -> str:
     return body_to_text(body)
+
+
+def _load_thread_context(
+    email: EmailEnvelope,
+    *,
+    provider: Callable[[str, int], Sequence[ThreadSummary]] | None,
+) -> tuple[ThreadSummary, ...]:
+    if provider is None or not email.thread_id:
+        return ()
+    try:
+        return tuple(provider(email.thread_id, email.uid))
+    except (
+        Exception
+    ) as exc:  # noqa: BLE001 - thread context should not fail summary generation
+        LOGGER.warning(
+            "Failed to load thread context for UID %s: %s",
+            email.uid,
+            exc,
+        )
+        return ()
 
 
 def _parse_llm_output(raw: str) -> tuple[str, list[str], int | None]:

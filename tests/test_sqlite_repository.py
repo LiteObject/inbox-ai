@@ -16,6 +16,7 @@ from inbox_ai.core.models import (
     EmailInsight,
     FollowUpTask,
     SyncCheckpoint,
+    ThreadSummary,
 )
 from inbox_ai.storage import SqliteEmailRepository
 
@@ -114,6 +115,83 @@ def test_repository_persists_insights(tmp_path: Path) -> None:
         assert row["priority_score"] == 7
         assert row["provider"] == "test-provider"
         assert row["used_fallback"] == 1
+
+
+def test_repository_persists_feedback_and_thread_context(tmp_path: Path) -> None:
+    db_path = tmp_path / "feedback.db"
+    settings = StorageSettings(db_path=db_path)
+    repository = SqliteEmailRepository(settings)
+
+    first_email = _sample_envelope(uid=11)
+    second_email = _sample_envelope(uid=12)
+    repository.persist_email(first_email)
+    repository.persist_email(second_email)
+    repository.persist_insight(
+        EmailInsight(
+            email_uid=11,
+            summary="Initial thread summary",
+            action_items=("Reply",),
+            priority=6,
+            provider="test",
+            generated_at=datetime(2025, 10, 26, 8, 0, tzinfo=timezone.utc),
+            used_fallback=False,
+        )
+    )
+
+    draft = repository.persist_draft(
+        DraftRecord(
+            id=None,
+            email_uid=12,
+            body="Draft reply",
+            provider="test",
+            generated_at=datetime(2025, 10, 26, 9, 0, tzinfo=timezone.utc),
+            confidence=0.9,
+            used_fallback=False,
+        )
+    )
+    assert draft.id is not None
+
+    assert repository.set_insight_rating(11, 1) is True
+    assert repository.set_draft_rating(draft.id, 12, -1) is True
+    rated_insight = repository.fetch_insight(11)
+    assert rated_insight is not None
+    assert rated_insight.user_rating == 1
+
+    updated_draft = repository.update_draft_body(
+        draft.id,
+        12,
+        body="Draft reply edited",
+        provider="manual-edit",
+        generated_at=datetime(2025, 10, 26, 9, 30, tzinfo=timezone.utc),
+        confidence=None,
+        used_fallback=False,
+        user_edited=True,
+    )
+    assert updated_draft is not None
+    assert updated_draft.user_rating == -1
+    assert updated_draft.user_edited is True
+
+    thread_history = repository.list_thread_emails("thread-1", exclude_uid=12)
+    assert thread_history == (
+        ThreadSummary(
+            email_uid=11,
+            subject="Demo",
+            sender="sender@example.com",
+            summary="Initial thread summary",
+        ),
+    )
+
+    assert repository.mark_draft_sent(draft.id) is True
+    assert repository.delete_draft(draft.id, 12) is True
+    assert repository.fetch_draft(draft.id) is None
+
+    metrics = repository.get_feedback_metrics()
+    assert metrics["insight_positive"] == 1
+    assert metrics["draft_negative"] == 1
+    assert metrics["draft_edited"] == 1
+    assert metrics["draft_sent"] == 1
+    assert metrics["draft_deleted"] == 1
+    repository.close()
 
 
 def test_repository_persists_drafts(tmp_path: Path) -> None:
@@ -291,6 +369,7 @@ def test_repository_updates_draft_body(tmp_path: Path) -> None:
         generated_at=new_time,
         confidence=None,
         used_fallback=False,
+        user_edited=True,
     )
 
     assert updated is not None
@@ -299,6 +378,7 @@ def test_repository_updates_draft_body(tmp_path: Path) -> None:
     assert updated.generated_at == new_time
     assert updated.confidence is None
     assert updated.used_fallback is False
+    assert updated.user_edited is True
 
     latest = repository.fetch_latest_drafts([42])
     assert latest[42].body == "Refined response"

@@ -220,6 +220,7 @@ def test_dashboard_accepts_manual_draft_edits(tmp_path) -> None:
         updated = latest[1]
         assert updated.body == updated_body
         assert updated.provider == "manual-edit"
+        assert updated.user_edited is True
         assert updated.generated_at > original_generated
 
 
@@ -259,6 +260,56 @@ def test_dashboard_deletes_draft(tmp_path) -> None:
     with SqliteEmailRepository(settings) as verification_repo:
         drafts_after = verification_repo.fetch_latest_drafts([1])
         assert 1 not in drafts_after
+
+
+def test_dashboard_feedback_routes_persist_ratings(tmp_path) -> None:
+    db_path = tmp_path / "web_feedback.db"
+    settings = StorageSettings(db_path=db_path)
+    repository = SqliteEmailRepository(settings)
+    _seed_data(repository)
+    draft = repository.fetch_latest_drafts([1])[1]
+    assert draft.id is not None
+    repository.close()
+
+    app_settings = AppSettings(storage=settings)
+    app = create_app(app_settings)
+    client = TestClient(app)
+
+    client.get("/")
+    csrf_token = client.cookies.get(CSRF_COOKIE_NAME)
+    assert csrf_token is not None
+
+    insight_response = client.post(
+        "/emails/1/insight/rating",
+        data={
+            "rating": "1",
+            "redirect_to": "/",
+            CSRF_FIELD_NAME: csrf_token,
+        },
+        follow_redirects=False,
+    )
+    assert insight_response.status_code == 303
+    assert "feedback_status=ok" in insight_response.headers["location"]
+
+    draft_response = client.post(
+        "/emails/1/draft/rating",
+        data={
+            "draft_id": str(draft.id),
+            "rating": "-1",
+            "redirect_to": "/",
+            CSRF_FIELD_NAME: csrf_token,
+        },
+        follow_redirects=False,
+    )
+    assert draft_response.status_code == 303
+    assert "feedback_status=ok" in draft_response.headers["location"]
+
+    with SqliteEmailRepository(settings) as verification_repo:
+        rated_insight = verification_repo.fetch_insight(1)
+        latest_draft = verification_repo.fetch_latest_drafts([1])[1]
+        assert rated_insight is not None
+        assert rated_insight.user_rating == 1
+        assert latest_draft.user_rating == -1
 
 
 def test_dashboard_regenerates_draft(tmp_path) -> None:

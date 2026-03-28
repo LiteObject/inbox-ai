@@ -78,6 +78,17 @@ class EmailInsight:
     provider: str
     generated_at: datetime
     used_fallback: bool
+    user_rating: int | None = None
+
+
+@dataclass(slots=True)
+class ThreadSummary:
+    """Compact thread history entry used for prompt context."""
+
+    email_uid: int
+    subject: str | None
+    sender: str | None
+    summary: str | None
 
 
 @dataclass(slots=True)
@@ -91,6 +102,10 @@ class DraftRecord:
     generated_at: datetime
     confidence: float | None
     used_fallback: bool
+    user_rating: int | None = None
+    user_edited: bool = False
+    sent_at: datetime | None = None
+    deleted_at: datetime | None = None
 
 
 @dataclass(slots=True)
@@ -124,6 +139,7 @@ __all__ = [
     "SyncCheckpoint",
     "FetchReport",
     "EmailInsight",
+    "ThreadSummary",
     "DraftRecord",
     "FollowUpTask",
     "EmailCategory",

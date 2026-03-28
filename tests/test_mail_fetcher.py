@@ -265,8 +265,11 @@ class StubOptimizedAnalyzer:
         self.llm = type("LLM", (), {"provider_id": "stub-optimized"})()
 
     async def analyze_batch(
-        self, envelopes: list[EmailEnvelope]
+        self,
+        envelopes: list[EmailEnvelope],
+        conversation_history_by_uid: dict[int, tuple[object, ...]] | None = None,
     ) -> list[EmailAnalysis]:
+        del conversation_history_by_uid
         self.calls.append([envelope.uid for envelope in envelopes])
         self._metrics.total_calls += len(envelopes)
         return self._analyses[: len(envelopes)]

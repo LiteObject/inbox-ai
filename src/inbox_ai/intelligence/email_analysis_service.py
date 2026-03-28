@@ -4,19 +4,22 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+from collections.abc import Sequence
+from functools import partial
 import json
 import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from .category import get_default_categories
+from .llm import LLMError
 from .text import body_to_text
 
 if TYPE_CHECKING:
     from inbox_ai.core import AppSettings
-    from inbox_ai.core.models import EmailEnvelope
+    from inbox_ai.core.models import EmailEnvelope, ThreadSummary
     from inbox_ai.intelligence import OllamaClient
 
 LOGGER = logging.getLogger(__name__)
@@ -128,6 +131,7 @@ class OptimizedEmailAnalyzer:
     def analyze_comprehensive(
         self,
         email: EmailEnvelope,
+        conversation_history: Sequence[ThreadSummary] = (),
     ) -> EmailAnalysis:
         """
         Perform comprehensive email analysis in a single LLM call.
@@ -161,6 +165,7 @@ class OptimizedEmailAnalyzer:
         )
         user_preferences = self.settings.user.preferences.strip()
         reply_tone = self.settings.user.reply_tone
+        thread_context = _format_thread_context(conversation_history)
 
         system_prompt = """You are an expert email analyst for a busy professional.
 Analyze emails comprehensively and provide actionable insights.
@@ -199,6 +204,14 @@ You must respond with valid JSON matching this exact structure:
 
     **User Context:**
     {user_preferences}
+    """
+        if thread_context:
+            user_prompt += f"""
+
+    **Thread Context:**
+    {thread_context}
+
+    Focus on new information in the latest message and keep continuity with the prior exchange.
     """
         user_prompt += f"""
 
@@ -247,7 +260,7 @@ Return ONLY valid JSON matching the specified structure."""
 
             return analysis
 
-        except Exception as exc:
+        except (LLMError, ValidationError, json.JSONDecodeError, ValueError) as exc:
             LOGGER.exception("Failed to analyze email from %s: %s", sender, exc)
             # Return fallback analysis
             return EmailAnalysis(
@@ -281,7 +294,9 @@ Return ONLY valid JSON matching the specified structure."""
         return self.metrics
 
     async def analyze_batch(
-        self, envelopes: list[EmailEnvelope]
+        self,
+        envelopes: list[EmailEnvelope],
+        conversation_history_by_uid: dict[int, Sequence[ThreadSummary]] | None = None,
     ) -> list[EmailAnalysis]:
         """
         Analyze a batch of emails concurrently.
@@ -297,8 +312,13 @@ Return ONLY valid JSON matching the specified structure."""
         tasks = [
             loop.run_in_executor(
                 None,
-                self.analyze_comprehensive,
-                envelope,
+                partial(
+                    self.analyze_comprehensive,
+                    envelope,
+                    conversation_history=(conversation_history_by_uid or {}).get(
+                        envelope.uid, ()
+                    ),
+                ),
             )
             for envelope in envelopes
         ]
@@ -329,3 +349,21 @@ Return ONLY valid JSON matching the specified structure."""
                 processed_results.append(result)
 
         return processed_results
+
+
+def _format_thread_context(conversation_history: Sequence[ThreadSummary]) -> str:
+    if not conversation_history:
+        return ""
+    lines: list[str] = []
+    for entry in conversation_history:
+        subject = entry.subject or "(no subject)"
+        sender = entry.sender or "(unknown sender)"
+        summary = entry.summary or "No stored summary available."
+        lines.extend(
+            [
+                f"- Subject: {subject}",
+                f"  Sender: {sender}",
+                f"  Summary: {summary}",
+            ]
+        )
+    return "\n".join(lines)

@@ -114,11 +114,23 @@ def _run_sync(settings: AppSettings) -> None:
                 ImapClient(settings.imap, mailbox_name) as mailbox,
                 SqliteEmailRepository(settings.storage) as repository,
             ):
+
+                def thread_context_provider(
+                    thread_id: str,
+                    email_uid: int,
+                    repository: SqliteEmailRepository = repository,
+                ):
+                    return repository.list_thread_emails(
+                        thread_id,
+                        exclude_uid=email_uid,
+                    )
+
                 drafting_service = DraftingService(
                     llm_client,
                     fallback_enabled=settings.llm.fallback_enabled,
                     user_preferences=settings.user.preferences,
                     reply_tone=settings.user.reply_tone,
+                    thread_context_provider=thread_context_provider,
                 )
                 follow_up_planner = FollowUpPlannerService(settings.follow_up)
                 insight_service = SummarizationService(
@@ -126,6 +138,7 @@ def _run_sync(settings: AppSettings) -> None:
                     fallback_enabled=settings.llm.fallback_enabled,
                     exclude_categories=settings.follow_up.exclude_categories,
                     user_preferences=settings.user.preferences,
+                    thread_context_provider=thread_context_provider,
                 )
                 category_service = KeywordCategoryService()
                 optimized_analyzer = (

@@ -14,6 +14,7 @@ from .models import (
     FollowUpTask,
     MessageChunk,
     SyncCheckpoint,
+    ThreadSummary,
 )
 
 
@@ -80,6 +81,10 @@ class EmailRepository(Protocol):
         """Retrieve stored insight for an email if available."""
         raise NotImplementedError
 
+    def set_insight_rating(self, email_uid: int, rating: int | None) -> bool:
+        """Store a user rating for an insight. Ratings use -1 and 1 values."""
+        raise NotImplementedError
+
     def persist_draft(self, draft: DraftRecord) -> DraftRecord:
         """Save a generated draft reply and return the stored record."""
         raise NotImplementedError
@@ -125,12 +130,41 @@ class EmailRepository(Protocol):
         generated_at: datetime,
         confidence: float | None = None,
         used_fallback: bool = False,
+        user_edited: bool | None = None,
     ) -> DraftRecord | None:
         """Update the stored draft contents and metadata."""
         raise NotImplementedError
 
     def delete_draft(self, draft_id: int, email_uid: int) -> bool:
-        """Delete the stored draft for the given identifiers."""
+        """Soft-delete the stored draft for the given identifiers."""
+        raise NotImplementedError
+
+    def set_draft_rating(
+        self, draft_id: int, email_uid: int, rating: int | None
+    ) -> bool:
+        """Store a user rating for a draft. Ratings use -1 and 1 values."""
+        raise NotImplementedError
+
+    def fetch_draft(self, draft_id: int) -> DraftRecord | None:
+        """Retrieve a single draft by identifier."""
+        raise NotImplementedError
+
+    def mark_draft_sent(self, draft_id: int) -> bool:
+        """Record that a draft was sent."""
+        raise NotImplementedError
+
+    def list_thread_emails(
+        self,
+        thread_id: str,
+        *,
+        exclude_uid: int | None = None,
+        limit: int = 6,
+    ) -> tuple[ThreadSummary, ...]:
+        """Return prior thread summaries ordered from oldest to newest."""
+        raise NotImplementedError
+
+    def get_feedback_metrics(self) -> dict[str, int]:
+        """Return aggregate ratings and draft outcome metrics."""
         raise NotImplementedError
 
     def replace_categories(

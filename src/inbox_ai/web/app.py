@@ -112,8 +112,14 @@ _STATUS_QUERY_KEYS: tuple[str, ...] = (
     "config_status",
     "draft_status",
     "draft_message",
+    "send_status",
+    "send_message",
     "clear_status",
     "clear_message",
+    "followup_status",
+    "followup_message",
+    "feedback_status",
+    "feedback_message",
 )
 
 
@@ -517,8 +523,14 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             "categorize_message": request.query_params.get("categorize_message"),
             "draft_status": request.query_params.get("draft_status"),
             "draft_message": request.query_params.get("draft_message"),
+            "send_status": request.query_params.get("send_status"),
+            "send_message": request.query_params.get("send_message"),
             "clear_status": request.query_params.get("clear_status"),
             "clear_message": request.query_params.get("clear_message"),
+            "followup_status": request.query_params.get("followup_status"),
+            "followup_message": request.query_params.get("followup_message"),
+            "feedback_status": request.query_params.get("feedback_status"),
+            "feedback_message": request.query_params.get("feedback_message"),
             "total_email_count": total_email_count,
             "csrf_token": csrf_token,
             "csrf_field_name": csrf.field_name,
@@ -536,7 +548,10 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                 request.query_params.get("delete_status"),
                 request.query_params.get("categorize_status"),
                 request.query_params.get("draft_status"),
+                request.query_params.get("send_status"),
                 request.query_params.get("clear_status"),
+                request.query_params.get("followup_status"),
+                request.query_params.get("feedback_status"),
             ]
         ):
             # Access response body directly for caching
@@ -568,6 +583,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         env_file = _resolve_env_file()
         config_values = _load_env_values(env_file)
         user_preferences = repository.get_all_user_preferences()
+        feedback_metrics = repository.get_feedback_metrics()
         redirect_target = _build_redirect_target(request)
         csrf_token = csrf.generate_token()
         context = {
@@ -575,6 +591,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             "config_sections": CONFIG_SECTIONS,
             "config_values": config_values,
             "user_preferences": user_preferences,
+            "feedback_metrics": feedback_metrics,
             "config_status": request.query_params.get("config_status"),
             "config_env_path": str(env_file),
             "redirect_to": redirect_target,
@@ -958,11 +975,18 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         generated_at = datetime.now(UTC)
 
         draft_id: int | None = None
+        existing_draft: DraftRecord | None = None
         if draft_id_raw:
             try:
                 draft_id = int(draft_id_raw)
             except ValueError:
                 draft_id = None
+        if draft_id is not None:
+            existing_draft = repository.fetch_draft(draft_id)
+
+        user_edited = existing_draft is None or existing_draft.body != body_raw
+        if user_edited:
+            provider = MANUAL_DRAFT_PROVIDER
 
         updated = False
         if draft_id is not None:
@@ -974,6 +998,11 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                 generated_at=generated_at,
                 confidence=None,
                 used_fallback=False,
+                user_edited=(
+                    (existing_draft.user_edited or user_edited)
+                    if existing_draft is not None
+                    else user_edited
+                ),
             )
             updated = updated_record is not None
 
@@ -987,6 +1016,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                     generated_at=generated_at,
                     confidence=None,
                     used_fallback=False,
+                    user_edited=True,
                 )
             )
 
@@ -1068,6 +1098,64 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         message = "Draft deleted." if deleted else "Draft could not be deleted."
         target = _append_query_param(redirect_target, "draft_status", status_key)
         target = _append_query_param(target, "draft_message", message)
+        return RedirectResponse(url=target, status_code=http_status.HTTP_303_SEE_OTHER)
+
+    @app.post("/emails/{email_uid}/insight/rating")
+    async def rate_insight(
+        email_uid: int,
+        request: Request,
+        repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
+    ) -> RedirectResponse:
+        form = await request.form()
+        raw_token = form.get(csrf.field_name)
+        token = raw_token if isinstance(raw_token, str) else None
+        csrf.validate(request, token)
+
+        redirect_raw = _coerce_form_value(form.get("redirect_to"))
+        redirect_target = _sanitize_redirect(redirect_raw or None) or "/"
+        rating = _parse_feedback_rating(form.get("rating"))
+
+        updated = repository.set_insight_rating(email_uid, rating)
+        status_value = "ok" if updated else "error"
+        message = (
+            "Summary feedback saved."
+            if updated
+            else "Summary feedback could not be saved."
+        )
+        target = _append_query_param(redirect_target, "feedback_status", status_value)
+        target = _append_query_param(target, "feedback_message", message)
+        return RedirectResponse(url=target, status_code=http_status.HTTP_303_SEE_OTHER)
+
+    @app.post("/emails/{email_uid}/draft/rating")
+    async def rate_draft(
+        email_uid: int,
+        request: Request,
+        repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
+    ) -> RedirectResponse:
+        form = await request.form()
+        raw_token = form.get(csrf.field_name)
+        token = raw_token if isinstance(raw_token, str) else None
+        csrf.validate(request, token)
+
+        redirect_raw = _coerce_form_value(form.get("redirect_to"))
+        redirect_target = _sanitize_redirect(redirect_raw or None) or "/"
+        rating = _parse_feedback_rating(form.get("rating"))
+
+        draft_id_raw = _coerce_form_value(form.get("draft_id")).strip()
+        try:
+            draft_id = int(draft_id_raw)
+        except ValueError:
+            draft_id = 0
+
+        updated = draft_id > 0 and repository.set_draft_rating(
+            draft_id, email_uid, rating
+        )
+        status_value = "ok" if updated else "error"
+        message = (
+            "Draft feedback saved." if updated else "Draft feedback could not be saved."
+        )
+        target = _append_query_param(redirect_target, "feedback_status", status_value)
+        target = _append_query_param(target, "feedback_message", message)
         return RedirectResponse(url=target, status_code=http_status.HTTP_303_SEE_OTHER)
 
     @app.post("/emails/{email_uid}/draft/send")
@@ -1695,6 +1783,7 @@ def _serialize_insight(
         "provider": insight.provider,
         "generatedAt": serialize_datetime(insight.generated_at),
         "generatedAtDisplay": display_datetime(insight.generated_at),
+        "userRating": insight.user_rating,
         "draft": _serialize_draft(draft) if draft is not None else None,
     }
 
@@ -1709,6 +1798,9 @@ def _serialize_draft(draft: DraftRecord) -> dict[str, Any]:
         "generatedAt": serialize_datetime(draft.generated_at),
         "generatedAtDisplay": display_datetime(draft.generated_at),
         "usedFallback": draft.used_fallback,
+        "userRating": draft.user_rating,
+        "userEdited": draft.user_edited,
+        "sentAt": serialize_datetime(draft.sent_at),
     }
 
 
@@ -1817,6 +1909,17 @@ def _build_redirect_target(
     return f"{base}?{urlencode(filtered)}"
 
 
+def _parse_feedback_rating(value: object) -> int:
+    raw_value = value if isinstance(value, str) else ""
+    try:
+        rating = int(raw_value)
+    except ValueError as exc:
+        raise ValueError("Rating must be -1 or 1") from exc
+    if rating not in (-1, 1):
+        raise ValueError("Rating must be -1 or 1")
+    return rating
+
+
 def _format_sync_error(exc: Exception) -> str:
     if isinstance(exc, ImapError):
         return (
@@ -1878,11 +1981,23 @@ def _run_sync_cycle(
                             repository.get_user_preference("guidance")
                             or settings.user.preferences
                         )
+
+                        def thread_context_provider(
+                            thread_id: str,
+                            email_uid: int,
+                            repository: SqliteEmailRepository = repository,
+                        ):
+                            return repository.list_thread_emails(
+                                thread_id,
+                                exclude_uid=email_uid,
+                            )
+
                         drafting_service = DraftingService(
                             llm_client,
                             fallback_enabled=settings.llm.fallback_enabled,
                             user_preferences=user_guidance,
                             reply_tone=settings.user.reply_tone,
+                            thread_context_provider=thread_context_provider,
                         )
                         follow_up_planner = FollowUpPlannerService(settings.follow_up)
                         insight_service = SummarizationService(
@@ -1890,6 +2005,7 @@ def _run_sync_cycle(
                             fallback_enabled=settings.llm.fallback_enabled,
                             exclude_categories=settings.follow_up.exclude_categories,
                             user_preferences=user_guidance,
+                            thread_context_provider=thread_context_provider,
                         )
                         category_service = (
                             LLMCategoryService(llm_client)
@@ -2119,6 +2235,17 @@ def _regenerate_draft(
                 if settings.llm.base_url and settings.llm.model
                 else None
             )
+
+            def thread_context_provider(
+                thread_id: str,
+                current_uid: int,
+                repository: SqliteEmailRepository = repository,
+            ):
+                return repository.list_thread_emails(
+                    thread_id,
+                    exclude_uid=current_uid,
+                )
+
             drafting_service = DraftingService(
                 llm_client,
                 fallback_enabled=settings.llm.fallback_enabled,
@@ -2127,6 +2254,7 @@ def _regenerate_draft(
                     or settings.user.preferences
                 ),
                 reply_tone=settings.user.reply_tone,
+                thread_context_provider=thread_context_provider,
             )
 
             try:
@@ -2152,6 +2280,7 @@ def _regenerate_draft(
                     generated_at=generated.generated_at,
                     confidence=generated.confidence,
                     used_fallback=generated.used_fallback,
+                    user_edited=False,
                 )
                 persisted = updated is not None
 
@@ -2362,6 +2491,12 @@ def _generate_follow_ups(
                     user_preferences=(
                         repository.get_user_preference("guidance")
                         or settings.user.preferences
+                    ),
+                    thread_context_provider=(
+                        lambda thread_id, current_uid, repository=repository: repository.list_thread_emails(
+                            thread_id,
+                            exclude_uid=current_uid,
+                        )
                     ),
                 )
                 try:

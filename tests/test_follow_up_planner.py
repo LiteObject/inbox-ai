@@ -81,3 +81,36 @@ def test_planner_detects_relative_keywords() -> None:
     (task,) = planner.plan_follow_ups(_email(), insight)
 
     assert task.due_at == generated_at + timedelta(days=1)
+
+
+def test_planner_parses_relative_durations() -> None:
+    planner = FollowUpPlannerService(FollowUpSettings())
+    generated_at = datetime(2025, 10, 26, 14, 0, tzinfo=timezone.utc)
+    insight = _insight(5, generated_at, "Send the revised estimate within 48 hours")
+
+    (task,) = planner.plan_follow_ups(_email(), insight)
+
+    assert task.due_at == generated_at + timedelta(hours=48)
+
+
+def test_planner_parses_named_weekdays_and_period_ends() -> None:
+    planner = FollowUpPlannerService(FollowUpSettings())
+    generated_at = datetime(2025, 10, 20, 9, 0, tzinfo=timezone.utc)
+    friday_insight = _insight(5, generated_at, "Share the agenda by Friday")
+    month_end_insight = _insight(5, generated_at, "Close the checklist by end of month")
+
+    (friday_task,) = planner.plan_follow_ups(_email(), friday_insight)
+    (month_end_task,) = planner.plan_follow_ups(_email(), month_end_insight)
+
+    assert friday_task.due_at == datetime(2025, 10, 24, 17, 0, tzinfo=timezone.utc)
+    assert month_end_task.due_at == datetime(2025, 10, 31, 17, 0, tzinfo=timezone.utc)
+
+
+def test_planner_parses_quarter_end() -> None:
+    planner = FollowUpPlannerService(FollowUpSettings())
+    generated_at = datetime(2025, 4, 14, 11, 0, tzinfo=timezone.utc)
+    insight = _insight(5, generated_at, "Prepare the report by end of Q2")
+
+    (task,) = planner.plan_follow_ups(_email(), insight)
+
+    assert task.due_at == datetime(2025, 6, 30, 17, 0, tzinfo=timezone.utc)

@@ -8,9 +8,15 @@ const DEFAULT_STATUS_KEYS = [
     "config_status",
     "draft_status",
     "draft_message",
+    "send_status",
+    "send_message",
     "config_message",
     "clear_status",
     "clear_message",
+    "followup_status",
+    "followup_message",
+    "feedback_status",
+    "feedback_message",
 ];
 
 function dismissToast(element) {
@@ -136,8 +142,11 @@ export class ToastManager {
             ["deleteStatus", "deleteMessage"],
             ["categorizeStatus", "categorizeMessage"],
             ["draftStatus", "draftMessage"],
+            ["sendStatus", "sendMessage"],
             ["configStatus", "configMessage"],
             ["clearStatus", "clearMessage"],
+            ["followupStatus", "followupMessage"],
+            ["feedbackStatus", "feedbackMessage"],
         ];
 
         pairs.forEach(([statusKey, messageKey]) => {

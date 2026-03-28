@@ -159,6 +159,41 @@
             <div id="calendar-list" class="calendar-list" hidden></div>
         </div>
 
+        <div class="md3-card" id="quality-feedback">
+            <h2>Quality Feedback</h2>
+            <p>Track how often AI summaries and drafts are accepted, edited, sent, or discarded.</p>
+            <div class="config-grid">
+                <div class="md3-field filled">
+                    <span class="config-help">Summary helpful ratings</span>
+                    <strong>{{ feedback_metrics.get('insight_positive', 0) }}</strong>
+                </div>
+                <div class="md3-field filled">
+                    <span class="config-help">Summary negative ratings</span>
+                    <strong>{{ feedback_metrics.get('insight_negative', 0) }}</strong>
+                </div>
+                <div class="md3-field filled">
+                    <span class="config-help">Draft helpful ratings</span>
+                    <strong>{{ feedback_metrics.get('draft_positive', 0) }}</strong>
+                </div>
+                <div class="md3-field filled">
+                    <span class="config-help">Draft negative ratings</span>
+                    <strong>{{ feedback_metrics.get('draft_negative', 0) }}</strong>
+                </div>
+                <div class="md3-field filled">
+                    <span class="config-help">Edited drafts</span>
+                    <strong>{{ feedback_metrics.get('draft_edited', 0) }}</strong>
+                </div>
+                <div class="md3-field filled">
+                    <span class="config-help">Sent drafts</span>
+                    <strong>{{ feedback_metrics.get('draft_sent', 0) }}</strong>
+                </div>
+                <div class="md3-field filled">
+                    <span class="config-help">Deleted drafts</span>
+                    <strong>{{ feedback_metrics.get('draft_deleted', 0) }}</strong>
+                </div>
+            </div>
+        </div>
+
         <div class="md3-card" id="maintenance">
             <h2>Maintenance</h2>
             <p>Run occasional clean-up tasks from here. These actions affect stored data immediately.</p>

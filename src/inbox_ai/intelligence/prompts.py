@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
-from inbox_ai.core.models import EmailEnvelope, EmailInsight
+from collections.abc import Sequence
+
+from inbox_ai.core.models import EmailEnvelope, EmailInsight, ThreadSummary
 
 
 def build_insight_prompt(
-    email: EmailEnvelope, *, body_text: str, user_preferences: str = ""
+    email: EmailEnvelope,
+    *,
+    body_text: str,
+    user_preferences: str = "",
+    conversation_history: Sequence[ThreadSummary] = (),
 ) -> str:
     """Compose a JSON-only summarisation prompt for the email body."""
     to_line = ", ".join(email.to) if email.to else "(none)"
@@ -40,6 +46,7 @@ def build_insight_prompt(
     ]
     if stripped_preferences:
         prompt_lines.extend(["User context:", stripped_preferences, ""])
+    prompt_lines.extend(_build_thread_history_lines(conversation_history))
     prompt_lines.extend(["Email body:", body_text])
     return "\n".join(prompt_lines)
 
@@ -50,6 +57,7 @@ def build_draft_prompt(
     *,
     user_preferences: str = "",
     reply_tone: str = "Professional",
+    conversation_history: Sequence[ThreadSummary] = (),
 ) -> str:
     """Compose a prompt instructing the LLM to draft a reply."""
     subject = email.subject or "this message"
@@ -69,6 +77,7 @@ def build_draft_prompt(
     ]
     if stripped_preferences:
         prompt_lines.extend(["User context:", stripped_preferences, ""])
+    prompt_lines.extend(_build_thread_history_lines(conversation_history))
     prompt_lines.extend(
         [
             f"Subject: {subject}",
@@ -78,10 +87,35 @@ def build_draft_prompt(
             "Action items:",
             actions,
             "",
-            "Draft should reflect the requested tone, stay professional, and mention next steps when appropriate.",
+            "Draft should reflect the requested tone, stay professional, mention next steps when appropriate, and maintain continuity with the prior thread context.",
         ]
     )
     return "\n".join(prompt_lines)
+
+
+def _build_thread_history_lines(
+    conversation_history: Sequence[ThreadSummary],
+) -> list[str]:
+    if not conversation_history:
+        return []
+
+    lines = [
+        "Thread context:",
+        "This email is part of an existing thread. Focus on new information and keep continuity with the prior exchange.",
+    ]
+    for entry in conversation_history:
+        subject = entry.subject or "(no subject)"
+        sender = entry.sender or "(unknown sender)"
+        summary = entry.summary or "No stored summary available."
+        lines.extend(
+            [
+                f"- Prior email subject: {subject}",
+                f"  Sender: {sender}",
+                f"  Summary: {summary}",
+            ]
+        )
+    lines.append("")
+    return lines
 
 
 __all__ = ["build_insight_prompt", "build_draft_prompt"]

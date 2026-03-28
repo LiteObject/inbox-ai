@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 
 from inbox_ai.core.interfaces import DraftingService as DraftingServiceProtocol
-from inbox_ai.core.models import DraftRecord, EmailEnvelope, EmailInsight
+from inbox_ai.core.models import DraftRecord, EmailEnvelope, EmailInsight, ThreadSummary
 
 from .llm import LLMClient, LLMError
 from .prompts import build_draft_prompt
@@ -29,12 +30,16 @@ class DraftingService(DraftingServiceProtocol):
         fallback_enabled: bool = True,
         user_preferences: str = "",
         reply_tone: str = "Professional",
+        thread_context_provider: (
+            Callable[[str, int], Sequence[ThreadSummary]] | None
+        ) = None,
     ) -> None:
         """Initialise the service with an optional LLM client and fallback flag."""
         self._llm_client = llm_client
         self._fallback_enabled = fallback_enabled
         self._user_preferences = user_preferences
         self._reply_tone = reply_tone
+        self._thread_context_provider = thread_context_provider
 
     def generate_draft(
         self, email: EmailEnvelope, insight: EmailInsight
@@ -46,11 +51,16 @@ class DraftingService(DraftingServiceProtocol):
         used_fallback = False
 
         if self._llm_client is not None:
+            conversation_history = _load_thread_context(
+                email,
+                provider=self._thread_context_provider,
+            )
             prompt = build_draft_prompt(
                 email,
                 insight,
                 user_preferences=self._user_preferences,
                 reply_tone=self._reply_tone,
+                conversation_history=conversation_history,
             )
             try:
                 raw_output = self._llm_client.generate(prompt)
@@ -122,6 +132,26 @@ def _fallback_reply(email: EmailEnvelope, insight: EmailInsight) -> str:
             lines.append(f"- {item}")
     lines.extend(["", closing])
     return "\n".join(lines)
+
+
+def _load_thread_context(
+    email: EmailEnvelope,
+    *,
+    provider: Callable[[str, int], Sequence[ThreadSummary]] | None,
+) -> tuple[ThreadSummary, ...]:
+    if provider is None or not email.thread_id:
+        return ()
+    try:
+        return tuple(provider(email.thread_id, email.uid))
+    except (
+        Exception
+    ) as exc:  # noqa: BLE001 - thread context should not fail draft generation
+        LOGGER.warning(
+            "Failed to load draft thread context for UID %s: %s",
+            email.uid,
+            exc,
+        )
+        return ()
 
 
 __all__ = ["DraftingService", "DraftingError"]

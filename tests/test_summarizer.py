@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from inbox_ai.core.models import EmailBody, EmailEnvelope
+from inbox_ai.core.models import EmailBody, EmailEnvelope, ThreadSummary
 from inbox_ai.intelligence.summarizer import SummarizationService
 from inbox_ai.intelligence.llm import LLMError
 
@@ -90,6 +90,30 @@ def test_summarizer_includes_user_preferences_in_prompt() -> None:
     assert (
         "Ignore newsletters. Treat customer escalations as urgent." in llm.last_prompt
     )
+
+
+def test_summarizer_includes_thread_context_in_prompt() -> None:
+    llm = StubLLM('{"summary": "Thread-aware", "action_items": []}')
+    service = SummarizationService(
+        llm,
+        thread_context_provider=lambda thread_id, uid: (
+            ThreadSummary(
+                email_uid=uid - 1,
+                subject="Earlier update",
+                sender="ceo@example.com",
+                summary="We already agreed on the budget changes.",
+            ),
+        ),
+    )
+    email = _envelope()
+    email.thread_id = "thread-123"
+
+    service.generate_insight(email)
+
+    assert llm.last_prompt is not None
+    assert "Thread context:" in llm.last_prompt
+    assert "Focus on new information" in llm.last_prompt
+    assert "We already agreed on the budget changes." in llm.last_prompt
 
 
 def test_summarizer_falls_back_to_heuristic_priority_when_llm_omits_priority() -> None:

@@ -98,6 +98,7 @@ const STATUS_PARAM_PAIRS = [
     ["config_status", "config_message"],
     ["clear_status", "clear_message"],
     ["followup_status", "followup_message"],
+    ["feedback_status", "feedback_message"],
 ];
 
 function queueToastsForNavigation(targetUrl) {
@@ -296,25 +297,12 @@ function installSpinnerForms(spinner, toastManager, dialogManager) {
                     // Get the redirected URL or the current URL
                     const targetUrl = response.url || formData.get("redirect_to") || window.location.href;
 
-                    // Queue the toast before reload
-                    let successMessage = "Draft saved successfully";
-                    if (action.includes("/draft/regenerate")) {
-                        successMessage = "Draft regenerated successfully";
-                    } else if (action.includes("/draft/delete")) {
-                        successMessage = "Draft deleted successfully";
-                    }
-
                     // Preserve the currently selected email UID so we can re-select it after reload
                     const currentlySelectedItem = document.querySelector('.email-list-item[selected]');
                     const selectedUid = currentlySelectedItem?.dataset.uid;
 
-                    // Store toast and selected email in session storage to restore after reload
+                    // Store the selected email so detail view is restored after reload.
                     try {
-                        const pendingToasts = [{
-                            message: successMessage,
-                            variant: "success"
-                        }];
-                        window.sessionStorage?.setItem(TOAST_STORAGE_KEY, JSON.stringify(pendingToasts));
                         if (selectedUid) {
                             window.sessionStorage?.setItem('dashboard.selectedEmailUid', selectedUid);
                         }
@@ -322,6 +310,7 @@ function installSpinnerForms(spinner, toastManager, dialogManager) {
                         console.warn("Unable to persist data before reload", error);
                     }
 
+                    queueToastsForNavigation(targetUrl);
                     spinner.hide();
                     window.location.href = targetUrl;
                 } else {
