@@ -976,7 +976,7 @@ a {
 .md3-main-content {
     display: flex;
     flex-direction: column;
-    gap: var(--md3-spacing-24);
+    gap: var(--md3-spacing-12);
 }
 
 /* ── Filter toolbar ────────────────────────────── */
@@ -1294,7 +1294,7 @@ h2.toolbar-heading {
 
 @media (max-width: 599px) {
     .list-meta {
-        padding: 0 var(--md3-spacing-12) var(--md3-spacing-8);
+        padding: var(--md3-spacing-8) var(--md3-spacing-16);
         font-size: 12px;
         gap: var(--md3-spacing-8);
     }
@@ -1312,7 +1312,7 @@ h2.toolbar-heading {
 
 @media (min-width: 600px) and (max-width: 839px) {
     .list-meta {
-        padding: 0 var(--md3-spacing-14) var(--md3-spacing-10);
+        padding: var(--md3-spacing-8) var(--md3-spacing-16);
     }
 
     .sort-button {
