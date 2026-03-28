@@ -66,12 +66,108 @@
     <main class="md3-layout inbox-dashboard">
         <section class="md3-main-content">
             <div class="md3-toolbar">
-                <div class="toolbar-heading">
-                    <h2>Inbox Insights (<span id="insights-visible-count">{{ insights | length }}</span> / {{
-                        insights_total | default(0) }})</h2>
-                    <p>{{ insights | length }} visible insights from {{ total_email_count | default(0) }} total
-                        messages.</p>
+                <h2 class="toolbar-heading">Inbox Insights (<span id="insights-visible-count">{{ insights | length }}</span> / {{
+                    insights_total | default(0) }})</h2>
+
+                <form class="filter-toolbar" id="filter-rail" method="get" data-scroll-restore
+                    aria-label="Filter emails">
+                    <select class="md3-select filter-toolbar__select" id="filter-priority" name="priority"
+                        data-auto-submit aria-label="Priority">
+                        {% for value, label in priority_filter_options %}
+                        <option value="{{ value }}" {% if value==filters.priority_filter %}selected{% endif %}>
+                            {{ label }}
+                        </option>
+                        {% endfor %}
+                    </select>
+
+                    <select class="md3-select filter-toolbar__select" id="filter-category" name="category"
+                        data-auto-submit aria-label="Category">
+                    <option value="" {% if not filters.category_key %}selected{% endif %}>All categories</option>
+                    {% for category in category_options %}
+                    <option value="{{ category.key }}" {% if filters.category_key==category.key %}selected{% endif %}>
+                        {{ category.label }}
+                    </option>
+                    {% endfor %}
+                </select>
+
+                <div class="filter-toolbar__more-anchor">
+                    <button class="md3-button md3-button--outlined filter-toolbar__more-btn" type="button"
+                        id="more-filters-toggle" aria-expanded="false" aria-controls="more-filters-popover">
+                        <span class="material-icons" aria-hidden="true">tune</span>
+                        <span>More</span>
+                        {% if filters.follow_status_value != 'all' or filters.follow_only or filters.insights_limit != 20 %}
+                        <span class="filter-toolbar__badge" aria-label="Advanced filters active"></span>
+                        {% endif %}
+                    </button>
+                    <div class="filter-popover" id="more-filters-popover" role="dialog"
+                        aria-label="Advanced filters" hidden>
+                        <div class="filter-popover__body">
+                            <div class="md3-field">
+                                <label for="filter-follow-status">Follow-up status</label>
+                                <select class="md3-select" id="filter-follow-status" name="follow_status"
+                                    data-auto-submit>
+                                    <option value="all" {% if filters.follow_status_value=='all' %}selected{% endif %}>
+                                        All statuses</option>
+                                    <option value="open" {% if filters.follow_status_value=='open' %}selected{% endif %}>
+                                        Open follow-ups</option>
+                                    <option value="done" {% if filters.follow_status_value=='done' %}selected{% endif %}>
+                                        Completed follow-ups</option>
+                                </select>
+                            </div>
+                            <div class="md3-field">
+                                <label for="filter-follow-only">Follow-ups</label>
+                                <select class="md3-select" id="filter-follow-only" name="follow_only"
+                                    data-auto-submit>
+                                    <option value="" {% if not filters.follow_only %}selected{% endif %}>Include all
+                                        insights</option>
+                                    <option value="1" {% if filters.follow_only %}selected{% endif %}>Only with
+                                        follow-ups</option>
+                                </select>
+                            </div>
+                            <div class="md3-field">
+                                <label for="filter-insights-limit">Insights limit</label>
+                                <input class="md3-input" id="filter-insights-limit" type="number"
+                                    name="insights_limit" min="1" max="100"
+                                    value="{{ filters.insights_limit }}" data-auto-submit />
+                            </div>
+                        </div>
+                    </div>
                 </div>
+
+                {% if filters.priority_filter != 'all' or filters.category_key or filters.follow_status_value !=
+                'all' or filters.follow_only or filters.insights_limit != 20 %}
+                <div class="active-filter-chips" aria-label="Active filters">
+                    {% if filters.priority_filter != 'all' %}
+                    <span class="md3-chip">{{ filters.priority_filter }}</span>
+                    {% endif %}
+                    {% if filters.category_key %}
+                    <span class="md3-chip">{{ filters.category_key }}</span>
+                    {% endif %}
+                    {% if filters.follow_status_value != 'all' %}
+                    <span class="md3-chip">{{ filters.follow_status_value }}</span>
+                    {% endif %}
+                    {% if filters.follow_only %}
+                    <span class="md3-chip">Follow-ups only</span>
+                    {% endif %}
+                    {% if filters.insights_limit != 20 %}
+                    <span class="md3-chip">Limit: {{ filters.insights_limit }}</span>
+                    {% endif %}
+                </div>
+                {% endif %}
+
+                <a class="md3-button md3-button--text filter-toolbar__reset" href="/"
+                    {% if filters.priority_filter == 'all' and not filters.category_key and
+                    filters.follow_status_value == 'all' and not filters.follow_only and
+                    filters.insights_limit == 20 %}hidden{% endif %}>
+                    <span class="material-icons" aria-hidden="true">restart_alt</span>
+                    Reset
+                </a>
+
+                <noscript>
+                    <button class="md3-button md3-button--filled" type="submit">Apply</button>
+                </noscript>
+            </form>
+
                 <div class="toolbar-actions">
                     <form method="post" action="/sync" data-spinner data-scroll-restore
                         data-spinner-label="Sync in progress...">
@@ -85,129 +181,6 @@
                 </div>
             </div>
 
-            <section class="dashboard-filters" id="filter-rail" aria-labelledby="dashboard-filters-heading">
-                <div class="dashboard-filters__header">
-                    <h3 id="dashboard-filters-heading">Filters</h3>
-                    <form class="secondary-form dashboard-secondary-form" method="post" action="/emails/bulk-delete"
-                        data-scroll-restore data-spinner data-spinner-label="Moving emails to trash..."
-                        data-confirm="Move all listed emails to trash? You can recover them from your trash folder.">
-                        <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
-                        <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-                        {% for item in insights %}
-                        <input type="hidden" name="uids" value="{{ item.uid }}" />
-                        {% endfor %}
-                        <button class="md3-button md3-button--text" type="submit" title="Move these emails to trash">
-                            <span class="material-icons" aria-hidden="true">delete_sweep</span>
-                            Trash listed emails
-                        </button>
-                    </form>
-                </div>
-
-                <form class="filter-form filter-form--compact" method="get" data-scroll-restore>
-                    <div class="dashboard-filter-toolbar">
-                        <div class="dashboard-filter-grid dashboard-filter-grid--primary">
-                            <div class="md3-field">
-                                <label for="filter-priority">Priority</label>
-                                <select class="md3-select" id="filter-priority" name="priority">
-                                    {% for value, label in priority_filter_options %}
-                                    <option value="{{ value }}" {% if value==filters.priority_filter %}selected{% endif
-                                        %}>
-                                        {{ label }}
-                                    </option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-
-                            <div class="md3-field">
-                                <label for="filter-category">Category</label>
-                                <select class="md3-select" id="filter-category" name="category">
-                                    <option value="" {% if not filters.category_key %}selected{% endif %}>All categories
-                                    </option>
-                                    {% for category in category_options %}
-                                    <option value="{{ category.key }}" {% if filters.category_key==category.key
-                                        %}selected{% endif %}>
-                                        {{ category.label }}
-                                    </option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                        </div>
-
-                        <details class="dashboard-filter-details" {% if filters.insights_limit !=20 or
-                            filters.follow_status_value !='all' or filters.follow_only %}open{% endif %}>
-                            <summary>
-                                <span>More filters</span>
-                                <span class="material-icons" aria-hidden="true">expand_more</span>
-                            </summary>
-                            <div class="dashboard-filter-grid dashboard-filter-grid--advanced">
-                                <div class="md3-field">
-                                    <label for="filter-follow-status">Follow-up status</label>
-                                    <select class="md3-select" id="filter-follow-status" name="follow_status">
-                                        <option value="all" {% if filters.follow_status_value=='all' %}selected{% endif
-                                            %}>All statuses</option>
-                                        <option value="open" {% if filters.follow_status_value=='open' %}selected{%
-                                            endif %}>Open follow-ups</option>
-                                        <option value="done" {% if filters.follow_status_value=='done' %}selected{%
-                                            endif %}>Completed follow-ups</option>
-                                    </select>
-                                </div>
-
-                                <div class="md3-field">
-                                    <label for="filter-follow-only">Follow-ups</label>
-                                    <select class="md3-select" id="filter-follow-only" name="follow_only">
-                                        <option value="" {% if not filters.follow_only %}selected{% endif %}>Include all
-                                            insights</option>
-                                        <option value="1" {% if filters.follow_only %}selected{% endif %}>Only with
-                                            follow-ups</option>
-                                    </select>
-                                </div>
-
-                                <div class="md3-field">
-                                    <label for="filter-insights-limit">Insights limit</label>
-                                    <input class="md3-input" id="filter-insights-limit" type="number"
-                                        name="insights_limit" min="1" max="100" value="{{ filters.insights_limit }}" />
-                                </div>
-                            </div>
-                        </details>
-
-                        <div class="filter-actions filter-actions--inline">
-                            <button class="md3-button md3-button--filled" type="submit">
-                                <span class="material-icons" aria-hidden="true">filter_list</span>
-                                Apply filters
-                            </button>
-                            <a class="md3-button md3-button--text" href="/">
-                                <span class="material-icons" aria-hidden="true">restart_alt</span>
-                                Reset
-                            </a>
-                        </div>
-                    </div>
-
-                    {% if filters.priority_filter != 'all' or filters.category_key or filters.follow_status_value !=
-                    'all' or filters.follow_only or filters.insights_limit != 20 %}
-                    <div class="active-filter-summary" aria-label="Active filters">
-                        <span class="active-filter-summary__label">Active</span>
-                        <div class="md3-chip-set active-filter-summary__chips">
-                            {% if filters.priority_filter != 'all' %}
-                            <span class="md3-chip">Priority: {{ filters.priority_filter }}</span>
-                            {% endif %}
-                            {% if filters.category_key %}
-                            <span class="md3-chip">Category: {{ filters.category_key }}</span>
-                            {% endif %}
-                            {% if filters.follow_status_value != 'all' %}
-                            <span class="md3-chip">Status: {{ filters.follow_status_value }}</span>
-                            {% endif %}
-                            {% if filters.follow_only %}
-                            <span class="md3-chip">Follow-ups only</span>
-                            {% endif %}
-                            {% if filters.insights_limit != 20 %}
-                            <span class="md3-chip">Limit: {{ filters.insights_limit }}</span>
-                            {% endif %}
-                        </div>
-                    </div>
-                    {% endif %}
-                </form>
-            </section>
-
             <div class="list-detail-container">
                 <aside class="md3-list-pane">
                     <div class="md3-search-bar">
@@ -218,13 +191,28 @@
                     <div class="list-meta">
                         <p>Showing <span id="insights-visible-count-2">{{ insights | length }}</span> of
                             {{ insights_total | default(0) }} insights</p>
-                        <div class="sort-controls">
-                            <button class="sort-button" id="sort-toggle" data-direction="desc"
-                                title="Sort by received date (newest first)"
-                                aria-label="Sort by received date, currently newest first">
-                                <span class="material-icons sort-icon" aria-hidden="true">arrow_downward</span>
-                                <span class="sr-only">Toggle sort order</span>
-                            </button>
+                        <div class="list-meta__actions">
+                            <form class="secondary-form" method="post" action="/emails/bulk-delete"
+                                data-scroll-restore data-spinner data-spinner-label="Moving emails to trash..."
+                                data-confirm="Move all listed emails to trash? You can recover them from your trash folder.">
+                                <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
+                                <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
+                                {% for item in insights %}
+                                <input type="hidden" name="uids" value="{{ item.uid }}" />
+                                {% endfor %}
+                                <button class="md3-button md3-button--text list-meta__trash-btn" type="submit"
+                                    title="Move listed emails to trash">
+                                    <span class="material-icons" aria-hidden="true">delete_sweep</span>
+                                </button>
+                            </form>
+                            <div class="sort-controls">
+                                <button class="sort-button" id="sort-toggle" data-direction="desc"
+                                    title="Sort by received date (newest first)"
+                                    aria-label="Sort by received date, currently newest first">
+                                    <span class="material-icons sort-icon" aria-hidden="true">arrow_downward</span>
+                                    <span class="sr-only">Toggle sort order</span>
+                                </button>
+                            </div>
                         </div>
                     </div>
 

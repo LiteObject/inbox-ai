@@ -416,6 +416,62 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     installSettingsNavigation();
 
+    // ── Filter toolbar: auto-submit + popover ──────────────
+    const filterForm = document.getElementById('filter-rail');
+    if (filterForm) {
+        let submitTimer = null;
+        const autoSubmitDelay = 600; // ms, only used for number input
+
+        filterForm.querySelectorAll('[data-auto-submit]').forEach((el) => {
+            const event = el.tagName === 'INPUT' ? 'input' : 'change';
+            el.addEventListener(event, () => {
+                clearTimeout(submitTimer);
+                if (el.type === 'number') {
+                    submitTimer = setTimeout(() => filterForm.submit(), autoSubmitDelay);
+                } else {
+                    filterForm.submit();
+                }
+            });
+        });
+
+        const moreBtn = document.getElementById('more-filters-toggle');
+        const popover = document.getElementById('more-filters-popover');
+
+        if (moreBtn && popover) {
+            const openPopover = () => {
+                popover.hidden = false;
+                moreBtn.setAttribute('aria-expanded', 'true');
+            };
+
+            const closePopover = () => {
+                popover.hidden = true;
+                moreBtn.setAttribute('aria-expanded', 'false');
+            };
+
+            moreBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                if (popover.hidden) {
+                    openPopover();
+                } else {
+                    closePopover();
+                }
+            });
+
+            document.addEventListener('mousedown', (e) => {
+                if (!popover.hidden && !popover.contains(e.target) && !moreBtn.contains(e.target)) {
+                    closePopover();
+                }
+            });
+
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && !popover.hidden) {
+                    closePopover();
+                    moreBtn.focus();
+                }
+            });
+        }
+    }
+
     const listDetailContainer = document.querySelector('.list-detail-container');
     const emailList = document.getElementById('email-list');
     const detailHost = document.getElementById('detail-content');

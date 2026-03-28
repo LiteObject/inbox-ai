@@ -139,7 +139,7 @@ def test_follow_up_actions_and_filters(tmp_path) -> None:
 
     html_response = client.get("/?follow_status=done")
     assert html_response.status_code == 200
-    assert "Status: done" in html_response.text
+    assert ">done</span>" in html_response.text
 
     api_response = client.get("/api/dashboard?follow_status=done")
     assert api_response.status_code == 200
