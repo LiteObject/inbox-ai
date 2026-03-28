@@ -1315,6 +1315,8 @@ class SqliteEmailRepository(EmailRepository):
         return {
             "005_mailbox": self._apply_mailbox_migration,
             "006_content_hash": self._apply_content_hash_migration,
+            "009_sent_drafts": self._apply_sent_drafts_migration,
+            "010_calendar_sync": self._apply_calendar_sync_migration,
             "011_feedback": self._apply_feedback_migration,
         }.get(name, self._apply_default_migration)
 
@@ -1372,6 +1374,68 @@ class SqliteEmailRepository(EmailRepository):
 
             with self._connection:
                 self._connection.execute(line)
+
+    def _apply_sent_drafts_migration(self, script: str) -> None:
+        """Apply sent draft columns/indexes while tolerating existing columns."""
+        self._apply_column_guarded_migration(
+            script,
+            {"drafts": {"sent_at"}},
+        )
+
+    def _apply_calendar_sync_migration(self, script: str) -> None:
+        """Apply calendar sync columns/indexes while tolerating existing columns."""
+        self._apply_column_guarded_migration(
+            script,
+            {"follow_ups": {"calendar_event_id", "calendar_synced_at"}},
+        )
+
+    def _apply_column_guarded_migration(
+        self,
+        script: str,
+        guarded_columns: dict[str, set[str]],
+    ) -> None:
+        """Apply statements while skipping ALTER TABLE ADD COLUMN for existing columns."""
+        clean_lines = [
+            line
+            for line in script.splitlines()
+            if line.strip() and not line.strip().startswith("--")
+        ]
+        clean_script = "\n".join(clean_lines)
+        statements = [stmt.strip() for stmt in clean_script.split(";") if stmt.strip()]
+
+        existing_columns = {
+            table: {
+                row["name"]
+                for row in self._connection.execute(f"PRAGMA table_info({table})")
+            }
+            for table in guarded_columns
+        }
+
+        for stmt in statements:
+            upper_stmt = " ".join(stmt.upper().split())
+            should_skip = False
+
+            for table, columns in guarded_columns.items():
+                table_token = table.upper()
+                for column in columns:
+                    column_token = column.upper()
+                    if (
+                        f"ALTER TABLE {table_token} ADD COLUMN {column_token}"
+                        not in upper_stmt
+                    ):
+                        continue
+                    if column in existing_columns[table]:
+                        should_skip = True
+                        break
+                    existing_columns[table].add(column)
+                if should_skip:
+                    break
+
+            if should_skip:
+                continue
+
+            with self._connection:
+                self._connection.execute(stmt)
 
     def _apply_feedback_migration(self, script: str) -> None:
         """Apply feedback columns/indexes while tolerating already-added columns."""

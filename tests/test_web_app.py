@@ -166,7 +166,9 @@ def test_delete_email_api_returns_json(tmp_path, monkeypatch) -> None:
     csrf_token = client.cookies.get(CSRF_COOKIE_NAME)
     assert csrf_token is not None
 
-    def fake_delete_email(_settings: AppSettings, uid: int) -> DeleteOutcome:
+    def fake_delete_email(
+        _settings: AppSettings, uid: int, _repository: object
+    ) -> DeleteOutcome:
         return DeleteOutcome(success=True, message=f"Message UID {uid} deleted.")
 
     monkeypatch.setattr(web_app_module, "_delete_email", fake_delete_email)

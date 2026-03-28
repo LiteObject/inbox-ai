@@ -135,8 +135,26 @@ class ImapClient(MailboxProvider):
         except imaplib.IMAP4.error as exc:  # pragma: no cover - network dependent
             raise ImapError(f"IMAP error while deleting UID {uid_str}") from exc
 
+    def uid_exists(self, uid: int) -> bool:
+        """Return True if *uid* is still present in the selected mailbox."""
+        connection = self._require_connection()
+        uid_str = str(uid)
+        try:
+            status, data = connection.uid("SEARCH", None, uid_str)
+            if status != "OK":
+                return False
+            return bool(data and data[0] and data[0].strip())
+        except imaplib.IMAP4.error:  # pragma: no cover - network dependent
+            return False
+
     def move_to_trash(self, uid: int, trash_folder: str) -> None:
-        """Move a message to the trash folder by UID using the MOVE command."""
+        """Move a message to the trash folder by UID using the MOVE command.
+
+        After issuing the MOVE, the method verifies that the UID is no
+        longer present in the selected mailbox.  If it still is, the
+        operation is considered failed and an ``ImapError`` is raised so
+        the caller does **not** delete the local database record.
+        """
         connection = self._require_connection()
         uid_str = str(uid)
         LOGGER.debug("Moving UID %s to trash folder '%s'", uid_str, trash_folder)
@@ -147,6 +165,12 @@ class ImapClient(MailboxProvider):
                 raise ImapError(f"Failed to move message UID {uid_str} to trash")
         except imaplib.IMAP4.error as exc:
             raise ImapError(f"IMAP error while moving UID {uid_str} to trash") from exc
+
+        # Verify the message actually left the mailbox.
+        if self.uid_exists(uid):
+            raise ImapError(
+                f"MOVE reported OK but UID {uid_str} still present in mailbox"
+            )
 
     def close(self) -> None:
         """Terminate the IMAP session cleanly."""
