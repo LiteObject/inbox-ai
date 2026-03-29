@@ -105,5 +105,6 @@ This is a productivity dashboard, not a landing page. Apply utility-UI rules:
 - Files must end with exactly one trailing newline.
 - No trailing whitespace.
 - Python code follows the project's existing patterns (dependency injection via
-  `container.py`, repository pattern for storage).
+  `container.py`, repository pattern for storage). See
+  `.github/instructions/backend.instructions.md` for detailed backend rules.
 - JavaScript uses vanilla ES modules — no React, no framework.

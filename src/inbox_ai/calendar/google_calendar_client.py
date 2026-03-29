@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlencode
 
@@ -169,6 +169,52 @@ class GoogleCalendarClient:
             calendars = data.get("items", [])
             logger.info("Retrieved %d calendars", len(calendars))
             return calendars
+
+    async def list_events(
+        self,
+        time_min: datetime,
+        time_max: datetime,
+        calendar_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """List calendar events within a time window."""
+        if not self._access_token:
+            raise ValueError("No access token available. Please authenticate first.")
+
+        await self._ensure_valid_token()
+
+        target_calendar = calendar_id or self._settings.selected_calendar
+        params = {
+            "timeMin": time_min.astimezone(UTC).isoformat().replace("+00:00", "Z"),
+            "timeMax": time_max.astimezone(UTC).isoformat().replace("+00:00", "Z"),
+            "singleEvents": True,
+            "orderBy": "startTime",
+            "maxResults": 2500,
+        }
+
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{self.CALENDAR_API_BASE}/calendars/{target_calendar}/events",
+                headers={"Authorization": f"Bearer {self._access_token}"},
+                params=params,
+            )
+
+            if response.status_code != 200:
+                logger.error(
+                    "Failed to list calendar events for %s: %s - %s",
+                    target_calendar,
+                    response.status_code,
+                    response.text,
+                )
+
+            response.raise_for_status()
+            data = response.json()
+            events = data.get("items", [])
+            logger.info(
+                "Retrieved %d calendar events from %s",
+                len(events),
+                target_calendar,
+            )
+            return events
 
     async def create_event(
         self,

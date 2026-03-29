@@ -470,6 +470,80 @@ def _expire_calendar_connection(
     return message
 
 
+def _parse_iso_datetime_value(value: str | None) -> datetime | None:
+    """Parse an ISO 8601 datetime string into an aware datetime."""
+    if value is None:
+        return None
+
+    candidate = value.strip()
+    if not candidate:
+        return None
+
+    normalized = candidate.replace("Z", "+00:00")
+    parsed = datetime.fromisoformat(normalized)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed
+
+
+def _extract_calendar_event_datetime(
+    payload: Mapping[str, Any] | None,
+) -> tuple[datetime | None, bool]:
+    """Extract a Google Calendar event datetime and whether it is all-day."""
+    if not payload:
+        return None, False
+
+    date_time_value = payload.get("dateTime")
+    if isinstance(date_time_value, str):
+        return _parse_iso_datetime_value(date_time_value), False
+
+    date_value = payload.get("date")
+    if isinstance(date_value, str):
+        parsed_date = datetime.fromisoformat(date_value)
+        return parsed_date.replace(tzinfo=UTC), True
+
+    return None, False
+
+
+def _display_calendar_event_datetime(
+    value: datetime | None, *, is_all_day: bool
+) -> str | None:
+    """Render calendar event datetimes for the dashboard UI."""
+    if value is None:
+        return None
+    if is_all_day:
+        return value.strftime("%b %d, %Y")
+    return display_datetime(value)
+
+
+def _serialize_calendar_event(
+    event: Mapping[str, Any],
+    client: GoogleCalendarClient,
+) -> dict[str, Any]:
+    """Serialize a Google Calendar event for the frontend calendar rail."""
+    start_at, is_all_day = _extract_calendar_event_datetime(event.get("start"))
+    end_at, _ = _extract_calendar_event_datetime(event.get("end"))
+    event_id = str(event.get("id") or "")
+    event_url = event.get("htmlLink")
+    if not event_url and event_id:
+        event_url = client.get_event_url(event_id)
+
+    return {
+        "id": event_id,
+        "summary": str(event.get("summary") or "Untitled event"),
+        "startsAt": serialize_datetime(start_at),
+        "startsAtDisplay": _display_calendar_event_datetime(
+            start_at,
+            is_all_day=is_all_day,
+        ),
+        "endsAt": serialize_datetime(end_at),
+        "isAllDay": is_all_day,
+        "status": str(event.get("status") or ""),
+        "eventUrl": str(event_url or ""),
+        "location": str(event.get("location") or ""),
+    }
+
+
 def create_app(settings: AppSettings | None = None) -> FastAPI:
     """Create and configure the FastAPI application."""
     env_file = _resolve_env_file()
@@ -1732,6 +1806,111 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                 status_data["error"] = str(exc)
 
         return status_data
+
+    @app.get("/api/calendar/events")
+    async def calendar_events(
+        start: str,
+        end: str,
+        repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
+    ) -> dict[str, Any]:
+        """List Google Calendar events for a requested time range."""
+        try:
+            start_at = _parse_iso_datetime_value(start)
+            end_at = _parse_iso_datetime_value(end)
+        except ValueError:
+            return {
+                "success": False,
+                "connected": False,
+                "events": [],
+                "error": "Invalid calendar event range.",
+            }
+
+        if start_at is None or end_at is None or start_at >= end_at:
+            return {
+                "success": False,
+                "connected": False,
+                "events": [],
+                "error": "Invalid calendar event range.",
+            }
+
+        if not app_settings.calendar.is_configured():
+            return {
+                "success": True,
+                "configured": False,
+                "connected": False,
+                "events": [],
+            }
+
+        access_token = _get_calendar_preference(
+            repository,
+            app_settings,
+            "calendar_access_token",
+        )
+        if not access_token:
+            return {
+                "success": True,
+                "configured": True,
+                "connected": False,
+                "events": [],
+            }
+
+        refresh_token = _get_calendar_preference(
+            repository,
+            app_settings,
+            "calendar_refresh_token",
+        )
+        selected_calendar = _get_selected_calendar(repository, app_settings)
+
+        try:
+            client = GoogleCalendarClient(app_settings.calendar)
+            client.set_tokens(access_token, refresh_token)
+            events = await client.list_events(
+                time_min=start_at,
+                time_max=end_at,
+                calendar_id=selected_calendar,
+            )
+
+            if client.access_token and client.access_token != access_token:
+                _set_calendar_preference(
+                    repository,
+                    app_settings,
+                    "calendar_access_token",
+                    client.access_token,
+                )
+
+            return {
+                "success": True,
+                "configured": True,
+                "connected": True,
+                "selected_calendar": selected_calendar,
+                "events": [
+                    _serialize_calendar_event(event, client)
+                    for event in events
+                    if event.get("status") != "cancelled"
+                ],
+            }
+        except CalendarAuthError as exc:
+            return {
+                "success": False,
+                "configured": True,
+                "connected": False,
+                "events": [],
+                "error": _expire_calendar_connection(
+                    repository,
+                    app_settings,
+                    exc,
+                ),
+                "reauth_required": True,
+            }
+        except httpx.HTTPError as exc:
+            LOGGER.exception("Failed to list Google Calendar events")
+            return {
+                "success": False,
+                "configured": True,
+                "connected": True,
+                "events": [],
+                "error": str(exc),
+            }
 
     @app.post("/api/calendar/disconnect")
     async def calendar_disconnect(
