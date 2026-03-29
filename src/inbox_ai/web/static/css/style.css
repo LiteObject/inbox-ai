@@ -1277,6 +1277,10 @@ h2.toolbar-heading {
     border: 1px solid color-mix(in srgb, var(--md3-color-outline-variant) 80%, var(--md3-color-surface) 20%);
 }
 
+.calendar-rail__section[hidden] {
+    display: none;
+}
+
 .calendar-rail__section-heading {
     display: flex;
     align-items: baseline;
@@ -1586,22 +1590,52 @@ h2.toolbar-heading {
 
 .calendar-rail__agenda-item {
     display: grid;
-    grid-template-columns: 56px 1fr;
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: var(--md3-spacing-10);
     width: 100%;
     padding: var(--md3-spacing-10);
     border-radius: var(--md3-radius-m);
     border: 1px solid color-mix(in srgb, var(--md3-color-outline-variant) 75%, var(--md3-color-surface) 25%);
     background: color-mix(in srgb, var(--md3-color-surface) 82%, var(--md3-color-surface-container-high) 18%);
-    text-align: left;
-    cursor: pointer;
     transition: background-color 160ms ease, border-color 160ms ease, transform 160ms ease;
+    align-items: start;
 }
 
 .calendar-rail__agenda-item:hover,
-.calendar-rail__agenda-item:focus-visible {
+.calendar-rail__agenda-item:focus-within {
     background: color-mix(in srgb, var(--md3-color-primary-container) 42%, var(--md3-color-surface) 58%);
     border-color: color-mix(in srgb, var(--md3-color-primary) 26%, var(--md3-color-outline-variant) 74%);
+}
+
+.calendar-rail__agenda-item-select {
+    display: grid;
+    grid-template-columns: 56px 1fr;
+    gap: var(--md3-spacing-10);
+    width: 100%;
+    padding: 0;
+    border: none;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+    color: inherit;
+    min-width: 0;
+}
+
+.calendar-rail__agenda-delete {
+    width: 28px;
+    height: 28px;
+    margin-top: -2px;
+    color: var(--md3-color-on-surface-variant);
+}
+
+.calendar-rail__agenda-delete .material-icons {
+    font-size: 18px;
+}
+
+.calendar-rail__agenda-delete:hover,
+.calendar-rail__agenda-delete:focus-visible {
+    background: color-mix(in srgb, var(--md3-color-error) 12%, transparent);
+    color: var(--md3-color-error);
 }
 
 .calendar-rail__agenda-item--focused {
@@ -1675,6 +1709,11 @@ h2.toolbar-heading {
 
 .calendar-rail--calendar-collapsed {
     gap: var(--md3-spacing-16);
+}
+
+.calendar-rail--calendar-collapsed .calendar-rail__section--month,
+.calendar-rail--calendar-collapsed .calendar-rail__section--focus {
+    display: none;
 }
 
 .calendar-rail--calendar-collapsed .calendar-rail__intro {

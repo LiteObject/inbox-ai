@@ -1070,6 +1070,15 @@ class SqliteEmailRepository(EmailRepository):
                 ),
             )
 
+    def delete_follow_up(self, follow_up_id: int) -> bool:
+        """Delete a follow-up entry by identifier."""
+        with self._connection:
+            cur = self._connection.execute(
+                "DELETE FROM follow_ups WHERE id = ?",
+                (follow_up_id,),
+            )
+        return cur.rowcount > 0
+
     def get_follow_up_by_id(self, follow_up_id: int) -> FollowUpTask | None:
         """Retrieve a single follow-up task by ID."""
         cur = self._connection.execute(

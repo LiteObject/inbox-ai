@@ -1508,6 +1508,39 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             status_code=http_status.HTTP_303_SEE_OTHER,
         )
 
+    @app.delete("/api/follow-ups/{follow_up_id}")
+    async def delete_follow_up(
+        follow_up_id: int,
+        request: Request,
+        repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
+    ) -> JSONResponse:
+        """Delete a follow-up task."""
+        csrf_token = request.headers.get("X-CSRF-Token")
+        csrf.validate(request, csrf_token)
+
+        deleted = repository.delete_follow_up(follow_up_id)
+        if deleted:
+            response_cache.invalidate("dashboard")
+
+        status_code = (
+            http_status.HTTP_200_OK
+            if deleted
+            else http_status.HTTP_404_NOT_FOUND
+        )
+        message = (
+            "Follow-up deleted."
+            if deleted
+            else "Follow-up task not found."
+        )
+        return JSONResponse(
+            status_code=status_code,
+            content={
+                "success": deleted,
+                "follow_up_id": follow_up_id,
+                "message": message,
+            },
+        )
+
     @app.post("/emails/{email_uid}/follow-ups/generate")
     async def generate_follow_ups(
         email_uid: int,

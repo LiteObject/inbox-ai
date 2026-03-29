@@ -384,6 +384,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         container: document.getElementById("toast-container"),
         dataset: document.getElementById("toast-data"),
     });
+    window.InboxAI = window.InboxAI || {};
+    window.InboxAI.toast = toastManager;
     toastManager.hydrateFromDataset();
     consumeStoredToasts(toastManager);
 

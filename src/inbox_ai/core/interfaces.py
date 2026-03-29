@@ -203,6 +203,10 @@ class EmailRepository(Protocol):
         """Set the status for a follow-up entry."""
         raise NotImplementedError
 
+    def delete_follow_up(self, follow_up_id: int) -> bool:
+        """Delete a follow-up entry by identifier."""
+        raise NotImplementedError
+
     def close(self) -> None:
         """Close database connections if necessary."""
         raise NotImplementedError

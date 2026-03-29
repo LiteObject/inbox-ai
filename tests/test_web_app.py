@@ -159,6 +159,37 @@ def test_follow_up_actions_and_filters(tmp_path) -> None:
     assert api_payload["followUps"] and api_payload["followUps"][0]["status"] == "done"
 
 
+def test_delete_follow_up_api_removes_task(tmp_path) -> None:
+    db_path = tmp_path / "web_followup_delete.db"
+    settings = StorageSettings(db_path=db_path)
+    repository = SqliteEmailRepository(settings)
+    follow_up_id = _seed_data(repository)
+    repository.close()
+
+    app_settings = AppSettings(storage=settings)
+    app = create_app(app_settings)
+    client = TestClient(app)
+
+    client.get("/")
+    csrf_token = client.cookies.get(CSRF_COOKIE_NAME)
+    assert csrf_token is not None
+
+    response = client.delete(
+        f"/api/follow-ups/{follow_up_id}",
+        headers={"X-CSRF-Token": csrf_token},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "success": True,
+        "follow_up_id": follow_up_id,
+        "message": "Follow-up deleted.",
+    }
+
+    with SqliteEmailRepository(settings) as verification_repo:
+        assert verification_repo.list_follow_ups() == []
+
+
 def test_delete_email_api_returns_json(tmp_path, monkeypatch) -> None:
     db_path = tmp_path / "web_delete_api.db"
     settings = StorageSettings(db_path=db_path)

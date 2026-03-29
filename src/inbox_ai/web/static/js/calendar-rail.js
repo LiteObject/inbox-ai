@@ -223,6 +223,59 @@ export class CalendarRailController {
         this.renderAgenda();
     }
 
+    getCsrfToken() {
+        const tokenInput = document.querySelector('input[name="csrf_token"]');
+        return tokenInput ? tokenInput.value : '';
+    }
+
+    async deleteTask(taskId, deleteButton) {
+        const originalLabel = deleteButton?.innerHTML || '';
+
+        if (deleteButton) {
+            deleteButton.disabled = true;
+            deleteButton.innerHTML = '<span class="material-icons rotating" aria-hidden="true">hourglass_empty</span>';
+        }
+
+        try {
+            const response = await fetch(`/api/follow-ups/${taskId}`, {
+                method: 'DELETE',
+                headers: {
+                    'X-CSRF-Token': this.getCsrfToken(),
+                },
+            });
+
+            const data = await response.json();
+            if (!data.success) {
+                throw new Error(data.message || 'Failed to delete follow-up');
+            }
+
+            this.tasks = this.tasks.filter((task) => String(task.taskId) !== String(taskId));
+
+            const sourceNode = this.dataRoot.querySelector(`[data-calendar-rail-task][data-task-id="${CSS.escape(String(taskId))}"]`);
+            if (sourceNode) {
+                sourceNode.remove();
+            }
+
+            window.dispatchEvent(new CustomEvent('inboxai:calendar-followup-deleted', {
+                detail: { taskId },
+            }));
+
+            this.render();
+            window.InboxAI?.toast?.show?.('Follow-up deleted.', 'success');
+        } catch (error) {
+            console.error('Failed to delete follow-up task:', error);
+            window.InboxAI?.toast?.show?.(
+                error instanceof Error ? error.message : 'Failed to delete follow-up',
+                'error',
+            );
+
+            if (deleteButton) {
+                deleteButton.disabled = false;
+                deleteButton.innerHTML = originalLabel;
+            }
+        }
+    }
+
     buildAgendaGroups() {
         const today = startOfDay(new Date());
         const nextWeekEnd = addDays(today, 7);
@@ -438,17 +491,28 @@ export class CalendarRailController {
                     task.emailUid === this.selectedEmailUid ? 'calendar-rail__agenda-item--focused' : '',
                 ].filter(Boolean).join(' ');
                 return `
-                                <button type="button" class="${classes}" data-task-id="${task.taskId}">
-                                    <p class="calendar-rail__agenda-time">${task.dueAtDisplay || 'No time set'}</p>
-                                    <div class="calendar-rail__agenda-main">
-                                        <p class="calendar-rail__agenda-title">${task.action}</p>
-                                        <p class="calendar-rail__agenda-subtitle">${task.emailSubject}</p>
-                                        <div class="calendar-rail__agenda-badges">
-                                            ${group.key === 'overdue' ? '<span class="calendar-rail__agenda-badge calendar-rail__agenda-badge--overdue">Late</span>' : ''}
-                                            ${task.calendarEventId ? '<span class="calendar-rail__agenda-badge calendar-rail__agenda-badge--calendar">In calendar</span>' : ''}
+                                <div class="${classes}">
+                                    <button type="button" class="calendar-rail__agenda-item-select" data-task-id="${task.taskId}">
+                                        <p class="calendar-rail__agenda-time">${task.dueAtDisplay || 'No time set'}</p>
+                                        <div class="calendar-rail__agenda-main">
+                                            <p class="calendar-rail__agenda-title">${task.action}</p>
+                                            <p class="calendar-rail__agenda-subtitle">${task.emailSubject}</p>
+                                            <div class="calendar-rail__agenda-badges">
+                                                ${group.key === 'overdue' ? '<span class="calendar-rail__agenda-badge calendar-rail__agenda-badge--overdue">Late</span>' : ''}
+                                                ${task.calendarEventId ? '<span class="calendar-rail__agenda-badge calendar-rail__agenda-badge--calendar">In calendar</span>' : ''}
+                                            </div>
                                         </div>
-                                    </div>
-                                </button>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="md3-icon-button calendar-rail__agenda-delete"
+                                        data-task-delete-id="${task.taskId}"
+                                        aria-label="Delete follow-up task ${task.action}"
+                                        title="Delete follow-up"
+                                    >
+                                        <span class="material-icons" aria-hidden="true">delete_outline</span>
+                                    </button>
+                                </div>
                             `;
             }).join('')}
                     </div>
@@ -462,6 +526,13 @@ export class CalendarRailController {
                 if (task) {
                     this.selectTask(task);
                 }
+            });
+        });
+
+        this.agenda.querySelectorAll('[data-task-delete-id]').forEach((button) => {
+            button.addEventListener('click', (event) => {
+                event.stopPropagation();
+                this.deleteTask(button.dataset.taskDeleteId, button);
             });
         });
 
