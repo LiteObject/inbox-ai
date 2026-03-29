@@ -28,6 +28,7 @@ from fastapi.responses import (
 )
 from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
+import httpx
 from dotenv import dotenv_values
 from starlette.datastructures import UploadFile
 from starlette.responses import Response
@@ -369,21 +370,102 @@ CONFIG_FIELD_KEYS: tuple[str, ...] = tuple(
     field.key for section in CONFIG_SECTIONS for field in section.fields
 )
 
+_CALENDAR_CREDENTIAL_KEYS: tuple[str, ...] = (
+    "calendar_access_token",
+    "calendar_refresh_token",
+    "calendar_oauth_state",
+)
+_CALENDAR_SELECTED_KEY = "calendar_selected_calendar"
 
-def _clear_calendar_credentials(repository: SqliteEmailRepository) -> None:
+
+def _get_calendar_account_key(settings: AppSettings) -> str | None:
+    """Return the normalized inbox account identifier used for calendar prefs."""
+    username = settings.imap.username
+    if not username:
+        return None
+    normalized = username.strip().lower()
+    return normalized or None
+
+
+def _iter_calendar_preference_keys(
+    settings: AppSettings, base_key: str
+) -> tuple[str, ...]:
+    """Yield scoped and legacy preference keys for calendar settings."""
+    account_key = _get_calendar_account_key(settings)
+    if not account_key:
+        return (base_key,)
+    return (f"{base_key}:{account_key}", base_key)
+
+
+def _get_calendar_preference(
+    repository: SqliteEmailRepository,
+    settings: AppSettings,
+    base_key: str,
+) -> str | None:
+    """Read a calendar preference, preferring the current inbox account scope."""
+    for key in _iter_calendar_preference_keys(settings, base_key):
+        value = repository.get_user_preference(key)
+        if value is not None:
+            return value
+    return None
+
+
+def _set_calendar_preference(
+    repository: SqliteEmailRepository,
+    settings: AppSettings,
+    base_key: str,
+    value: str,
+) -> None:
+    """Write a calendar preference using the current inbox account scope."""
+    target_key = _iter_calendar_preference_keys(settings, base_key)[0]
+    repository.set_user_preference(target_key, value)
+
+
+def _delete_calendar_preference(
+    repository: SqliteEmailRepository,
+    settings: AppSettings,
+    base_key: str,
+) -> None:
+    """Delete scoped and legacy variants of a calendar preference key."""
+    for key in _iter_calendar_preference_keys(settings, base_key):
+        repository.delete_user_preference(key)
+
+
+def _get_selected_calendar(
+    repository: SqliteEmailRepository, settings: AppSettings
+) -> str:
+    """Resolve the selected calendar for the current inbox account."""
+    selected_calendar = _get_calendar_preference(
+        repository,
+        settings,
+        _CALENDAR_SELECTED_KEY,
+    )
+    return selected_calendar or settings.calendar.selected_calendar
+
+
+def _clear_calendar_credentials(
+    repository: SqliteEmailRepository, settings: AppSettings
+) -> None:
     """Remove stored Google Calendar OAuth state and tokens."""
-    repository.delete_user_preference("calendar_access_token")
-    repository.delete_user_preference("calendar_refresh_token")
-    repository.delete_user_preference("calendar_oauth_state")
+    for key in _CALENDAR_CREDENTIAL_KEYS:
+        _delete_calendar_preference(repository, settings, key)
+
+
+def _clear_calendar_connection(
+    repository: SqliteEmailRepository, settings: AppSettings
+) -> None:
+    """Remove all stored Google Calendar settings for the current inbox account."""
+    _clear_calendar_credentials(repository, settings)
+    _delete_calendar_preference(repository, settings, _CALENDAR_SELECTED_KEY)
 
 
 def _expire_calendar_connection(
-    repository: SqliteEmailRepository, exc: CalendarAuthError
+    repository: SqliteEmailRepository, settings: AppSettings, exc: CalendarAuthError
 ) -> str:
     """Clear invalid calendar credentials and return a user-facing message."""
     message = str(exc) or "Google Calendar authorization expired. Please reconnect."
     LOGGER.warning("Google Calendar authorization expired: %s", message)
-    _clear_calendar_credentials(repository)
+    _clear_calendar_credentials(repository, settings)
     return message
 
 
@@ -1452,7 +1534,6 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
 
     @app.get("/calendar/auth")
     async def calendar_auth(
-        request: Request,
         repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
     ) -> RedirectResponse:
         """Initiate OAuth 2.0 flow for Google Calendar."""
@@ -1464,7 +1545,12 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
 
         # Generate a random state token for CSRF protection
         state = secrets.token_urlsafe(32)
-        repository.set_user_preference("calendar_oauth_state", state)
+        _set_calendar_preference(
+            repository,
+            app_settings,
+            "calendar_oauth_state",
+            state,
+        )
 
         client = GoogleCalendarClient(app_settings.calendar)
         auth_url = client.get_authorization_url(state)
@@ -1474,7 +1560,6 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
 
     @app.get("/calendar/callback")
     async def calendar_callback(
-        request: Request,
         code: str | None = None,
         state: str | None = None,
         error: str | None = None,
@@ -1483,8 +1568,14 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         """Handle OAuth 2.0 callback from Google."""
         if error:
             LOGGER.error("OAuth error: %s", error)
+            target = _append_query_param(
+                "/settings#calendar",
+                "config_status",
+                "calendar_auth_failed",
+            )
+            target = _append_query_param(target, "error", error)
             return RedirectResponse(
-                url=f"/settings?config_status=calendar_auth_failed&error={error}#calendar",
+                url=target,
                 status_code=http_status.HTTP_303_SEE_OTHER,
             )
 
@@ -1495,7 +1586,11 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             )
 
         # Verify state token to prevent CSRF
-        stored_state = repository.get_user_preference("calendar_oauth_state")
+        stored_state = _get_calendar_preference(
+            repository,
+            app_settings,
+            "calendar_oauth_state",
+        )
         if stored_state != state:
             LOGGER.error("OAuth state mismatch")
             return RedirectResponse(
@@ -1508,16 +1603,26 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             tokens = await client.exchange_code_for_tokens(code)
 
             # Store tokens securely
-            repository.set_user_preference(
-                "calendar_access_token", tokens["access_token"]
+            _set_calendar_preference(
+                repository,
+                app_settings,
+                "calendar_access_token",
+                tokens["access_token"],
             )
             if "refresh_token" in tokens:
-                repository.set_user_preference(
-                    "calendar_refresh_token", tokens["refresh_token"]
+                _set_calendar_preference(
+                    repository,
+                    app_settings,
+                    "calendar_refresh_token",
+                    tokens["refresh_token"],
                 )
 
             # Clean up state token
-            repository.delete_user_preference("calendar_oauth_state")
+            _delete_calendar_preference(
+                repository,
+                app_settings,
+                "calendar_oauth_state",
+            )
 
             LOGGER.info("Successfully authenticated with Google Calendar")
             return RedirectResponse(
@@ -1525,10 +1630,16 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                 status_code=http_status.HTTP_303_SEE_OTHER,
             )
 
-        except Exception as exc:  # noqa: BLE001
+        except (httpx.HTTPError, KeyError) as exc:
             LOGGER.exception("Failed to exchange OAuth code for tokens")
+            target = _append_query_param(
+                "/settings#calendar",
+                "config_status",
+                "calendar_auth_failed",
+            )
+            target = _append_query_param(target, "error", str(exc))
             return RedirectResponse(
-                url=f"/settings?config_status=calendar_auth_failed&error={str(exc)}#calendar",
+                url=target,
                 status_code=http_status.HTTP_303_SEE_OTHER,
             )
 
@@ -1537,13 +1648,18 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
     ) -> dict[str, Any]:
         """Check calendar connection status."""
-        access_token = repository.get_user_preference("calendar_access_token")
+        access_token = _get_calendar_preference(
+            repository,
+            app_settings,
+            "calendar_access_token",
+        )
         is_connected = bool(access_token)
 
         status_data: dict[str, Any] = {
             "connected": is_connected,
             "configured": app_settings.calendar.is_configured(),
-            "selected_calendar": app_settings.calendar.selected_calendar,
+            "selected_calendar": _get_selected_calendar(repository, app_settings),
+            "account_email": app_settings.imap.username,
         }
 
         if is_connected:
@@ -1551,9 +1667,20 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                 client = GoogleCalendarClient(app_settings.calendar)
                 client.set_tokens(
                     access_token,
-                    repository.get_user_preference("calendar_refresh_token"),
+                    _get_calendar_preference(
+                        repository,
+                        app_settings,
+                        "calendar_refresh_token",
+                    ),
                 )
                 calendars = await client.list_calendars()
+                if client.access_token and client.access_token != access_token:
+                    _set_calendar_preference(
+                        repository,
+                        app_settings,
+                        "calendar_access_token",
+                        client.access_token,
+                    )
                 status_data["calendars"] = [
                     {"id": cal.get("id"), "summary": cal.get("summary")}
                     for cal in calendars
@@ -1561,7 +1688,11 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             except CalendarAuthError as exc:
                 status_data["connected"] = False
                 status_data["reauth_required"] = True
-                status_data["error"] = _expire_calendar_connection(repository, exc)
+                status_data["error"] = _expire_calendar_connection(
+                    repository,
+                    app_settings,
+                    exc,
+                )
             except Exception as exc:  # noqa: BLE001
                 LOGGER.error("Failed to fetch calendars: %s", exc)
                 status_data["error"] = str(exc)
@@ -1577,9 +1708,87 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         csrf_token = request.headers.get("X-CSRF-Token")
         csrf.validate(request, csrf_token)
 
-        _clear_calendar_credentials(repository)
+        _clear_calendar_connection(repository, app_settings)
 
         return {"success": True, "message": "Calendar disconnected"}
+
+    @app.post("/api/calendar/select")
+    async def calendar_select(
+        request: Request,
+        calendar_id: str = Form(...),
+        repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
+    ) -> dict[str, Any]:
+        """Persist the selected Google Calendar for the current inbox account."""
+        csrf_token = request.headers.get("X-CSRF-Token")
+        csrf.validate(request, csrf_token)
+
+        selected_calendar = calendar_id.strip()
+        if not selected_calendar:
+            return {"success": False, "error": "Calendar ID is required."}
+
+        access_token = _get_calendar_preference(
+            repository,
+            app_settings,
+            "calendar_access_token",
+        )
+        if not access_token:
+            return {
+                "success": False,
+                "error": "Not connected to Google Calendar. Please connect in settings.",
+            }
+
+        refresh_token = _get_calendar_preference(
+            repository,
+            app_settings,
+            "calendar_refresh_token",
+        )
+
+        try:
+            client = GoogleCalendarClient(app_settings.calendar)
+            client.set_tokens(access_token, refresh_token)
+            calendars = await client.list_calendars()
+
+            calendar_lookup = {
+                str(cal.get("id")): str(cal.get("summary") or cal.get("id") or "")
+                for cal in calendars
+                if cal.get("id")
+            }
+            if selected_calendar not in calendar_lookup:
+                return {
+                    "success": False,
+                    "error": "Selected calendar is not available for this account.",
+                }
+
+            _set_calendar_preference(
+                repository,
+                app_settings,
+                _CALENDAR_SELECTED_KEY,
+                selected_calendar,
+            )
+
+            if client.access_token and client.access_token != access_token:
+                _set_calendar_preference(
+                    repository,
+                    app_settings,
+                    "calendar_access_token",
+                    client.access_token,
+                )
+
+            return {
+                "success": True,
+                "selected_calendar": selected_calendar,
+                "selected_calendar_summary": calendar_lookup[selected_calendar],
+                "account_email": app_settings.imap.username,
+            }
+        except CalendarAuthError as exc:
+            return {
+                "success": False,
+                "error": _expire_calendar_connection(repository, app_settings, exc),
+                "reauth_required": True,
+            }
+        except httpx.HTTPError as exc:
+            LOGGER.exception("Failed to save selected calendar")
+            return {"success": False, "error": str(exc)}
 
     @app.post("/api/follow-ups/{follow_up_id}/sync-calendar")
     async def sync_follow_up_to_calendar(
@@ -1599,17 +1808,25 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             }
 
         # Get access token
-        access_token = repository.get_user_preference("calendar_access_token")
+        access_token = _get_calendar_preference(
+            repository,
+            app_settings,
+            "calendar_access_token",
+        )
         if not access_token:
             return {
                 "success": False,
                 "error": "Not connected to Google Calendar. Please connect in settings.",
             }
 
-        refresh_token = repository.get_user_preference("calendar_refresh_token")
+        refresh_token = _get_calendar_preference(
+            repository,
+            app_settings,
+            "calendar_refresh_token",
+        )
         LOGGER.info(
-            "Retrieved tokens from DB - access_token: %s..., refresh_token available: %s",
-            access_token[:10] if access_token else "None",
+            "Retrieved calendar tokens from DB (access token present: %s, refresh token present: %s)",
+            bool(access_token),
             bool(refresh_token),
         )
 
@@ -1658,6 +1875,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                 due_at=due_at,
                 email_subject=email.subject,
                 email_sender=email.sender,
+                calendar_id=_get_selected_calendar(repository, app_settings),
             )
 
             event_id = event.get("id")
@@ -1671,10 +1889,13 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             repository.update_follow_up_calendar_sync(follow_up_id, event_id)
 
             # Save potentially refreshed access token
-            if client._access_token and client._access_token != access_token:
+            if client.access_token and client.access_token != access_token:
                 LOGGER.info("Access token was refreshed, saving new token")
-                repository.set_user_preference(
-                    "calendar_access_token", client._access_token
+                _set_calendar_preference(
+                    repository,
+                    app_settings,
+                    "calendar_access_token",
+                    client.access_token,
                 )
 
             event_url = client.get_event_url(event_id)
@@ -1707,7 +1928,11 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         except CalendarAuthError as exc:
             return {
                 "success": False,
-                "error": _expire_calendar_connection(repository, exc),
+                "error": _expire_calendar_connection(
+                    repository,
+                    app_settings,
+                    exc,
+                ),
                 "reauth_required": True,
             }
         except Exception as exc:  # noqa: BLE001
@@ -1717,7 +1942,6 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
     @app.get("/api/follow-ups/{follow_up_id}/check-calendar-event")
     async def check_calendar_event_exists(
         follow_up_id: int,
-        request: Request,
         repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
     ) -> dict[str, Any]:
         """Check if a calendar event still exists and update state accordingly."""
@@ -1725,8 +1949,16 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         LOGGER.debug("Checking calendar event for follow-up %d", follow_up_id)
 
         # Ensure calendar access tokens are available
-        access_token = repository.get_user_preference("calendar_access_token")
-        refresh_token = repository.get_user_preference("calendar_refresh_token")
+        access_token = _get_calendar_preference(
+            repository,
+            app_settings,
+            "calendar_access_token",
+        )
+        refresh_token = _get_calendar_preference(
+            repository,
+            app_settings,
+            "calendar_refresh_token",
+        )
         if not access_token:
             LOGGER.warning(
                 "Calendar access token missing for follow-up %d", follow_up_id
@@ -1755,7 +1987,10 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                 "Fetching calendar event %s",
                 follow_up.calendar_event_id,
             )
-            event = await client.get_event(follow_up.calendar_event_id)
+            event = await client.get_event(
+                follow_up.calendar_event_id,
+                calendar_id=_get_selected_calendar(repository, app_settings),
+            )
 
             if event.get("status") == "cancelled":
                 LOGGER.info(
@@ -1785,7 +2020,11 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             return {
                 "success": False,
                 "exists": None,
-                "error": _expire_calendar_connection(repository, exc),
+                "error": _expire_calendar_connection(
+                    repository,
+                    app_settings,
+                    exc,
+                ),
                 "reauth_required": True,
             }
         except Exception as exc:  # noqa: BLE001
@@ -2236,16 +2475,8 @@ def _clear_database(settings: AppSettings) -> ClearDatabaseOutcome:
     try:
         with SqliteEmailRepository(settings.storage) as repository:
             # Log counts before clearing to help debug issues where nothing seems to change
-            try:
-                cur = repository._connection.execute("SELECT COUNT(*) FROM emails")
-                before_emails = cur.fetchone()[0]
-            except Exception:
-                before_emails = None
-            try:
-                cur = repository._connection.execute("SELECT COUNT(*) FROM follow_ups")
-                before_followups = cur.fetchone()[0]
-            except Exception:
-                before_followups = None
+            before_emails = repository.count_emails()
+            before_followups = repository.count_follow_ups()
             LOGGER.info(
                 "Database counts before clear: emails=%s follow_ups=%s",
                 before_emails,
@@ -2255,16 +2486,8 @@ def _clear_database(settings: AppSettings) -> ClearDatabaseOutcome:
             repository.clear_all_tables()
 
             # Log counts after clearing to verify it worked
-            try:
-                cur = repository._connection.execute("SELECT COUNT(*) FROM emails")
-                after_emails = cur.fetchone()[0]
-            except Exception:
-                after_emails = None
-            try:
-                cur = repository._connection.execute("SELECT COUNT(*) FROM follow_ups")
-                after_followups = cur.fetchone()[0]
-            except Exception:
-                after_followups = None
+            after_emails = repository.count_emails()
+            after_followups = repository.count_follow_ups()
             LOGGER.info(
                 "Database counts after clear: emails=%s follow_ups=%s",
                 after_emails,

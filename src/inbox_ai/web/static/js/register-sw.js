@@ -3,9 +3,14 @@
  * Registers the service worker for offline caching
  */
 
+const currentScript = document.currentScript;
+const serviceWorkerSearch = currentScript
+    ? new URL(currentScript.src, window.location.origin).search
+    : '';
+
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/static/js/service-worker.js?v=20260328c')
+        navigator.serviceWorker.register(`/static/js/service-worker.js${serviceWorkerSearch}`)
             .then((registration) => {
                 console.log('[SW Registration] Success:', registration.scope);
 

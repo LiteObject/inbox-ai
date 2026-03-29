@@ -5,7 +5,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Inbox AI Configuration</title>
-    {% set static_asset_version = '20260328f' %}
+    {% set static_asset_version = '20260328l' %}
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet" />
@@ -434,6 +434,42 @@
         });
 
         // ===== Google Calendar Connection =====
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replaceAll('&', '&amp;')
+                .replaceAll('<', '&lt;')
+                .replaceAll('>', '&gt;')
+                .replaceAll('"', '&quot;')
+                .replaceAll("'", '&#39;');
+        }
+
+        function renderCalendarAccountLine(accountEmail) {
+            if (!accountEmail) {
+                return '';
+            }
+
+            return `
+                <div class="status-message">
+                    <span class="material-icons">mail</span>
+                    <span>Inbox account: ${escapeHtml(accountEmail)}</span>
+                </div>
+            `;
+        }
+
+        async function saveCalendarSelection(calendarId) {
+            const csrfToken = document.querySelector('input[name="{{ csrf_field_name }}"]')?.value;
+            const response = await fetch('/api/calendar/select', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                    'X-CSRF-Token': csrfToken,
+                },
+                body: new URLSearchParams({ calendar_id: calendarId }),
+            });
+
+            return response.json();
+        }
+
         async function loadCalendarStatus() {
             try {
                 const response = await fetch('/api/calendar/status');
@@ -456,6 +492,7 @@
                             <span class="material-icons md3-color-tertiary">info</span>
                             <span>Calendar integration not configured</span>
                         </div>
+                        ${renderCalendarAccountLine(data.account_email)}
                     `;
                     configNote.hidden = false;
                     calendarList.hidden = true;
@@ -468,6 +505,7 @@
                             <span class="material-icons md3-color-tertiary">link_off</span>
                             <span>Not connected to Google Calendar</span>
                         </div>
+                        ${renderCalendarAccountLine(data.account_email)}
                     `;
                     configNote.hidden = true;
                     calendarList.hidden = true;
@@ -480,19 +518,53 @@
                             <span class="material-icons md3-color-primary">check_circle</span>
                             <span>Connected to Google Calendar</span>
                         </div>
+                        ${renderCalendarAccountLine(data.account_email)}
                     `;
 
                     if (data.calendars && data.calendars.length > 0) {
                         calendarList.innerHTML = `
-                            <strong>Available Calendars:</strong>
-                            <ul>
-                                ${data.calendars.map(cal => {
+                            <strong>Target Calendar</strong>
+                            <p>Choose which Google Calendar should receive follow-up events for this inbox account.</p>
+                            <div class="maintenance-actions">
+                                <select id="calendar-select" class="md3-select" aria-label="Select Google Calendar">
+                                    ${data.calendars.map(cal => {
                             const isSelected = cal.id === data.selected_calendar;
-                            return `<li>${cal.summary}${isSelected ? ' <strong>(selected)</strong>' : ''}</li>`;
+                            const summary = escapeHtml(cal.summary || cal.id);
+                            const id = escapeHtml(cal.id);
+                            return `<option value="${id}" ${isSelected ? 'selected' : ''}>${summary}</option>`;
                         }).join('')}
-                            </ul>
+                                </select>
+                                <button type="button" id="save-calendar-selection-btn" class="md3-button md3-button--tonal">
+                                    <span class="material-icons" aria-hidden="true">event</span>
+                                    Save Calendar
+                                </button>
+                            </div>
                         `;
                         calendarList.hidden = false;
+
+                        document.getElementById('save-calendar-selection-btn')?.addEventListener('click', async () => {
+                            const select = document.getElementById('calendar-select');
+                            const button = document.getElementById('save-calendar-selection-btn');
+                            if (!select || !button) {
+                                return;
+                            }
+
+                            button.disabled = true;
+                            try {
+                                const result = await saveCalendarSelection(select.value);
+                                if (result.success) {
+                                    ToastManager.show('Calendar selection saved', 'success');
+                                    await loadCalendarStatus();
+                                } else {
+                                    ToastManager.show(result.error || 'Failed to save calendar selection', 'error');
+                                }
+                            } catch (error) {
+                                console.error('Failed to save calendar selection:', error);
+                                ToastManager.show('Failed to save calendar selection', 'error');
+                            } finally {
+                                button.disabled = false;
+                            }
+                        });
                     } else {
                         calendarList.hidden = true;
                     }

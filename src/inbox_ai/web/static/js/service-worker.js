@@ -12,6 +12,11 @@ const STATIC_ASSETS = [
     'https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,400,0,0',
 ];
 
+function getStaticCacheKey(url) {
+    const normalizedUrl = new URL(url, self.location.origin);
+    return `${normalizedUrl.origin}${normalizedUrl.pathname}`;
+}
+
 // Install service worker and cache static assets
 self.addEventListener('install', (event) => {
     console.log('[ServiceWorker] Installing...');
@@ -121,14 +126,17 @@ self.addEventListener('fetch', (event) => {
                 .then((response) => {
                     if (response.ok) {
                         const responseClone = response.clone();
+                        const cacheKey = getStaticCacheKey(request.url);
                         caches.open(CACHE_NAME).then((cache) => {
-                            cache.put(request, responseClone);
+                            cache.put(cacheKey, responseClone);
                         });
                     }
                     return response;
                 })
                 .catch(() => {
+                    const cacheKey = getStaticCacheKey(request.url);
                     return caches.match(request)
+                        .then((cachedResponse) => cachedResponse || caches.match(cacheKey))
                         .then((cachedResponse) => {
                             if (cachedResponse) {
                                 console.log('[ServiceWorker] Serving cached static asset:', request.url);

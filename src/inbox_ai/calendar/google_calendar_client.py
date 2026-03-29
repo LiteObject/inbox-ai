@@ -19,6 +19,10 @@ class CalendarAuthError(Exception):
     """Raised when Google Calendar authorization is no longer valid."""
 
 
+class CalendarEventNotFoundError(Exception):
+    """Raised when a requested Google Calendar event no longer exists."""
+
+
 class GoogleCalendarClient:
     """Client for interacting with Google Calendar API using OAuth 2.0."""
 
@@ -98,10 +102,7 @@ class GoogleCalendarClient:
             response.raise_for_status()
             tokens = response.json()
             self._access_token = tokens.get("access_token")
-            logger.info(
-                "Successfully refreshed access token (starts with: %s...)",
-                self._access_token[:10] if self._access_token else "None",
-            )
+            logger.info("Successfully refreshed access token")
             return tokens
 
     async def _ensure_valid_token(self) -> None:
@@ -138,6 +139,11 @@ class GoogleCalendarClient:
         self._access_token = access_token
         if refresh_token:
             self._refresh_token = refresh_token
+
+    @property
+    def access_token(self) -> str | None:
+        """Expose the current access token for callers that persist refreshes."""
+        return self._access_token
 
     async def list_calendars(self) -> list[dict[str, Any]]:
         """List all calendars available to the user."""
@@ -226,10 +232,7 @@ class GoogleCalendarClient:
                 logger.error("403 Forbidden Error Details:")
                 logger.error("Calendar ID: %s", target_calendar)
                 logger.error("Response: %s", response.text)
-                logger.error(
-                    "Access token (first 10 chars): %s...",
-                    self._access_token[:10] if self._access_token else "None",
-                )
+                logger.error("Access token present: %s", bool(self._access_token))
                 logger.error("Refresh token available: %s", bool(self._refresh_token))
 
             response.raise_for_status()
@@ -260,7 +263,7 @@ class GoogleCalendarClient:
 
             if response.status_code == 404:
                 logger.info("Calendar event %s returned 404", event_id)
-                raise Exception("404: Event not found")
+                raise CalendarEventNotFoundError("404: Event not found")
 
             if response.status_code != 200:
                 logger.error(
@@ -340,4 +343,8 @@ class GoogleCalendarClient:
         return f"https://calendar.google.com/calendar/r/events/{event_id}"
 
 
-__all__ = ["CalendarAuthError", "GoogleCalendarClient"]
+__all__ = [
+    "CalendarAuthError",
+    "CalendarEventNotFoundError",
+    "GoogleCalendarClient",
+]

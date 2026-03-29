@@ -542,6 +542,31 @@ document.addEventListener("DOMContentLoaded", async () => {
     const detailHost = document.getElementById('detail-content');
     const templateContainer = document.getElementById('detail-templates');
     const listPane = emailList?.closest('.md3-list-pane');
+    const calendarRailRoot = document.getElementById('calendar-rail');
+    const calendarRailData = document.getElementById('calendar-rail-data');
+    const staticAssetVersion = window.__INBOX_AI_STATIC_VERSION || 'dev';
+    let CalendarRailController = null;
+
+    if (calendarRailRoot && calendarRailData) {
+        try {
+            ({ default: CalendarRailController } = await import(`./calendar-rail.js?v=${encodeURIComponent(staticAssetVersion)}`));
+        } catch (error) {
+            console.error('Failed to load calendar rail controller:', error);
+        }
+    }
+
+    const calendarRail = CalendarRailController
+        ? new CalendarRailController({
+            root: calendarRailRoot,
+            dataRoot: calendarRailData,
+            onSelectEmail: (uid) => {
+                window.listDetailController?.selectItem(uid, {
+                    scroll: true,
+                    updateHistory: false,
+                });
+            },
+        })
+        : null;
 
     if (listDetailContainer && emailList && detailHost && templateContainer) {
         // Initialize lazy loading manager
@@ -599,6 +624,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                         console.error('Lazy loading failed:', error);
                     });
                 }
+                calendarRail?.setSelectedEmail(uid);
             },
         });
 
@@ -644,6 +670,7 @@ document.addEventListener("DOMContentLoaded", async () => {
                                 message: 'Once messages are available, this panel will show summaries, actions, and draft replies.',
                             },
                     });
+                    calendarRail?.setSelectedEmail(null);
                     return;
                 }
 

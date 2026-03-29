@@ -5,7 +5,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Inbox AI Dashboard</title>
-    {% set static_asset_version = '20260328f' %}
+    {% set static_asset_version = '20260328l' %}
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet" />
@@ -66,8 +66,8 @@
     <main class="md3-layout inbox-dashboard">
         <section class="md3-main-content">
             <div class="md3-toolbar">
-                <h2 class="toolbar-heading">Inbox Insights (<span id="insights-visible-count">{{ insights | length }}</span> / <span
-                    id="insights-total-count">{{ insights_total | default(0) }}</span>)</h2>
+                <h2 class="toolbar-heading">Inbox Insights (<span id="insights-visible-count">{{ insights | length
+                        }}</span> / <span id="insights-total-count">{{ insights_total | default(0) }}</span>)</h2>
 
                 <form class="filter-toolbar" id="filter-rail" method="get" data-scroll-restore
                     aria-label="Filter emails">
@@ -82,91 +82,96 @@
 
                     <select class="md3-select filter-toolbar__select" id="filter-category" name="category"
                         data-auto-submit aria-label="Category">
-                    <option value="" {% if not filters.category_key %}selected{% endif %}>All categories</option>
-                    {% for category in category_options %}
-                    <option value="{{ category.key }}" {% if filters.category_key==category.key %}selected{% endif %}>
-                        {{ category.label }}
-                    </option>
-                    {% endfor %}
-                </select>
+                        <option value="" {% if not filters.category_key %}selected{% endif %}>All categories</option>
+                        {% for category in category_options %}
+                        <option value="{{ category.key }}" {% if filters.category_key==category.key %}selected{% endif
+                            %}>
+                            {{ category.label }}
+                        </option>
+                        {% endfor %}
+                    </select>
 
-                <div class="filter-toolbar__more-anchor">
-                    <button class="md3-button md3-button--outlined filter-toolbar__more-btn" type="button"
-                        id="more-filters-toggle" aria-expanded="false" aria-controls="more-filters-popover">
-                        <span class="material-icons" aria-hidden="true">tune</span>
-                        <span>More</span>
-                        {% if filters.follow_status_value != 'all' or filters.follow_only or filters.insights_limit != 20 %}
-                        <span class="filter-toolbar__badge" aria-label="Advanced filters active"></span>
-                        {% endif %}
-                    </button>
-                    <div class="filter-popover" id="more-filters-popover" role="dialog"
-                        aria-label="Advanced filters" hidden>
-                        <div class="filter-popover__body">
-                            <div class="md3-field">
-                                <label for="filter-follow-status">Follow-up status</label>
-                                <select class="md3-select" id="filter-follow-status" name="follow_status"
-                                    data-auto-submit>
-                                    <option value="all" {% if filters.follow_status_value=='all' %}selected{% endif %}>
-                                        All statuses</option>
-                                    <option value="open" {% if filters.follow_status_value=='open' %}selected{% endif %}>
-                                        Open follow-ups</option>
-                                    <option value="done" {% if filters.follow_status_value=='done' %}selected{% endif %}>
-                                        Completed follow-ups</option>
-                                </select>
-                            </div>
-                            <div class="md3-field">
-                                <label for="filter-follow-only">Follow-ups</label>
-                                <select class="md3-select" id="filter-follow-only" name="follow_only"
-                                    data-auto-submit>
-                                    <option value="" {% if not filters.follow_only %}selected{% endif %}>Include all
-                                        insights</option>
-                                    <option value="1" {% if filters.follow_only %}selected{% endif %}>Only with
-                                        follow-ups</option>
-                                </select>
-                            </div>
-                            <div class="md3-field">
-                                <label for="filter-insights-limit">Insights limit</label>
-                                <input class="md3-input" id="filter-insights-limit" type="number"
-                                    name="insights_limit" min="1" max="100"
-                                    value="{{ filters.insights_limit }}" data-auto-submit />
+                    <div class="filter-toolbar__more-anchor">
+                        <button class="md3-button md3-button--outlined filter-toolbar__more-btn" type="button"
+                            id="more-filters-toggle" aria-expanded="false" aria-controls="more-filters-popover">
+                            <span class="material-icons" aria-hidden="true">tune</span>
+                            <span>More</span>
+                            {% if filters.follow_status_value != 'all' or filters.follow_only or filters.insights_limit
+                            != 20 %}
+                            <span class="filter-toolbar__badge" aria-label="Advanced filters active"></span>
+                            {% endif %}
+                        </button>
+                        <div class="filter-popover" id="more-filters-popover" role="dialog"
+                            aria-label="Advanced filters" hidden>
+                            <div class="filter-popover__body">
+                                <div class="md3-field">
+                                    <label for="filter-follow-status">Follow-up status</label>
+                                    <select class="md3-select" id="filter-follow-status" name="follow_status"
+                                        data-auto-submit>
+                                        <option value="all" {% if filters.follow_status_value=='all' %}selected{% endif
+                                            %}>
+                                            All statuses</option>
+                                        <option value="open" {% if filters.follow_status_value=='open' %}selected{%
+                                            endif %}>
+                                            Open follow-ups</option>
+                                        <option value="done" {% if filters.follow_status_value=='done' %}selected{%
+                                            endif %}>
+                                            Completed follow-ups</option>
+                                    </select>
+                                </div>
+                                <div class="md3-field">
+                                    <label for="filter-follow-only">Follow-ups</label>
+                                    <select class="md3-select" id="filter-follow-only" name="follow_only"
+                                        data-auto-submit>
+                                        <option value="" {% if not filters.follow_only %}selected{% endif %}>Include all
+                                            insights</option>
+                                        <option value="1" {% if filters.follow_only %}selected{% endif %}>Only with
+                                            follow-ups</option>
+                                    </select>
+                                </div>
+                                <div class="md3-field">
+                                    <label for="filter-insights-limit">Insights limit</label>
+                                    <input class="md3-input" id="filter-insights-limit" type="number"
+                                        name="insights_limit" min="1" max="100" value="{{ filters.insights_limit }}"
+                                        data-auto-submit />
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
 
-                {% if filters.priority_filter != 'all' or filters.category_key or filters.follow_status_value !=
-                'all' or filters.follow_only or filters.insights_limit != 20 %}
-                <div class="active-filter-chips" aria-label="Active filters">
-                    {% if filters.priority_filter != 'all' %}
-                    <span class="md3-chip">{{ filters.priority_filter }}</span>
+                    {% if filters.priority_filter != 'all' or filters.category_key or filters.follow_status_value !=
+                    'all' or filters.follow_only or filters.insights_limit != 20 %}
+                    <div class="active-filter-chips" aria-label="Active filters">
+                        {% if filters.priority_filter != 'all' %}
+                        <span class="md3-chip">{{ filters.priority_filter }}</span>
+                        {% endif %}
+                        {% if filters.category_key %}
+                        <span class="md3-chip">{{ filters.category_key }}</span>
+                        {% endif %}
+                        {% if filters.follow_status_value != 'all' %}
+                        <span class="md3-chip">{{ filters.follow_status_value }}</span>
+                        {% endif %}
+                        {% if filters.follow_only %}
+                        <span class="md3-chip">Follow-ups only</span>
+                        {% endif %}
+                        {% if filters.insights_limit != 20 %}
+                        <span class="md3-chip">Limit: {{ filters.insights_limit }}</span>
+                        {% endif %}
+                    </div>
                     {% endif %}
-                    {% if filters.category_key %}
-                    <span class="md3-chip">{{ filters.category_key }}</span>
-                    {% endif %}
-                    {% if filters.follow_status_value != 'all' %}
-                    <span class="md3-chip">{{ filters.follow_status_value }}</span>
-                    {% endif %}
-                    {% if filters.follow_only %}
-                    <span class="md3-chip">Follow-ups only</span>
-                    {% endif %}
-                    {% if filters.insights_limit != 20 %}
-                    <span class="md3-chip">Limit: {{ filters.insights_limit }}</span>
-                    {% endif %}
-                </div>
-                {% endif %}
 
-                <a class="md3-button md3-button--text filter-toolbar__reset" href="/"
-                    {% if filters.priority_filter == 'all' and not filters.category_key and
-                    filters.follow_status_value == 'all' and not filters.follow_only and
-                    filters.insights_limit == 20 %}hidden{% endif %}>
-                    <span class="material-icons" aria-hidden="true">restart_alt</span>
-                    Reset
-                </a>
+                    <a class="md3-button md3-button--text filter-toolbar__reset" href="/" {% if
+                        filters.priority_filter=='all' and not filters.category_key and
+                        filters.follow_status_value=='all' and not filters.follow_only and filters.insights_limit==20
+                        %}hidden{% endif %}>
+                        <span class="material-icons" aria-hidden="true">restart_alt</span>
+                        Reset
+                    </a>
 
-                <noscript>
-                    <button class="md3-button md3-button--filled" type="submit">Apply</button>
-                </noscript>
-            </form>
+                    <noscript>
+                        <button class="md3-button md3-button--filled" type="submit">Apply</button>
+                    </noscript>
+                </form>
 
                 <div class="toolbar-actions">
                     <form method="post" action="/sync" data-spinner data-scroll-restore
@@ -190,8 +195,8 @@
                     </div>
                     <div class="list-meta">
                         <div class="list-meta__actions">
-                            <form class="secondary-form" method="post" action="/emails/bulk-delete"
-                                data-scroll-restore data-spinner data-spinner-label="Moving emails to trash..."
+                            <form class="secondary-form" method="post" action="/emails/bulk-delete" data-scroll-restore
+                                data-spinner data-spinner-label="Moving emails to trash..."
                                 data-confirm="Move all listed emails to trash? You can recover them from your trash folder.">
                                 <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
                                 <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
@@ -686,9 +691,102 @@
                         {% endfor %}
                     </div>
                 </section>
+
+                <aside class="calendar-rail" id="calendar-rail" aria-labelledby="calendar-rail-heading">
+                    <div class="calendar-rail__header">
+                        <div class="calendar-rail__header-top">
+                            <div>
+                                <p class="calendar-rail__eyebrow">Planner</p>
+                                <h3 id="calendar-rail-heading">Follow-up planner</h3>
+                            </div>
+                            <button type="button" class="calendar-rail__toggle" id="calendar-rail-toggle"
+                                aria-expanded="true" aria-controls="calendar-rail-month calendar-rail-focus">
+                                <span class="material-icons" aria-hidden="true">visibility_off</span>
+                                <span>Hide calendar</span>
+                            </button>
+                        </div>
+                        <p class="calendar-rail__intro">Due dates, synced events, and what needs attention next.</p>
+                    </div>
+
+                    <section class="calendar-rail__section calendar-rail__section--month" id="calendar-rail-month"
+                        aria-label="Month view">
+                        <div class="calendar-rail__month-header">
+                            <button type="button" class="calendar-rail__nav" id="calendar-rail-prev"
+                                aria-label="Previous month">
+                                <span class="material-icons" aria-hidden="true">chevron_left</span>
+                            </button>
+                            <div>
+                                <p class="calendar-rail__month-label" id="calendar-rail-month-label">Month</p>
+                                <p class="calendar-rail__month-meta" id="calendar-rail-month-meta">Dated follow-ups</p>
+                            </div>
+                            <button type="button" class="calendar-rail__nav" id="calendar-rail-next"
+                                aria-label="Next month">
+                                <span class="material-icons" aria-hidden="true">chevron_right</span>
+                            </button>
+                        </div>
+
+                        <div class="calendar-rail__month-actions">
+                            <button type="button" class="calendar-rail__jump-today" id="calendar-rail-today">
+                                Today
+                            </button>
+                        </div>
+
+                        <div class="calendar-rail__weekday-row" aria-hidden="true">
+                            <span>Sun</span>
+                            <span>Mon</span>
+                            <span>Tue</span>
+                            <span>Wed</span>
+                            <span>Thu</span>
+                            <span>Fri</span>
+                            <span>Sat</span>
+                        </div>
+
+                        <div class="calendar-rail__grid" id="calendar-rail-grid"></div>
+                    </section>
+
+                    <section class="calendar-rail__section calendar-rail__section--focus" id="calendar-rail-focus"
+                        aria-labelledby="calendar-rail-focus-heading">
+                        <div class="calendar-rail__section-heading">
+                            <h4 id="calendar-rail-focus-heading">Selected email</h4>
+                            <span class="calendar-rail__section-meta" id="calendar-rail-focus-meta">Choose one</span>
+                        </div>
+                        <div class="calendar-rail__focus-body" id="calendar-rail-focus-body">
+                            <p>Select an email to pin its due dates on the month grid.</p>
+                        </div>
+                    </section>
+
+                    <section class="calendar-rail__section calendar-rail__section--agenda"
+                        aria-labelledby="calendar-rail-agenda-heading">
+                        <div class="calendar-rail__section-heading">
+                            <h4 id="calendar-rail-agenda-heading">Agenda</h4>
+                            <span class="calendar-rail__section-meta" id="calendar-rail-agenda-meta">Due now through
+                                next week</span>
+                        </div>
+                        <div class="calendar-rail__agenda" id="calendar-rail-agenda">
+                            <p class="calendar-rail__empty-copy">Nothing urgent yet. Open follow-ups due soon will
+                                appear here.</p>
+                        </div>
+                    </section>
+                </aside>
             </div>
         </section>
     </main>
+
+    <div id="calendar-rail-data" hidden aria-hidden="true">
+        {% for item in insights %}
+        {% for task in item.followUps %}
+        <div data-calendar-rail-task data-task-id="{{ task.id }}" data-email-uid="{{ item.uid }}"
+            data-email-subject="{{ item.subject | default('', true) | e }}"
+            data-email-sender="{{ item.sender | default('', true) | e }}"
+            data-task-action="{{ task.action | default('', true) | e }}"
+            data-task-status="{{ task.status | default('', true) | e }}"
+            data-task-due-at="{{ task.dueAt | default('', true) | e }}"
+            data-task-due-display="{{ task.dueAtDisplay | default('', true) | e }}"
+            data-calendar-event-id="{{ task.calendarEventId | default('', true) | e }}">
+        </div>
+        {% endfor %}
+        {% endfor %}
+    </div>
 
     <!-- Floating Action Button for Compose -->
     <button class="md3-fab md3-fab--primary" id="compose-fab" type="button" aria-label="Compose new email"
@@ -767,6 +865,9 @@
         </div>
     </dialog>
 
+    <script>
+        window.__INBOX_AI_STATIC_VERSION = "{{ static_asset_version }}";
+    </script>
     <script src="{{ url_for('static', path='js/tabs.js') }}?v={{ static_asset_version }}"></script>
     <script type="module" src="{{ url_for('static', path='js/calendar.js') }}?v={{ static_asset_version }}"></script>
     <script src="{{ url_for('static', path='js/compose.js') }}?v={{ static_asset_version }}"></script>

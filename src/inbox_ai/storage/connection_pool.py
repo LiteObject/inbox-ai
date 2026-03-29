@@ -14,9 +14,7 @@ Features:
 
 import asyncio
 import logging
-import sqlite3
 from contextlib import asynccontextmanager, contextmanager
-from pathlib import Path
 from queue import Empty, Queue
 from threading import Lock
 from typing import Iterator
@@ -47,7 +45,7 @@ class ConnectionPool:
 
         # Pre-create connections
         for _ in range(pool_size):
-            self._create_connection()
+            self._pool.put(self._create_connection())
 
         LOGGER.info("Initialized connection pool with %d connections", pool_size)
 
@@ -58,7 +56,6 @@ class ConnectionPool:
                 raise RuntimeError("Connection pool is closed")
 
             repository = SqliteEmailRepository(self.settings)
-            self._pool.put(repository)
             self._created_count += 1
             LOGGER.debug("Created connection #%d", self._created_count)
             return repository
@@ -74,10 +71,8 @@ class ConnectionPool:
             True if connection is healthy, False otherwise
         """
         try:
-            # Simple health check - execute a trivial query
-            repository._connection.execute("SELECT 1")
-            return True
-        except (sqlite3.Error, AttributeError):
+            return repository.is_healthy()
+        except AttributeError:
             LOGGER.warning("Connection validation failed, will create new connection")
             return False
 
@@ -120,7 +115,10 @@ class ConnectionPool:
         finally:
             # Return connection to pool
             if repository is not None:
-                self._pool.put(repository)
+                if self._closed:
+                    repository.close()
+                else:
+                    self._pool.put(repository)
 
     @asynccontextmanager
     async def acquire_async(
@@ -151,12 +149,12 @@ class ConnectionPool:
                 try:
                     repository = self._pool.get_nowait()
                     break
-                except Empty:
+                except Empty as exc:
                     elapsed = asyncio.get_event_loop().time() - start_time
                     if elapsed >= timeout:
                         raise TimeoutError(
                             f"Could not acquire connection within {timeout} seconds"
-                        )
+                        ) from exc
                     # Wait a bit before retrying
                     await asyncio.sleep(0.01)
 
@@ -164,14 +162,16 @@ class ConnectionPool:
             if not self._validate_connection(repository):
                 repository.close()
                 repository = self._create_connection()
-                repository = self._pool.get(timeout=timeout)
 
             yield repository
 
         finally:
             # Return connection to pool
             if repository is not None:
-                self._pool.put(repository)
+                if self._closed:
+                    repository.close()
+                else:
+                    self._pool.put(repository)
 
     def close(self) -> None:
         """Close all connections in the pool."""

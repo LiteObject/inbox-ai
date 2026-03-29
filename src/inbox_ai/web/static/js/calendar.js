@@ -96,6 +96,13 @@ import { ToastManager } from "./modules/toast.js";
             taskElement.dataset.calendarEventId = followUpData.calendarEventId || '';
             taskElement.dataset.calendarSyncedAt = followUpData.calendarSyncedAt || '';
         }
+
+        window.dispatchEvent(new CustomEvent('inboxai:calendar-followup-updated', {
+            detail: {
+                taskId,
+                followUp: followUpData,
+            },
+        }));
     }
 
     // Convert sync button to view button

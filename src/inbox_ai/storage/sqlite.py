@@ -701,6 +701,20 @@ class SqliteEmailRepository(EmailRepository):
         row = cur.fetchone()
         return int(row[0]) if row is not None else 0
 
+    def count_follow_ups(self) -> int:
+        """Return the total number of stored follow-up tasks."""
+        cur = self._connection.execute("SELECT COUNT(*) FROM follow_ups")
+        row = cur.fetchone()
+        return int(row[0]) if row is not None else 0
+
+    def is_healthy(self) -> bool:
+        """Return whether the underlying SQLite connection is usable."""
+        try:
+            self._connection.execute("SELECT 1")
+        except sqlite3.Error:
+            return False
+        return True
+
     def list_recent_drafts(self, limit: int) -> list[DraftRecord]:
         """Return recently generated drafts ordered by generation timestamp."""
         cur = self._connection.execute(

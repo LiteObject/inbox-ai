@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import os
 from datetime import datetime, timezone
+from urllib.parse import parse_qsl, urlsplit
 
 from fastapi.testclient import TestClient
 
@@ -12,6 +13,7 @@ from inbox_ai.calendar.google_calendar_client import CalendarAuthError
 from inbox_ai.core.config import (
     AppSettings,
     CalendarSettings,
+    ImapSettings,
     LlmSettings,
     StorageSettings,
 )
@@ -527,7 +529,7 @@ def test_calendar_status_clears_stale_tokens_on_auth_failure(
     repository.set_user_preference("calendar_refresh_token", "refresh-token")
     repository.close()
 
-    async def fake_list_calendars(self) -> list[dict[str, str]]:
+    async def fake_list_calendars(_self) -> list[dict[str, str]]:
         raise CalendarAuthError(
             "Google Calendar authorization expired. Please reconnect."
         )
@@ -556,6 +558,7 @@ def test_calendar_status_clears_stale_tokens_on_auth_failure(
         "connected": False,
         "configured": True,
         "selected_calendar": "primary",
+        "account_email": None,
         "reauth_required": True,
         "error": "Google Calendar authorization expired. Please reconnect.",
     }
@@ -563,6 +566,122 @@ def test_calendar_status_clears_stale_tokens_on_auth_failure(
     with SqliteEmailRepository(settings) as verification_repo:
         assert verification_repo.get_user_preference("calendar_access_token") is None
         assert verification_repo.get_user_preference("calendar_refresh_token") is None
+
+
+def test_calendar_status_uses_account_scoped_preferences(tmp_path, monkeypatch) -> None:
+    db_path = tmp_path / "web_calendar_scoped_status.db"
+    settings = StorageSettings(db_path=db_path)
+    repository = SqliteEmailRepository(settings)
+    repository.set_user_preference(
+        "calendar_access_token:owner@example.com", "access-token"
+    )
+    repository.set_user_preference(
+        "calendar_selected_calendar:owner@example.com", "team-calendar"
+    )
+    repository.close()
+
+    async def fake_list_calendars(_self) -> list[dict[str, str]]:
+        return [
+            {"id": "primary", "summary": "Personal"},
+            {"id": "team-calendar", "summary": "Team"},
+        ]
+
+    monkeypatch.setattr(
+        web_app_module.GoogleCalendarClient,
+        "list_calendars",
+        fake_list_calendars,
+    )
+
+    app_settings = AppSettings(
+        storage=settings,
+        imap=ImapSettings(username="owner@example.com"),
+        calendar=CalendarSettings(
+            enabled=True,
+            client_id="client-id",
+            client_secret="client-secret",
+        ),
+    )
+    app = create_app(app_settings)
+    client = TestClient(app)
+
+    response = client.get("/api/calendar/status")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "connected": True,
+        "configured": True,
+        "selected_calendar": "team-calendar",
+        "account_email": "owner@example.com",
+        "calendars": [
+            {"id": "primary", "summary": "Personal"},
+            {"id": "team-calendar", "summary": "Team"},
+        ],
+    }
+
+
+def test_calendar_select_persists_selected_calendar_for_current_account(
+    tmp_path, monkeypatch
+) -> None:
+    db_path = tmp_path / "web_calendar_select.db"
+    settings = StorageSettings(db_path=db_path)
+    repository = SqliteEmailRepository(settings)
+    repository.set_user_preference(
+        "calendar_access_token:owner@example.com", "access-token"
+    )
+    repository.set_user_preference(
+        "calendar_refresh_token:owner@example.com", "refresh-token"
+    )
+    repository.close()
+
+    async def fake_list_calendars(_self) -> list[dict[str, str]]:
+        return [
+            {"id": "primary", "summary": "Personal"},
+            {"id": "team-calendar", "summary": "Team"},
+        ]
+
+    monkeypatch.setattr(
+        web_app_module.GoogleCalendarClient,
+        "list_calendars",
+        fake_list_calendars,
+    )
+
+    app_settings = AppSettings(
+        storage=settings,
+        imap=ImapSettings(username="owner@example.com"),
+        calendar=CalendarSettings(
+            enabled=True,
+            client_id="client-id",
+            client_secret="client-secret",
+        ),
+    )
+    app = create_app(app_settings)
+    client = TestClient(app)
+
+    client.get("/")
+    csrf_token = client.cookies.get(CSRF_COOKIE_NAME)
+    assert csrf_token is not None
+
+    response = client.post(
+        "/api/calendar/select",
+        data={"calendar_id": "team-calendar"},
+        headers={"X-CSRF-Token": csrf_token},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "success": True,
+        "selected_calendar": "team-calendar",
+        "selected_calendar_summary": "Team",
+        "account_email": "owner@example.com",
+    }
+
+    with SqliteEmailRepository(settings) as verification_repo:
+        assert (
+            verification_repo.get_user_preference(
+                "calendar_selected_calendar:owner@example.com"
+            )
+            == "team-calendar"
+        )
 
 
 def test_calendar_sync_clears_stale_tokens_on_auth_failure(
@@ -617,3 +736,28 @@ def test_calendar_sync_clears_stale_tokens_on_auth_failure(
     with SqliteEmailRepository(settings) as verification_repo:
         assert verification_repo.get_user_preference("calendar_access_token") is None
         assert verification_repo.get_user_preference("calendar_refresh_token") is None
+
+
+def test_calendar_callback_encodes_error_redirect(tmp_path) -> None:
+    db_path = tmp_path / "web_calendar_callback.db"
+    settings = StorageSettings(db_path=db_path)
+
+    app = create_app(AppSettings(storage=settings))
+    client = TestClient(app)
+
+    response = client.get(
+        "/calendar/callback?error=access_denied%26next%3Dhttps%3A%2F%2Fevil.example",
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    location = response.headers["location"]
+    parsed = urlsplit(location)
+    params = dict(parse_qsl(parsed.query, keep_blank_values=True))
+
+    assert parsed.path == "/settings"
+    assert parsed.fragment == "calendar"
+    assert params == {
+        "config_status": "calendar_auth_failed",
+        "error": "access_denied&next=https://evil.example",
+    }
