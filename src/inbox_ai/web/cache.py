@@ -99,10 +99,12 @@ class SimpleCache:
             parts: Key components to hash together
 
         Returns:
-            MD5 hash of combined parts
+            Scoped cache key with a readable prefix and hashed payload
         """
         combined = "|".join(str(p) if p is not None else "None" for p in parts)
-        return hashlib.md5(combined.encode("utf-8")).hexdigest()
+        prefix = str(parts[0]) if parts else "cache"
+        digest = hashlib.md5(combined.encode("utf-8")).hexdigest()
+        return f"{prefix}:{digest}"
 
 
 # Global cache instance

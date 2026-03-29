@@ -192,6 +192,46 @@ def test_delete_email_api_returns_json(tmp_path, monkeypatch) -> None:
     }
 
 
+def test_dashboard_refresh_does_not_show_deleted_email(tmp_path, monkeypatch) -> None:
+    db_path = tmp_path / "web_delete_refresh.db"
+    settings = StorageSettings(db_path=db_path)
+    repository = SqliteEmailRepository(settings)
+    _seed_data(repository)
+    repository.close()
+
+    app_settings = AppSettings(storage=settings)
+    app = create_app(app_settings)
+    client = TestClient(app)
+
+    initial_response = client.get("/")
+    assert initial_response.status_code == 200
+    assert "Status update" in initial_response.text
+
+    csrf_token = client.cookies.get(CSRF_COOKIE_NAME)
+    assert csrf_token is not None
+
+    def fake_delete_email(
+        _settings: AppSettings, uid: int, repository: SqliteEmailRepository
+    ) -> DeleteOutcome:
+        deleted = repository.delete_email(uid)
+        assert deleted is True
+        return DeleteOutcome(success=True, message=f"Message UID {uid} deleted.")
+
+    monkeypatch.setattr(web_app_module, "_delete_email", fake_delete_email)
+
+    delete_response = client.delete(
+        "/api/emails/1",
+        headers={"X-CSRF-Token": csrf_token},
+    )
+
+    assert delete_response.status_code == 200
+    assert delete_response.json()["success"] is True
+
+    refreshed_response = client.get("/")
+    assert refreshed_response.status_code == 200
+    assert "Status update" not in refreshed_response.text
+
+
 def test_manual_sync_endpoint_handles_missing_credentials(tmp_path) -> None:
     db_path = tmp_path / "web_sync.db"
     settings = StorageSettings(db_path=db_path)
