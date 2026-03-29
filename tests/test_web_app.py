@@ -715,6 +715,125 @@ def test_calendar_select_persists_selected_calendar_for_current_account(
         )
 
 
+def test_calendar_events_return_selected_calendar_items(tmp_path, monkeypatch) -> None:
+    db_path = tmp_path / "web_calendar_events.db"
+    settings = StorageSettings(db_path=db_path)
+    repository = SqliteEmailRepository(settings)
+    repository.set_user_preference(
+        "calendar_access_token:owner@example.com", "access-token"
+    )
+    repository.set_user_preference(
+        "calendar_refresh_token:owner@example.com", "refresh-token"
+    )
+    repository.set_user_preference(
+        "calendar_selected_calendar:owner@example.com", "team-calendar"
+    )
+    repository.close()
+
+    captured: dict[str, object] = {}
+
+    async def fake_list_events(self, time_min, time_max, calendar_id=None):
+        captured["time_min"] = time_min
+        captured["time_max"] = time_max
+        captured["calendar_id"] = calendar_id
+        return [
+            {
+                "id": "external-1",
+                "summary": "Team offsite",
+                "start": {"dateTime": "2026-03-28T15:00:00Z"},
+                "end": {"dateTime": "2026-03-28T16:00:00Z"},
+                "htmlLink": "https://calendar.google.com/calendar/event?eid=external-1",
+                "location": "Conference room",
+                "status": "confirmed",
+            },
+            {
+                "id": "cancelled-1",
+                "summary": "Cancelled item",
+                "start": {"dateTime": "2026-03-29T15:00:00Z"},
+                "end": {"dateTime": "2026-03-29T16:00:00Z"},
+                "status": "cancelled",
+            },
+        ]
+
+    monkeypatch.setattr(
+        web_app_module.GoogleCalendarClient,
+        "list_events",
+        fake_list_events,
+    )
+
+    app_settings = AppSettings(
+        storage=settings,
+        imap=ImapSettings(username="owner@example.com"),
+        calendar=CalendarSettings(
+            enabled=True,
+            client_id="client-id",
+            client_secret="client-secret",
+        ),
+    )
+    app = create_app(app_settings)
+    client = TestClient(app)
+
+    response = client.get(
+        "/api/calendar/events?start=2026-03-28T00:00:00Z&end=2026-04-01T00:00:00Z"
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert payload["configured"] is True
+    assert payload["connected"] is True
+    assert payload["selected_calendar"] == "team-calendar"
+    assert len(payload["events"]) == 1
+    assert payload["events"][0]["id"] == "external-1"
+    assert payload["events"][0]["summary"] == "Team offsite"
+    assert payload["events"][0]["location"] == "Conference room"
+    assert payload["events"][0]["eventUrl"] == (
+        "https://calendar.google.com/calendar/event?eid=external-1"
+    )
+    starts_at = datetime.fromisoformat(payload["events"][0]["startsAt"])
+    assert starts_at.astimezone(timezone.utc) == datetime(
+        2026,
+        3,
+        28,
+        15,
+        0,
+        tzinfo=timezone.utc,
+    )
+    assert captured == {
+        "time_min": datetime(2026, 3, 28, 0, 0, tzinfo=timezone.utc),
+        "time_max": datetime(2026, 4, 1, 0, 0, tzinfo=timezone.utc),
+        "calendar_id": "team-calendar",
+    }
+
+
+def test_calendar_events_return_empty_list_when_not_connected(tmp_path) -> None:
+    db_path = tmp_path / "web_calendar_events_not_connected.db"
+    settings = StorageSettings(db_path=db_path)
+
+    app_settings = AppSettings(
+        storage=settings,
+        calendar=CalendarSettings(
+            enabled=True,
+            client_id="client-id",
+            client_secret="client-secret",
+        ),
+    )
+    app = create_app(app_settings)
+    client = TestClient(app)
+
+    response = client.get(
+        "/api/calendar/events?start=2026-03-28T00:00:00Z&end=2026-04-01T00:00:00Z"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "success": True,
+        "configured": True,
+        "connected": False,
+        "events": [],
+    }
+
+
 def test_calendar_sync_clears_stale_tokens_on_auth_failure(
     tmp_path, monkeypatch
 ) -> None:
