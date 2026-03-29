@@ -1441,6 +1441,11 @@ h2.toolbar-heading {
     gap: var(--md3-spacing-8);
 }
 
+.calendar-rail__focus-list {
+    display: grid;
+    gap: var(--md3-spacing-8);
+}
+
 .calendar-rail__focus-kicker {
     text-transform: uppercase;
     letter-spacing: 0.06em;

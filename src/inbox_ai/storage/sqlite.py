@@ -1221,6 +1221,33 @@ class SqliteEmailRepository(EmailRepository):
             ),
         )
 
+    def create_follow_up(self, task: FollowUpTask) -> int:
+        """Insert a single follow-up task and return its new ID."""
+        with self._connection:
+            cur = self._connection.execute(
+                """
+                INSERT INTO follow_ups (
+                    email_uid, action, due_at, status, created_at,
+                    completed_at, calendar_event_id, calendar_synced_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    task.email_uid,
+                    task.action,
+                    task.due_at.isoformat() if task.due_at else None,
+                    task.status,
+                    task.created_at.isoformat(),
+                    task.completed_at.isoformat() if task.completed_at else None,
+                    task.calendar_event_id,
+                    (
+                        task.calendar_synced_at.isoformat()
+                        if task.calendar_synced_at
+                        else None
+                    ),
+                ),
+            )
+            return cur.lastrowid
+
     def update_follow_up_calendar_sync(
         self, follow_up_id: int, calendar_event_id: str | None
     ) -> None:
@@ -1452,6 +1479,7 @@ class SqliteEmailRepository(EmailRepository):
             "009_sent_drafts": self._apply_sent_drafts_migration,
             "010_calendar_sync": self._apply_calendar_sync_migration,
             "011_feedback": self._apply_feedback_migration,
+            "013_nullable_follow_up_email_uid": self._apply_nullable_email_uid_migration,
         }.get(name, self._apply_default_migration)
 
     def _apply_default_migration(self, script: str) -> None:
@@ -1612,6 +1640,64 @@ class SqliteEmailRepository(EmailRepository):
 
             with self._connection:
                 self._connection.execute(stmt)
+
+    def _apply_nullable_email_uid_migration(self, _script: str) -> None:
+        """Make follow_ups.email_uid nullable by recreating the table if needed."""
+        columns = {
+            row["name"]: row
+            for row in self._connection.execute("PRAGMA table_info(follow_ups)")
+        }
+        email_uid_col = columns.get("email_uid")
+        if email_uid_col is None:
+            return
+        if email_uid_col["notnull"] == 0:
+            LOGGER.debug("follow_ups.email_uid is already nullable, skipping")
+            return
+
+        LOGGER.info("Recreating follow_ups table to make email_uid nullable")
+        with self._connection:
+            self._connection.execute(
+                """
+                CREATE TABLE follow_ups_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    email_uid INTEGER,
+                    action TEXT NOT NULL,
+                    due_at TEXT,
+                    status TEXT NOT NULL DEFAULT 'open',
+                    created_at TEXT NOT NULL,
+                    completed_at TEXT,
+                    calendar_event_id TEXT,
+                    calendar_synced_at TEXT,
+                    FOREIGN KEY (email_uid) REFERENCES emails(uid) ON DELETE CASCADE
+                )
+                """
+            )
+            self._connection.execute(
+                """
+                INSERT INTO follow_ups_new (
+                    id, email_uid, action, due_at, status, created_at,
+                    completed_at, calendar_event_id, calendar_synced_at
+                )
+                SELECT id, email_uid, action, due_at, status, created_at,
+                       completed_at, calendar_event_id, calendar_synced_at
+                FROM follow_ups
+                """
+            )
+            self._connection.execute("DROP TABLE follow_ups")
+            self._connection.execute("ALTER TABLE follow_ups_new RENAME TO follow_ups")
+            self._connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_followups_status ON follow_ups(status)"
+            )
+            self._connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_followups_due ON follow_ups(due_at)"
+            )
+            self._connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_follow_ups_calendar_event_id
+                ON follow_ups(calendar_event_id)
+                WHERE calendar_event_id IS NOT NULL
+                """
+            )
 
     def _ensure_indexes(self) -> None:
         """Create supporting indexes that may be missing from older schemas."""

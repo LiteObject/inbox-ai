@@ -29,6 +29,23 @@ function parseDateValue(value) {
     return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+function formatDateKey(dateKey) {
+    if (!dateKey) {
+        return 'Selected day';
+    }
+
+    const parsed = parseDateValue(`${dateKey}T00:00:00`);
+    if (!parsed) {
+        return 'Selected day';
+    }
+
+    return parsed.toLocaleDateString(undefined, {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+    });
+}
+
 function parseTaskNode(node) {
     const dueDate = parseDateValue(node.dataset.taskDueAt || '');
 
@@ -55,8 +72,11 @@ function parseTaskNode(node) {
 }
 
 function normalizeCalendarEvent(event) {
-    const dueDate = parseDateValue(event.startsAt || '');
+    const dueDate = event.isAllDay && event.dateKey
+        ? parseDateValue(`${event.dateKey}T12:00:00`)
+        : parseDateValue(event.startsAt || '');
     const eventId = event.id || '';
+    const dateKey = event.dateKey || (dueDate ? toDateKey(dueDate) : null);
 
     return {
         sourceType: 'calendar-event',
@@ -69,7 +89,7 @@ function normalizeCalendarEvent(event) {
         dueAt: event.startsAt || '',
         dueAtDisplay: event.startsAtDisplay || 'Scheduled',
         dueDate,
-        dateKey: dueDate ? toDateKey(dueDate) : null,
+        dateKey,
         calendarEventId: eventId,
         calendarEventUrl: event.eventUrl || '',
         sourceLabel: event.location
@@ -90,6 +110,25 @@ function compareTasks(a, b) {
         return 1;
     }
     return a.action.localeCompare(b.action);
+}
+
+function normalizeGroupingText(value) {
+    return (value || '')
+        .trim()
+        .replace(/\s+/g, ' ')
+        .toLowerCase();
+}
+
+function toMinuteKey(date) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+        return '';
+    }
+
+    return date.toISOString().slice(0, 16);
+}
+
+function compareDisplayItems(left, right) {
+    return compareTasks(left.primaryTask, right.primaryTask);
 }
 
 const CALENDAR_RAIL_COLLAPSED_STORAGE_KEY = 'dashboard.calendarRail.calendarCollapsed';
@@ -175,6 +214,108 @@ export class CalendarRailController {
         });
 
         return entries.sort(compareTasks);
+    }
+
+    getPairingKey(task) {
+        if (!task?.dateKey) {
+            return null;
+        }
+
+        const titleKey = normalizeGroupingText(task.action);
+        if (!titleKey) {
+            return null;
+        }
+
+        const momentKey = task.isAllDay
+            ? `${task.dateKey}|all-day`
+            : toMinuteKey(task.dueDate);
+        if (!momentKey) {
+            return null;
+        }
+
+        return `${task.dateKey}|${momentKey}|${titleKey}`;
+    }
+
+    buildDisplayItem(task) {
+        return {
+            id: `single:${task.taskId}`,
+            sourceType: task.sourceType,
+            primaryTask: task,
+            followUp: task.sourceType === 'follow-up' ? task : null,
+            calendarEvent: task.sourceType === 'calendar-event' ? task : null,
+            dueDate: task.dueDate,
+            dateKey: task.dateKey,
+            dueAtDisplay: task.dueAtDisplay,
+            emailUid: task.emailUid || '',
+            status: task.status,
+        };
+    }
+
+    buildPairedDisplayItem(followUp, calendarEvent) {
+        return {
+            id: `paired:${followUp.taskId}:${calendarEvent.taskId}`,
+            sourceType: 'paired',
+            primaryTask: followUp,
+            followUp,
+            calendarEvent,
+            dueDate: followUp.dueDate || calendarEvent.dueDate,
+            dateKey: followUp.dateKey || calendarEvent.dateKey,
+            dueAtDisplay: followUp.dueAtDisplay || calendarEvent.dueAtDisplay,
+            emailUid: followUp.emailUid || '',
+            status: followUp.status,
+        };
+    }
+
+    getDisplayItems(entries = this.getAllEntries()) {
+        const groupedEntries = new Map();
+        const displayItems = [];
+
+        entries.forEach((entry) => {
+            const pairingKey = this.getPairingKey(entry);
+            if (!pairingKey) {
+                displayItems.push(this.buildDisplayItem(entry));
+                return;
+            }
+
+            if (!groupedEntries.has(pairingKey)) {
+                groupedEntries.set(pairingKey, {
+                    followUps: [],
+                    calendarEvents: [],
+                });
+            }
+
+            const bucket = groupedEntries.get(pairingKey);
+            if (entry.sourceType === 'follow-up') {
+                bucket.followUps.push(entry);
+            } else if (entry.sourceType === 'calendar-event') {
+                bucket.calendarEvents.push(entry);
+            } else {
+                displayItems.push(this.buildDisplayItem(entry));
+            }
+        });
+
+        groupedEntries.forEach((bucket) => {
+            bucket.followUps.sort(compareTasks);
+            bucket.calendarEvents.sort(compareTasks);
+
+            while (bucket.followUps.length > 0 && bucket.calendarEvents.length > 0) {
+                displayItems.push(
+                    this.buildPairedDisplayItem(
+                        bucket.followUps.shift(),
+                        bucket.calendarEvents.shift(),
+                    ),
+                );
+            }
+
+            bucket.followUps.forEach((entry) => {
+                displayItems.push(this.buildDisplayItem(entry));
+            });
+            bucket.calendarEvents.forEach((entry) => {
+                displayItems.push(this.buildDisplayItem(entry));
+            });
+        });
+
+        return displayItems.sort(compareDisplayItems);
     }
 
     getVisibleMonthRange() {
@@ -344,7 +485,7 @@ export class CalendarRailController {
 
     selectDate(dateKey) {
         this.selectedDateKey = dateKey;
-        this.renderCalendarGrid();
+        this.render();
     }
 
     selectTask(task) {
@@ -537,10 +678,82 @@ export class CalendarRailController {
         }
     }
 
+    async convertEventToFollowUp(eventId, summary, startsAt, button) {
+        const originalLabel = button?.innerHTML || '';
+
+        if (button) {
+            button.disabled = true;
+            button.innerHTML = '<span class="material-icons rotating" aria-hidden="true">hourglass_empty</span>';
+        }
+
+        try {
+            const response = await fetch('/api/calendar/events/to-follow-up', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': this.getCsrfToken(),
+                },
+                body: JSON.stringify({
+                    eventId: eventId || '',
+                    summary: summary || '',
+                    startsAt: startsAt || '',
+                }),
+            });
+
+            const data = await response.json();
+            if (!response.ok || !data.success || !data.followUp) {
+                throw new Error(data.error || 'Failed to create follow-up');
+            }
+
+            if (data.already_exists) {
+                window.InboxAI?.toast?.show?.('Follow-up already exists for this event.', 'info');
+            } else {
+                const followUp = data.followUp;
+                const dueDate = parseDateValue(followUp.dueAt || '');
+                this.followUpTasks.push({
+                    sourceType: 'follow-up',
+                    taskId: String(followUp.id),
+                    emailUid: '',
+                    emailSubject: 'Google Calendar',
+                    emailSender: 'Google Calendar',
+                    action: followUp.action || summary,
+                    status: followUp.status || 'open',
+                    dueAt: followUp.dueAt || '',
+                    dueAtDisplay: followUp.dueAtDisplay || 'No due date',
+                    completedAt: followUp.completedAt || '',
+                    dueDate,
+                    dateKey: dueDate ? toDateKey(dueDate) : null,
+                    calendarEventId: followUp.calendarEventId || '',
+                    calendarEventUrl: followUp.calendarEventId
+                        ? `https://calendar.google.com/calendar/r/events/${followUp.calendarEventId}`
+                        : '',
+                    sourceLabel: 'Follow-up',
+                    isAllDay: false,
+                });
+                this.followUpTasks.sort(compareTasks);
+                window.InboxAI?.toast?.show?.('Follow-up created from calendar event.', 'success');
+            }
+
+            this.render();
+        } catch (error) {
+            console.error('Failed to create follow-up from calendar event:', error);
+            window.InboxAI?.toast?.show?.(
+                error instanceof Error ? error.message : 'Failed to create follow-up',
+                'error',
+            );
+
+            if (button) {
+                button.disabled = false;
+                button.innerHTML = originalLabel;
+            }
+        }
+    }
+
     buildAgendaGroups() {
         const today = startOfDay(new Date());
         const nextWeekEnd = addDays(today, 7);
-        const agendaTasks = this.getAllEntries().filter((task) => task.dueDate && task.status !== 'done');
+        const agendaEntries = this.getAllEntries().filter((task) => task.dueDate && task.status !== 'done');
+        const agendaTasks = this.getDisplayItems(agendaEntries);
 
         return [
             {
@@ -604,7 +817,7 @@ export class CalendarRailController {
     }
 
     renderMonthHeader() {
-        const entries = this.getAllEntries();
+        const entries = this.getDisplayItems();
         const monthFormatter = new Intl.DateTimeFormat(undefined, {
             month: 'long',
             year: 'numeric',
@@ -633,7 +846,7 @@ export class CalendarRailController {
         const monthStart = new Date(this.currentMonth.getFullYear(), this.currentMonth.getMonth(), 1);
         const gridStart = new Date(monthStart);
         gridStart.setDate(monthStart.getDate() - monthStart.getDay());
-        const entries = this.getAllEntries();
+        const entries = this.getDisplayItems();
 
         const todayKey = toDateKey(new Date());
         const focusDateKeys = new Set(
@@ -672,37 +885,69 @@ export class CalendarRailController {
     }
 
     renderFocus() {
-        if (!this.selectedEmailUid) {
-            this.focusMeta.textContent = 'Choose one';
-            this.focusBody.innerHTML = '<p>Select an email to pin its due dates on the month grid.</p>';
+        const selectedDateLabel = formatDateKey(this.selectedDateKey);
+        const entries = this.getDisplayItems()
+            .filter((task) => task.dateKey === this.selectedDateKey)
+            .sort(compareDisplayItems);
+        const pinnedEntries = this.selectedEmailUid
+            ? entries.filter((task) => task.emailUid === this.selectedEmailUid)
+            : [];
+
+        this.focusMeta.textContent = entries.length === 0
+            ? 'Nothing scheduled'
+            : `${entries.length} item${entries.length === 1 ? '' : 's'}`;
+
+        if (entries.length === 0) {
+            this.focusBody.innerHTML = `
+                <p class="calendar-rail__focus-kicker">Selected day</p>
+                <p class="calendar-rail__focus-title">${selectedDateLabel}</p>
+                <p class="calendar-rail__focus-caption">No follow-ups or calendar events are scheduled for this day.</p>
+            `;
             return;
         }
 
-        const emailTasks = this.followUpTasks.filter((task) => task.emailUid === this.selectedEmailUid);
-        const firstTask = emailTasks[0];
+        const chipMarkup = [
+            `<span class="calendar-rail__focus-chip">${entries.filter((task) => task.calendarEvent).length} calendar</span>`,
+            `<span class="calendar-rail__focus-chip">${entries.filter((task) => task.followUp).length} follow-up${entries.filter((task) => task.followUp).length === 1 ? '' : 's'}</span>`,
+            pinnedEntries.length > 0
+                ? `<span class="calendar-rail__focus-chip">${pinnedEntries.length} for selected email</span>`
+                : '',
+        ].filter(Boolean).join('');
 
-        if (!firstTask) {
-            this.focusMeta.textContent = 'No follow-ups';
-            this.focusBody.innerHTML = '<p>This email does not have follow-up tasks yet.</p>';
-            return;
-        }
-
-        const openTasks = emailTasks.filter((task) => task.status !== 'done').length;
-        const datedTasks = emailTasks.filter((task) => task.dueDate);
-        const nextDue = datedTasks[0]?.dueAtDisplay || 'No due date';
-
-        this.focusMeta.textContent = openTasks === 0
-            ? 'All done'
-            : `${openTasks} open`;
         this.focusBody.innerHTML = `
-            <p class="calendar-rail__focus-kicker">Selected message</p>
-            <p class="calendar-rail__focus-title">${firstTask.emailSubject}</p>
-            <p class="calendar-rail__focus-caption">${firstTask.emailSender}</p>
-            <div class="calendar-rail__focus-chip-row">
-                <span class="calendar-rail__focus-chip">${emailTasks.length} total</span>
-                <span class="calendar-rail__focus-chip">Due: ${nextDue}</span>
+            <p class="calendar-rail__focus-kicker">Selected day</p>
+            <p class="calendar-rail__focus-title">${selectedDateLabel}</p>
+            <div class="calendar-rail__focus-chip-row">${chipMarkup}</div>
+            <div class="calendar-rail__focus-list">
+                ${entries.map((task) => `
+                    <div class="calendar-rail__agenda-item ${task.emailUid === this.selectedEmailUid ? 'calendar-rail__agenda-item--focused' : ''}">
+                        <button type="button" class="calendar-rail__agenda-item-select" data-focus-entry-id="${task.id}">
+                            <p class="calendar-rail__agenda-time">${task.dueAtDisplay || 'No time set'}</p>
+                            <div class="calendar-rail__agenda-main">
+                                <p class="calendar-rail__agenda-title">${task.primaryTask.action}</p>
+                                <p class="calendar-rail__agenda-subtitle">${task.followUp ? task.followUp.emailSubject : task.calendarEvent?.sourceLabel || 'Google Calendar'}</p>
+                                <div class="calendar-rail__agenda-badges">
+                                    ${task.followUp ? '<span class="calendar-rail__agenda-badge">Follow-up</span>' : ''}
+                                    ${task.calendarEvent ? '<span class="calendar-rail__agenda-badge calendar-rail__agenda-badge--calendar">Google Calendar</span>' : ''}
+                                    ${task.emailUid && task.emailUid === this.selectedEmailUid
+                                        ? '<span class="calendar-rail__agenda-badge">Selected email</span>'
+                                        : ''}
+                                </div>
+                            </div>
+                        </button>
+                    </div>
+                `).join('')}
             </div>
         `;
+
+        this.focusBody.querySelectorAll('[data-focus-entry-id]').forEach((button) => {
+            button.addEventListener('click', () => {
+                const task = this.getDisplayItems().find((entry) => String(entry.id) === String(button.dataset.focusEntryId));
+                if (task) {
+                    this.selectTask(task.followUp || task.calendarEvent || task.primaryTask);
+                }
+            });
+        });
     }
 
     renderAgenda() {
@@ -758,30 +1003,27 @@ export class CalendarRailController {
                 ].filter(Boolean).join(' ');
                 return `
                                 <div class="${classes}">
-                                    <button type="button" class="calendar-rail__agenda-item-select" data-task-id="${task.taskId}">
+                                    <button type="button" class="calendar-rail__agenda-item-select" data-task-id="${task.id}">
                                         <p class="calendar-rail__agenda-time">${task.dueAtDisplay || 'No time set'}</p>
                                         <div class="calendar-rail__agenda-main">
-                                            <p class="calendar-rail__agenda-title">${task.action}</p>
-                                            <p class="calendar-rail__agenda-subtitle">${task.sourceType === 'calendar-event' ? task.sourceLabel : task.emailSubject}</p>
+                                            <p class="calendar-rail__agenda-title">${task.primaryTask.action}</p>
+                                            <p class="calendar-rail__agenda-subtitle">${task.followUp ? task.followUp.emailSubject : task.calendarEvent?.sourceLabel || 'Google Calendar'}</p>
                                             <div class="calendar-rail__agenda-badges">
                                                 ${group.key === 'overdue' ? '<span class="calendar-rail__agenda-badge calendar-rail__agenda-badge--overdue">Late</span>' : ''}
-                                                ${task.sourceType === 'calendar-event'
-                ? '<span class="calendar-rail__agenda-badge calendar-rail__agenda-badge--calendar">Google Calendar</span>'
-                : task.calendarEventId
-                    ? '<span class="calendar-rail__agenda-badge calendar-rail__agenda-badge--calendar">In calendar</span>'
-                    : ''}
+                                                ${task.followUp ? '<span class="calendar-rail__agenda-badge">Follow-up</span>' : ''}
+                                                ${task.calendarEvent ? '<span class="calendar-rail__agenda-badge calendar-rail__agenda-badge--calendar">Google Calendar</span>' : ''}
                                             </div>
                                         </div>
                                     </button>
-                                    ${task.sourceType === 'follow-up'
+                                    ${task.followUp
                 ? `
                                     <div class="calendar-rail__agenda-actions">
                                         <button
                                             type="button"
                                             class="md3-icon-button calendar-rail__agenda-done"
-                                            data-task-status-id="${task.taskId}"
+                                            data-task-status-id="${task.followUp.taskId}"
                                             data-task-next-status="done"
-                                            aria-label="Mark follow-up task ${task.action} done"
+                                            aria-label="Mark follow-up task ${task.primaryTask.action} done"
                                             title="Mark done"
                                         >
                                             <span class="material-icons" aria-hidden="true">check_circle</span>
@@ -789,15 +1031,31 @@ export class CalendarRailController {
                                         <button
                                             type="button"
                                             class="md3-icon-button calendar-rail__agenda-delete"
-                                            data-task-delete-id="${task.taskId}"
-                                            aria-label="Delete follow-up task ${task.action}"
+                                            data-task-delete-id="${task.followUp.taskId}"
+                                            aria-label="Delete follow-up task ${task.primaryTask.action}"
                                             title="Delete follow-up"
                                         >
                                             <span class="material-icons" aria-hidden="true">delete_outline</span>
                                         </button>
                                     </div>
                                     `
-                : ''}
+                : task.calendarEvent && !task.followUp
+                    ? `
+                                    <div class="calendar-rail__agenda-actions">
+                                        <button
+                                            type="button"
+                                            class="md3-icon-button calendar-rail__agenda-to-followup"
+                                            data-event-to-followup-id="${task.calendarEvent.calendarEventId}"
+                                            data-event-summary="${task.calendarEvent.action}"
+                                            data-event-starts-at="${task.calendarEvent.dueAt}"
+                                            aria-label="Create follow-up from ${task.primaryTask.action}"
+                                            title="Create follow-up"
+                                        >
+                                            <span class="material-icons" aria-hidden="true">add_task</span>
+                                        </button>
+                                    </div>
+                                    `
+                    : ''}
                                 </div>
                             `;
             }).join('')}
@@ -808,9 +1066,9 @@ export class CalendarRailController {
 
         this.agenda.querySelectorAll('[data-task-id]').forEach((button) => {
             button.addEventListener('click', () => {
-                const task = this.getAllEntries().find((entry) => String(entry.taskId) === String(button.dataset.taskId));
+                const task = this.getDisplayItems().find((entry) => String(entry.id) === String(button.dataset.taskId));
                 if (task) {
-                    this.selectTask(task);
+                    this.selectTask(task.followUp || task.calendarEvent || task.primaryTask);
                 }
             });
         });
@@ -835,6 +1093,18 @@ export class CalendarRailController {
 
         this.agenda.querySelectorAll('[data-agenda-group-toggle]').forEach((button) => {
             button.addEventListener('click', () => this.toggleAgendaGroup(button.dataset.agendaGroupToggle));
+        });
+
+        this.agenda.querySelectorAll('[data-event-to-followup-id]').forEach((button) => {
+            button.addEventListener('click', (event) => {
+                event.stopPropagation();
+                this.convertEventToFollowUp(
+                    button.dataset.eventToFollowupId,
+                    button.dataset.eventSummary,
+                    button.dataset.eventStartsAt,
+                    button,
+                );
+            });
         });
     }
 }

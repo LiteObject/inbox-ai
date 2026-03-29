@@ -240,6 +240,10 @@ class EmailRepository(Protocol):
         """Delete a follow-up entry by identifier."""
         raise NotImplementedError
 
+    def create_follow_up(self, task: FollowUpTask) -> int:
+        """Insert a single follow-up task and return its new ID."""
+        raise NotImplementedError
+
     def close(self) -> None:
         """Close database connections if necessary."""
         raise NotImplementedError

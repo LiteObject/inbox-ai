@@ -117,8 +117,8 @@ class OllamaClient:
         self._reset_failures()
 
         result = data.get("response")
-        if not isinstance(result, str):
-            raise LLMError("LLM response missing 'response' field")
+        if not isinstance(result, str) or not result.strip():
+            raise LLMError("LLM returned empty or missing 'response' field")
         return result
 
     def reset_circuit_breaker(self) -> None:

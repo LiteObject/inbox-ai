@@ -516,6 +516,24 @@ def _display_calendar_event_datetime(
     return display_datetime(value)
 
 
+def _extract_calendar_event_date_key(
+    payload: Mapping[str, Any] | None,
+    fallback: datetime | None,
+    *,
+    is_all_day: bool,
+) -> str | None:
+    """Return a stable YYYY-MM-DD key for calendar day matching."""
+    if is_all_day and payload:
+        raw_date = payload.get("date")
+        if isinstance(raw_date, str) and raw_date:
+            return raw_date
+
+    if fallback is None:
+        return None
+
+    return fallback.date().isoformat()
+
+
 def _serialize_calendar_event(
     event: Mapping[str, Any],
     client: GoogleCalendarClient,
@@ -523,11 +541,25 @@ def _serialize_calendar_event(
     """Serialize a Google Calendar event for the frontend calendar rail."""
     event_id = str(event.get("id") or "")
     recurring_event_id = str(event.get("recurringEventId") or "") or None
-    original_start_at, _ = _extract_calendar_event_datetime(event.get("originalStartTime"))
-    start_at, is_all_day = _extract_calendar_event_datetime(event.get("start"))
+    original_start_payload = event.get("originalStartTime")
+    original_start_at, original_is_all_day = _extract_calendar_event_datetime(
+        original_start_payload
+    )
+    start_payload = event.get("start")
+    start_at, is_all_day = _extract_calendar_event_datetime(start_payload)
     end_at, _ = _extract_calendar_event_datetime(event.get("end"))
     occurrence_start_at = original_start_at or start_at
     occurrence_key = recurring_event_id or event_id
+    date_key = _extract_calendar_event_date_key(
+        start_payload,
+        start_at,
+        is_all_day=is_all_day,
+    )
+    occurrence_date_key = _extract_calendar_event_date_key(
+        original_start_payload,
+        occurrence_start_at,
+        is_all_day=original_is_all_day or is_all_day,
+    )
     event_url = event.get("htmlLink")
     if not event_url and event_id:
         event_url = client.get_event_url(event_id)
@@ -537,8 +569,10 @@ def _serialize_calendar_event(
         "recurringEventId": recurring_event_id,
         "occurrenceKey": occurrence_key,
         "occurrenceStartAt": serialize_datetime(occurrence_start_at),
+        "occurrenceDateKey": occurrence_date_key,
         "summary": str(event.get("summary") or "Untitled event"),
         "startsAt": serialize_datetime(start_at),
+        "dateKey": date_key,
         "startsAtDisplay": _display_calendar_event_datetime(
             start_at,
             is_all_day=is_all_day,
@@ -1700,15 +1734,9 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             response_cache.invalidate("dashboard")
 
         status_code = (
-            http_status.HTTP_200_OK
-            if deleted
-            else http_status.HTTP_404_NOT_FOUND
+            http_status.HTTP_200_OK if deleted else http_status.HTTP_404_NOT_FOUND
         )
-        message = (
-            "Follow-up deleted."
-            if deleted
-            else "Follow-up task not found."
-        )
+        message = "Follow-up deleted." if deleted else "Follow-up task not found."
         return JSONResponse(
             status_code=status_code,
             content={
@@ -2401,6 +2429,64 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                 "exists": None,
                 "error": f"Failed to verify event: {error_str}",
             }
+
+    @app.post("/api/calendar/events/to-follow-up")
+    async def calendar_event_to_follow_up(
+        request: Request,
+        repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
+    ) -> dict[str, Any]:
+        """Create a follow-up task from a Google Calendar event."""
+        csrf_token = request.headers.get("X-CSRF-Token")
+        csrf.validate(request, csrf_token)
+
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            return {"success": False, "error": "Invalid request body"}
+
+        event_id = body.get("eventId", "").strip()
+        summary = body.get("summary", "").strip()
+        starts_at = body.get("startsAt", "").strip()
+
+        if not summary:
+            return {"success": False, "error": "Event summary is required"}
+
+        due_at: datetime | None = None
+        if starts_at:
+            due_at = _parse_iso_datetime_value(starts_at)
+
+        # Prevent duplicate: check if a follow-up already tracks this event
+        if event_id:
+            existing = repository.list_follow_ups()
+            for task in existing:
+                if task.calendar_event_id == event_id:
+                    return {
+                        "success": True,
+                        "already_exists": True,
+                        "followUp": _serialize_follow_up(task),
+                    }
+
+        now = datetime.now(tz=UTC)
+        new_task = FollowUpTask(
+            id=None,
+            email_uid=None,
+            action=summary,
+            due_at=due_at or now,
+            status="open",
+            created_at=now,
+            completed_at=None,
+            calendar_event_id=event_id or None,
+            calendar_synced_at=now if event_id else None,
+        )
+
+        new_id = repository.create_follow_up(new_task)
+        created = repository.get_follow_up_by_id(new_id)
+        response_cache.invalidate("dashboard")
+
+        return {
+            "success": True,
+            "followUp": _serialize_follow_up(created) if created else None,
+        }
 
     _ensure_route_names(app)
     return app

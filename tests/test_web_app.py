@@ -846,6 +846,61 @@ def test_calendar_events_return_selected_calendar_items(tmp_path, monkeypatch) -
     }
 
 
+def test_calendar_events_preserve_all_day_date_key(tmp_path, monkeypatch) -> None:
+    db_path = tmp_path / "web_calendar_all_day.db"
+    settings = StorageSettings(db_path=db_path)
+    repository = SqliteEmailRepository(settings)
+    repository.set_user_preference(
+        "calendar_access_token:owner@example.com", "access-token"
+    )
+    repository.set_user_preference(
+        "calendar_selected_calendar:owner@example.com", "team-calendar"
+    )
+    repository.close()
+
+    async def fake_list_events(_self, time_min, time_max, calendar_id=None):
+        _ = (time_min, time_max, calendar_id)
+        return [
+            {
+                "id": "all-day-1",
+                "summary": "Tax day reminder",
+                "start": {"date": "2026-04-15"},
+                "end": {"date": "2026-04-16"},
+                "status": "confirmed",
+            }
+        ]
+
+    monkeypatch.setattr(
+        web_app_module.GoogleCalendarClient,
+        "list_events",
+        fake_list_events,
+    )
+
+    app_settings = AppSettings(
+        storage=settings,
+        imap=ImapSettings(username="owner@example.com"),
+        calendar=CalendarSettings(
+            enabled=True,
+            client_id="client-id",
+            client_secret="client-secret",
+        ),
+    )
+    app = create_app(app_settings)
+    client = TestClient(app)
+
+    response = client.get(
+        "/api/calendar/events?start=2026-04-01T00:00:00Z&end=2026-05-01T00:00:00Z"
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert payload["events"][0]["id"] == "all-day-1"
+    assert payload["events"][0]["isAllDay"] is True
+    assert payload["events"][0]["dateKey"] == "2026-04-15"
+    assert payload["events"][0]["startsAtDisplay"] == "Apr 15, 2026"
+
+
 def test_calendar_events_skip_locally_completed_occurrences(
     tmp_path, monkeypatch
 ) -> None:

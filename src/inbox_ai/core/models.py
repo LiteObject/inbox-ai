@@ -113,7 +113,7 @@ class FollowUpTask:
     """Action item extracted from an email with scheduling metadata."""
 
     id: int | None
-    email_uid: int
+    email_uid: int | None
     action: str
     due_at: datetime | None
     status: str
