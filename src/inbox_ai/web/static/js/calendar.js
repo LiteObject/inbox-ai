@@ -21,6 +21,14 @@ import { ToastManager } from "./modules/toast.js";
 (function () {
     'use strict';
 
+    const CALENDAR_SETTINGS_URL = '/settings#calendar';
+    const calendarConnectionState = {
+        loaded: false,
+        configured: false,
+        connected: false,
+        connectUrl: CALENDAR_SETTINGS_URL,
+    };
+
     // Initialize toast manager with the existing container
     const toastManager = new ToastManager({
         container: document.getElementById("toast-container"),
@@ -32,6 +40,63 @@ import { ToastManager } from "./modules/toast.js";
     function getCsrfToken() {
         const tokenInput = document.querySelector('input[name="csrf_token"]');
         return tokenInput ? tokenInput.value : '';
+    }
+
+    function isCalendarReady() {
+        return calendarConnectionState.configured && calendarConnectionState.connected;
+    }
+
+    function getSyncButtonMarkup() {
+        if (isCalendarReady()) {
+            return `
+                <span class="material-icons" aria-hidden="true">event</span>
+                Add to Calendar
+            `;
+        }
+
+        return `
+            <span class="material-icons" aria-hidden="true">link</span>
+            Connect Calendar
+        `;
+    }
+
+    function applyCalendarConnectionStateToButtons() {
+        document.querySelectorAll('.calendar-sync-btn').forEach((button) => {
+            button.title = isCalendarReady()
+                ? 'Add to Google Calendar'
+                : 'Connect Google Calendar in Settings';
+            button.innerHTML = getSyncButtonMarkup();
+        });
+    }
+
+    async function loadCalendarConnectionState() {
+        try {
+            const response = await fetch('/api/calendar/status');
+            const data = await response.json();
+
+            calendarConnectionState.loaded = true;
+            calendarConnectionState.configured = Boolean(data.configured);
+            calendarConnectionState.connected = Boolean(data.connected);
+            calendarConnectionState.connectUrl = data.connect_url || CALENDAR_SETTINGS_URL;
+        } catch (error) {
+            console.error('Failed to load calendar connection state:', error);
+            calendarConnectionState.loaded = true;
+            calendarConnectionState.configured = false;
+            calendarConnectionState.connected = false;
+            calendarConnectionState.connectUrl = CALENDAR_SETTINGS_URL;
+        }
+
+        applyCalendarConnectionStateToButtons();
+    }
+
+    function redirectToCalendarSettings(message) {
+        if (message) {
+            toastManager.show(message, 'info');
+        }
+
+        window.setTimeout(() => {
+            window.location.href = calendarConnectionState.connectUrl || CALENDAR_SETTINGS_URL;
+        }, 700);
     }
 
     // Sync follow-up to calendar
@@ -56,6 +121,9 @@ import { ToastManager } from "./modules/toast.js";
             const data = await response.json();
 
             if (data.success) {
+                calendarConnectionState.connected = true;
+                applyCalendarConnectionStateToButtons();
+
                 if (data.already_synced) {
                     // Already synced - convert to view button
                     toastManager.show('Task already synced to calendar', 'info');
@@ -71,6 +139,16 @@ import { ToastManager } from "./modules/toast.js";
                     updateFollowUpInDOM(taskId, data.followUp);
                 }
             } else {
+                if (data.connect_url) {
+                    calendarConnectionState.connected = false;
+                    calendarConnectionState.connectUrl = data.connect_url;
+                    applyCalendarConnectionStateToButtons();
+                    redirectToCalendarSettings(
+                        data.error || 'Connect Google Calendar in Settings to continue.'
+                    );
+                    return;
+                }
+
                 // Handle error
                 toastManager.show(data.error || 'Failed to sync to calendar', 'error');
                 button.disabled = false;
@@ -192,6 +270,13 @@ import { ToastManager } from "./modules/toast.js";
             e.preventDefault();
             e.stopPropagation();
 
+            if (calendarConnectionState.loaded && !isCalendarReady()) {
+                redirectToCalendarSettings(
+                    'Connect Google Calendar in Settings to add follow-ups to your calendar.'
+                );
+                return false;
+            }
+
             const taskId = syncButton.dataset.taskId;
             if (!taskId) {
                 toastManager.show('Invalid task ID', 'error');
@@ -271,11 +356,10 @@ import { ToastManager } from "./modules/toast.js";
         button.className = 'md3-button md3-button--text calendar-sync-btn';
         button.type = 'button';
         button.dataset.taskId = taskId;
-        button.title = 'Add to Google Calendar';
-        button.innerHTML = `
-            <span class="material-icons" aria-hidden="true">event</span>
-            Add to Calendar
-        `;
+        button.title = isCalendarReady()
+            ? 'Add to Google Calendar'
+            : 'Connect Google Calendar in Settings';
+        button.innerHTML = getSyncButtonMarkup();
 
         // Replace the old element with the new button
         oldElement.parentNode.replaceChild(button, oldElement);
@@ -312,6 +396,8 @@ import { ToastManager } from "./modules/toast.js";
             window.InboxAI.calendar.initialized = true;
             console.log('Calendar button handlers initialised (capturing phase)');
         }
+
+        loadCalendarConnectionState();
     }
 
     // Initialize on page load

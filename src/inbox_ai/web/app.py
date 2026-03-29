@@ -125,6 +125,7 @@ _STATUS_QUERY_KEYS: tuple[str, ...] = (
 
 
 MANUAL_DRAFT_PROVIDER = "manual-edit"
+CALENDAR_SETTINGS_URL = "/settings#calendar"
 
 
 LOGGER = logging.getLogger(__name__)
@@ -1805,6 +1806,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             return {
                 "success": False,
                 "error": "Calendar not configured. Please add client ID and secret in settings.",
+                "connect_url": CALENDAR_SETTINGS_URL,
             }
 
         # Get access token
@@ -1817,6 +1819,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             return {
                 "success": False,
                 "error": "Not connected to Google Calendar. Please connect in settings.",
+                "connect_url": CALENDAR_SETTINGS_URL,
             }
 
         refresh_token = _get_calendar_preference(
@@ -1934,6 +1937,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                     exc,
                 ),
                 "reauth_required": True,
+                "connect_url": CALENDAR_SETTINGS_URL,
             }
         except Exception as exc:  # noqa: BLE001
             LOGGER.exception("Failed to sync follow-up to calendar")

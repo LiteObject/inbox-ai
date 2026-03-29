@@ -731,11 +731,47 @@ def test_calendar_sync_clears_stale_tokens_on_auth_failure(
         "success": False,
         "error": "Google Calendar authorization expired. Please reconnect.",
         "reauth_required": True,
+        "connect_url": "/settings#calendar",
     }
 
     with SqliteEmailRepository(settings) as verification_repo:
         assert verification_repo.get_user_preference("calendar_access_token") is None
         assert verification_repo.get_user_preference("calendar_refresh_token") is None
+
+
+def test_calendar_sync_returns_settings_url_when_not_connected(tmp_path) -> None:
+    db_path = tmp_path / "web_calendar_not_connected.db"
+    settings = StorageSettings(db_path=db_path)
+    repository = SqliteEmailRepository(settings)
+    follow_up_id = _seed_data(repository)
+    repository.close()
+
+    app_settings = AppSettings(
+        storage=settings,
+        calendar=CalendarSettings(
+            enabled=True,
+            client_id="client-id",
+            client_secret="client-secret",
+        ),
+    )
+    app = create_app(app_settings)
+    client = TestClient(app)
+
+    client.get("/")
+    csrf_token = client.cookies.get(CSRF_COOKIE_NAME)
+    assert csrf_token is not None
+
+    response = client.post(
+        f"/api/follow-ups/{follow_up_id}/sync-calendar",
+        headers={"X-CSRF-Token": csrf_token},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "success": False,
+        "error": "Not connected to Google Calendar. Please connect in settings.",
+        "connect_url": "/settings#calendar",
+    }
 
 
 def test_calendar_callback_encodes_error_redirect(tmp_path) -> None:
