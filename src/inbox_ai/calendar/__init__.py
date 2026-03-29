@@ -2,6 +2,6 @@
 
 from __future__ import annotations
 
-from .google_calendar_client import GoogleCalendarClient
+from .google_calendar_client import CalendarAuthError, GoogleCalendarClient
 
-__all__ = ["GoogleCalendarClient"]
+__all__ = ["CalendarAuthError", "GoogleCalendarClient"]

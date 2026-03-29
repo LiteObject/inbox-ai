@@ -8,7 +8,13 @@ from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
 
-from inbox_ai.core.config import AppSettings, LlmSettings, StorageSettings
+from inbox_ai.calendar.google_calendar_client import CalendarAuthError
+from inbox_ai.core.config import (
+    AppSettings,
+    CalendarSettings,
+    LlmSettings,
+    StorageSettings,
+)
 from inbox_ai.core.models import (
     DraftRecord,
     EmailBody,
@@ -469,3 +475,105 @@ def test_config_editor_updates_env_file(tmp_path) -> None:
                 os.environ.pop(key, None)
             else:
                 os.environ[key] = value
+
+
+def test_calendar_status_clears_stale_tokens_on_auth_failure(
+    tmp_path, monkeypatch
+) -> None:
+    db_path = tmp_path / "web_calendar_status.db"
+    settings = StorageSettings(db_path=db_path)
+    repository = SqliteEmailRepository(settings)
+    repository.set_user_preference("calendar_access_token", "access-token")
+    repository.set_user_preference("calendar_refresh_token", "refresh-token")
+    repository.close()
+
+    async def fake_list_calendars(self) -> list[dict[str, str]]:
+        raise CalendarAuthError(
+            "Google Calendar authorization expired. Please reconnect."
+        )
+
+    monkeypatch.setattr(
+        web_app_module.GoogleCalendarClient,
+        "list_calendars",
+        fake_list_calendars,
+    )
+
+    app_settings = AppSettings(
+        storage=settings,
+        calendar=CalendarSettings(
+            enabled=True,
+            client_id="client-id",
+            client_secret="client-secret",
+        ),
+    )
+    app = create_app(app_settings)
+    client = TestClient(app)
+
+    response = client.get("/api/calendar/status")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "connected": False,
+        "configured": True,
+        "selected_calendar": "primary",
+        "reauth_required": True,
+        "error": "Google Calendar authorization expired. Please reconnect.",
+    }
+
+    with SqliteEmailRepository(settings) as verification_repo:
+        assert verification_repo.get_user_preference("calendar_access_token") is None
+        assert verification_repo.get_user_preference("calendar_refresh_token") is None
+
+
+def test_calendar_sync_clears_stale_tokens_on_auth_failure(
+    tmp_path, monkeypatch
+) -> None:
+    db_path = tmp_path / "web_calendar_sync.db"
+    settings = StorageSettings(db_path=db_path)
+    repository = SqliteEmailRepository(settings)
+    follow_up_id = _seed_data(repository)
+    repository.set_user_preference("calendar_access_token", "access-token")
+    repository.set_user_preference("calendar_refresh_token", "refresh-token")
+    repository.close()
+
+    async def fake_create_event(self, **kwargs) -> dict[str, str]:
+        raise CalendarAuthError(
+            "Google Calendar authorization expired. Please reconnect."
+        )
+
+    monkeypatch.setattr(
+        web_app_module.GoogleCalendarClient,
+        "create_event",
+        fake_create_event,
+    )
+
+    app_settings = AppSettings(
+        storage=settings,
+        calendar=CalendarSettings(
+            enabled=True,
+            client_id="client-id",
+            client_secret="client-secret",
+        ),
+    )
+    app = create_app(app_settings)
+    client = TestClient(app)
+
+    client.get("/")
+    csrf_token = client.cookies.get(CSRF_COOKIE_NAME)
+    assert csrf_token is not None
+
+    response = client.post(
+        f"/api/follow-ups/{follow_up_id}/sync-calendar",
+        headers={"X-CSRF-Token": csrf_token},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "success": False,
+        "error": "Google Calendar authorization expired. Please reconnect.",
+        "reauth_required": True,
+    }
+
+    with SqliteEmailRepository(settings) as verification_repo:
+        assert verification_repo.get_user_preference("calendar_access_token") is None
+        assert verification_repo.get_user_preference("calendar_refresh_token") is None

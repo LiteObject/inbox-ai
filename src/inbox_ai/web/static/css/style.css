@@ -215,8 +215,11 @@
     --md3-font-family: 'Roboto', sans-serif;
     --md3-spacing-2: 2px;
     --md3-spacing-4: 4px;
+    --md3-spacing-6: 6px;
     --md3-spacing-8: 8px;
+    --md3-spacing-10: 10px;
     --md3-spacing-12: 12px;
+    --md3-spacing-14: 14px;
     --md3-spacing-16: 16px;
     --md3-spacing-20: 20px;
     --md3-spacing-24: 24px;
@@ -3439,16 +3442,21 @@ h2.toolbar-heading {
 .settings-page .theme-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: var(--md3-spacing-10);
+    gap: var(--md3-spacing-12);
 }
 
 .settings-page .theme-chip {
+    appearance: none;
+    -webkit-appearance: none;
     display: inline-flex;
     align-items: center;
-    gap: var(--md3-spacing-8);
+    justify-content: flex-start;
+    gap: var(--md3-spacing-12);
+    box-sizing: border-box;
     width: 100%;
     min-height: 52px;
-    padding: var(--md3-spacing-10) var(--md3-spacing-12);
+    margin: 0;
+    padding: var(--md3-spacing-10) var(--md3-spacing-16) var(--md3-spacing-10) var(--md3-spacing-20);
     border-radius: 14px;
     background: var(--md3-color-surface-container-low);
     border: 1px solid var(--md3-color-outline-variant);
@@ -3460,6 +3468,7 @@ h2.toolbar-heading {
     font-size: 14px;
     font-weight: 500;
     line-height: 20px;
+    text-align: left;
     text-decoration: none;
 }
 
@@ -3502,6 +3511,7 @@ h2.toolbar-heading {
 .settings-page .theme-chip .theme-preview {
     width: 18px;
     height: 18px;
+    margin-left: 4px;
     border-radius: 999px;
     flex-shrink: 0;
     border: 1px solid rgba(0, 0, 0, 0.08);

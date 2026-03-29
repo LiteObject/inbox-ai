@@ -33,7 +33,7 @@ from starlette.datastructures import UploadFile
 from starlette.responses import Response
 from starlette.templating import Jinja2Templates
 
-from inbox_ai.calendar import GoogleCalendarClient
+from inbox_ai.calendar import CalendarAuthError, GoogleCalendarClient
 from inbox_ai.core import AppSettings, load_app_settings
 from inbox_ai.core.datetime_utils import display_datetime, serialize_datetime
 from inbox_ai.core.models import (
@@ -368,6 +368,23 @@ CONFIG_SECTIONS: tuple[ConfigSection, ...] = (
 CONFIG_FIELD_KEYS: tuple[str, ...] = tuple(
     field.key for section in CONFIG_SECTIONS for field in section.fields
 )
+
+
+def _clear_calendar_credentials(repository: SqliteEmailRepository) -> None:
+    """Remove stored Google Calendar OAuth state and tokens."""
+    repository.delete_user_preference("calendar_access_token")
+    repository.delete_user_preference("calendar_refresh_token")
+    repository.delete_user_preference("calendar_oauth_state")
+
+
+def _expire_calendar_connection(
+    repository: SqliteEmailRepository, exc: CalendarAuthError
+) -> str:
+    """Clear invalid calendar credentials and return a user-facing message."""
+    message = str(exc) or "Google Calendar authorization expired. Please reconnect."
+    LOGGER.warning("Google Calendar authorization expired: %s", message)
+    _clear_calendar_credentials(repository)
+    return message
 
 
 def create_app(settings: AppSettings | None = None) -> FastAPI:
@@ -1541,6 +1558,10 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                     {"id": cal.get("id"), "summary": cal.get("summary")}
                     for cal in calendars
                 ]
+            except CalendarAuthError as exc:
+                status_data["connected"] = False
+                status_data["reauth_required"] = True
+                status_data["error"] = _expire_calendar_connection(repository, exc)
             except Exception as exc:  # noqa: BLE001
                 LOGGER.error("Failed to fetch calendars: %s", exc)
                 status_data["error"] = str(exc)
@@ -1556,9 +1577,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         csrf_token = request.headers.get("X-CSRF-Token")
         csrf.validate(request, csrf_token)
 
-        repository.delete_user_preference("calendar_access_token")
-        repository.delete_user_preference("calendar_refresh_token")
-        repository.delete_user_preference("calendar_oauth_state")
+        _clear_calendar_credentials(repository)
 
         return {"success": True, "message": "Calendar disconnected"}
 
@@ -1685,6 +1704,12 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                 ),
             }
 
+        except CalendarAuthError as exc:
+            return {
+                "success": False,
+                "error": _expire_calendar_connection(repository, exc),
+                "reauth_required": True,
+            }
         except Exception as exc:  # noqa: BLE001
             LOGGER.exception("Failed to sync follow-up to calendar")
             return {"success": False, "error": str(exc)}
@@ -1756,6 +1781,13 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                 "event_summary": event.get("summary"),
             }
 
+        except CalendarAuthError as exc:
+            return {
+                "success": False,
+                "exists": None,
+                "error": _expire_calendar_connection(repository, exc),
+                "reauth_required": True,
+            }
         except Exception as exc:  # noqa: BLE001
             error_str = str(exc)
             LOGGER.warning(
@@ -2645,9 +2677,7 @@ def _delete_emails(
             message="Configure IMAP username and app password before deleting.",
         )
 
-    default_mailbox = (
-        settings.imap.mailboxes[0] if settings.imap.mailboxes else "INBOX"
-    )
+    default_mailbox = settings.imap.mailboxes[0] if settings.imap.mailboxes else "INBOX"
 
     try:
         emails = []

@@ -15,6 +15,10 @@ from inbox_ai.core.config import CalendarSettings
 logger = logging.getLogger(__name__)
 
 
+class CalendarAuthError(Exception):
+    """Raised when Google Calendar authorization is no longer valid."""
+
+
 class GoogleCalendarClient:
     """Client for interacting with Google Calendar API using OAuth 2.0."""
 
@@ -81,6 +85,16 @@ class GoogleCalendarClient:
                 logger.error("Token refresh failed: %s", response.status_code)
                 logger.error("Response: %s", response.text)
 
+                try:
+                    error_payload = response.json()
+                except ValueError:
+                    error_payload = {}
+
+                if error_payload.get("error") == "invalid_grant":
+                    raise CalendarAuthError(
+                        "Google Calendar authorization expired. Please reconnect."
+                    )
+
             response.raise_for_status()
             tokens = response.json()
             self._access_token = tokens.get("access_token")
@@ -93,7 +107,9 @@ class GoogleCalendarClient:
     async def _ensure_valid_token(self) -> None:
         """Ensure we have a valid access token, refreshing if necessary."""
         if not self._access_token:
-            raise ValueError("No access token available")
+            raise CalendarAuthError(
+                "Google Calendar authorization expired. Please reconnect."
+            )
 
         # Check if token is valid by making a simple API call
         async with httpx.AsyncClient() as client:
@@ -113,7 +129,9 @@ class GoogleCalendarClient:
                 if self._refresh_token:
                     await self.refresh_access_token(self._refresh_token)
                 else:
-                    raise ValueError("Token is invalid and no refresh token available")
+                    raise CalendarAuthError(
+                        "Google Calendar authorization expired. Please reconnect."
+                    )
 
     def set_tokens(self, access_token: str, refresh_token: str | None = None) -> None:
         """Set access and refresh tokens for authenticated requests."""
@@ -322,4 +340,4 @@ class GoogleCalendarClient:
         return f"https://calendar.google.com/calendar/r/events/{event_id}"
 
 
-__all__ = ["GoogleCalendarClient"]
+__all__ = ["CalendarAuthError", "GoogleCalendarClient"]
