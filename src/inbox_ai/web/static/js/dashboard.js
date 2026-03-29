@@ -397,6 +397,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     spinner.hide();
 
     const dialogManager = new DialogManager();
+    const totalCountTarget = document.getElementById('insights-total-count');
 
     const bindInteractiveForms = () => {
         installSpinnerForms(spinner, toastManager, dialogManager);
@@ -416,10 +417,131 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     installSettingsNavigation();
 
+    const updateTotalCount = (delta) => {
+        if (!totalCountTarget) {
+            return;
+        }
+
+        const current = Number.parseInt(totalCountTarget.textContent || '', 10);
+        if (!Number.isFinite(current)) {
+            return;
+        }
+
+        totalCountTarget.textContent = String(Math.max(0, current + delta));
+    };
+
+    const getCsrfToken = () => {
+        const tokenInput = document.querySelector('input[name="csrf_token"]');
+        return tokenInput?.value || '';
+    };
+
+    let emailListSearch = null;
+
+    const deleteSelectedEmail = async (uid) => {
+        const csrfToken = getCsrfToken();
+        if (!uid || !csrfToken || !window.listDetailController) {
+            return;
+        }
+
+        const confirmed = await dialogManager.confirm(
+            'Move this email to trash? You can recover it from your trash folder.',
+            'Confirm Action',
+            'Delete',
+            'Cancel',
+        );
+        if (!confirmed) {
+            return;
+        }
+
+        spinner.show('Moving email to trash...');
+
+        try {
+            const response = await fetch(`/api/emails/${uid}`, {
+                method: 'DELETE',
+                headers: {
+                    Accept: 'application/json',
+                    'X-CSRF-Token': csrfToken,
+                },
+            });
+
+            const payload = await response.json();
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.message || 'Delete failed.');
+            }
+
+            window.listDetailController.removeItem(String(uid));
+            emailListSearch?.refresh();
+            updateTotalCount(-1);
+            toastManager.show(payload.message || 'Email deleted.', 'success');
+        } catch (error) {
+            console.error('Delete request failed', error);
+            toastManager.show(error.message || 'Delete failed. Please try again.', 'error');
+        } finally {
+            spinner.hide();
+        }
+    };
+
+    // ── Filter toolbar: auto-submit + popover ──────────────
+    const filterForm = document.getElementById('filter-rail');
+    if (filterForm) {
+        let submitTimer = null;
+        const autoSubmitDelay = 600; // ms, only used for number input
+
+        filterForm.querySelectorAll('[data-auto-submit]').forEach((el) => {
+            const event = el.tagName === 'INPUT' ? 'input' : 'change';
+            el.addEventListener(event, () => {
+                clearTimeout(submitTimer);
+                if (el.type === 'number') {
+                    submitTimer = setTimeout(() => filterForm.submit(), autoSubmitDelay);
+                } else {
+                    filterForm.submit();
+                }
+            });
+        });
+
+        const moreBtn = document.getElementById('more-filters-toggle');
+        const popover = document.getElementById('more-filters-popover');
+
+        if (moreBtn && popover) {
+            const openPopover = () => {
+                popover.hidden = false;
+                moreBtn.setAttribute('aria-expanded', 'true');
+            };
+
+            const closePopover = () => {
+                popover.hidden = true;
+                moreBtn.setAttribute('aria-expanded', 'false');
+            };
+
+            moreBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                if (popover.hidden) {
+                    openPopover();
+                } else {
+                    closePopover();
+                }
+            });
+
+            document.addEventListener('mousedown', (e) => {
+                if (!popover.hidden && !popover.contains(e.target) && !moreBtn.contains(e.target)) {
+                    closePopover();
+                }
+            });
+
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && !popover.hidden) {
+                    closePopover();
+                    moreBtn.focus();
+                }
+            });
+        }
+    }
+
     const listDetailContainer = document.querySelector('.list-detail-container');
     const emailList = document.getElementById('email-list');
     const detailHost = document.getElementById('detail-content');
     const templateContainer = document.getElementById('detail-templates');
+    const listPane = emailList?.closest('.md3-list-pane');
 
     if (listDetailContainer && emailList && detailHost && templateContainer) {
         // Initialize lazy loading manager
@@ -459,6 +581,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             list: emailList,
             detailHost,
             templateContainer,
+            onDelete: deleteSelectedEmail,
             onDetailChanged: () => {
                 bindInteractiveForms();
                 // Initialize tabs for the newly loaded detail view
@@ -493,13 +616,40 @@ document.addEventListener("DOMContentLoaded", async () => {
             console.warn("Unable to restore previously selected email", error);
         }
 
-        const visibleCountTargets = document.querySelectorAll('#insights-visible-count, #insights-visible-count-2');
+        const visibleCountTargets = document.querySelectorAll('#insights-visible-count');
 
-        installEmailListSearch({
+        emailListSearch = installEmailListSearch({
             input: document.getElementById('insights-search'),
             list: emailList,
             visibleCount: visibleCountTargets,
             emptyNotice: document.getElementById('insights-filter-empty'),
+            onFilterChange: ({ visibleItems, hasQuery }) => {
+                listPane?.classList.toggle('md3-list-pane--empty', visibleItems.length === 0);
+
+                if (!window.listDetailController) {
+                    return;
+                }
+
+                if (visibleItems.length === 0) {
+                    window.listDetailController.clearSelection({
+                        emptyState: hasQuery
+                            ? {
+                                icon: 'search_off',
+                                title: 'No matching emails',
+                                message: 'Try another sender, subject, or keyword to continue browsing the inbox.',
+                            }
+                            : {
+                                icon: 'draft',
+                                title: 'No email details yet',
+                                message: 'Once messages are available, this panel will show summaries, actions, and draft replies.',
+                            },
+                    });
+                    return;
+                }
+
+                const visibleUids = visibleItems.map((item) => item.dataset.uid);
+                window.listDetailController.syncVisibleItems(visibleUids);
+            },
         });
 
         // Setup sort controls
@@ -525,14 +675,13 @@ document.addEventListener("DOMContentLoaded", async () => {
 
                 if (!buttonA || !buttonB) return 0;
 
-                const uidA = buttonA.getAttribute('data-uid');
-                const uidB = buttonB.getAttribute('data-uid');
+                const dateA = buttonA.getAttribute('data-received') || '';
+                const dateB = buttonB.getAttribute('data-received') || '';
 
-                // Parse UIDs as indices (they typically have numeric components)
-                const numA = parseInt(uidA, 36) || 0;
-                const numB = parseInt(uidB, 36) || 0;
-
-                return order === 'asc' ? numA - numB : numB - numA;
+                // Compare ISO-8601 date strings lexicographically
+                if (dateA < dateB) return order === 'asc' ? -1 : 1;
+                if (dateA > dateB) return order === 'asc' ? 1 : -1;
+                return 0;
             });
 
             // Re-insert items in sorted order

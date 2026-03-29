@@ -5,12 +5,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Inbox AI Configuration</title>
+    {% set static_asset_version = '20260328f' %}
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet" />
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet" />
-    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}" />
-    <script src="{{ url_for('static', path='js/register-sw.js') }}" defer></script>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}?v={{ static_asset_version }}" />
+    <script src="{{ url_for('static', path='js/register-sw.js') }}?v={{ static_asset_version }}" defer></script>
 </head>
 
 <body class="page-root settings-page">
@@ -25,210 +26,243 @@
     </div>
 
     {% set page_title = 'Settings' %}
+    {% set page_subtitle = 'Workspace settings' %}
+    {% set page_subtitle_icon = 'settings' %}
     {% set show_settings_button = false %}
     {% set show_back_button = true %}
     {% include 'partials/header.html' %}
 
-    <div class="settings-container">
-        <div class="settings-intro">
-            <div class="settings-intro-header">
-                <button id="back-button" class="md3-icon-button" type="button" onclick="window.location.href='/'">
-                    <span class="material-icons" aria-hidden="true">arrow_back</span>
-                    <span class="sr-only">Back to dashboard</span>
-                </button>
-                <h1>Configuration</h1>
+    <main class="md3-layout settings-layout">
+        <section class="md3-main-content settings-container">
+            <div class="md3-toolbar settings-toolbar">
+                <div class="settings-toolbar__heading">
+                    <h1>Configuration</h1>
+                    <p>Adjust email, storage, and AI settings. Changes are written to your <code>.env</code> file and
+                        applied after the server restarts.</p>
+                </div>
+                <nav class="settings-toolbar__nav" aria-label="Settings sections">
+                    <a class="settings-anchor-chip" href="#configuration">Settings</a>
+                    <a class="settings-anchor-chip" href="#appearance">Appearance</a>
+                    <a class="settings-anchor-chip" href="#calendar">Calendar</a>
+                    <a class="settings-anchor-chip" href="#maintenance">Maintenance</a>
+                </nav>
             </div>
-            <p>Adjust IMAP, storage, and intelligence settings. Changes are written to your <code>.env</code> file
-                and applied after the server restarts.</p>
-        </div>
 
-        <div class="md3-card">
-            {% if config_status == "saved" %}
-            <div class="md3-snackbar success">
-                <span class="material-icons">check_circle</span>
-                Configuration saved. Restart the server to apply changes.
-            </div>
-            {% elif config_status == "error" %}
-            <div class="md3-snackbar error">
-                <span class="material-icons">error</span>
-                Unable to update {{ config_env_path }}. Check file permissions.
-            </div>
-            {% endif %}
-
-            <h2>Settings</h2>
-
-            <form class="config-form" method="post" action="/config" data-scroll-restore>
-                <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
-                <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-                {% for section in config_sections %}
-                <fieldset class="config-group">
-                    <legend>{{ section.title }}</legend>
-                    <div class="config-grid">
-                        {% for field in section.fields %}
-                        <div
-                            class="md3-field{% if config_values.get(field.key, '') or (field.key == 'INBOX_AI_USER__PREFERENCES' and user_preferences.get('guidance', '')) %} filled{% endif %}">
-                            {% if field.input_type == "select" %}
-                            <select id="{{ field.key }}" name="{{ field.key }}" class="md3-select">
-                                {% for option in field.options %}
-                                <option value="{{ option }}" {% if config_values.get(field.key, '' )==option
-                                    %}selected{% endif %}>
-                                    {{ option | capitalize }}
-                                </option>
-                                {% endfor %}
-                            </select>
-                            <label for="{{ field.key }}">{{ field.label }}</label>
-                            {% elif field.input_type == "textarea" %}
-                            <textarea id="{{ field.key }}" name="{{ field.key }}" class="md3-textarea"
-                                rows="{{ field.textarea_rows or 6 }}">{% if field.key == 'INBOX_AI_USER__PREFERENCES' %}{{ user_preferences.get('guidance', '') }}{% elif config_values.get(field.key, '') %}{{ config_values.get(field.key, '') }}{% endif %}</textarea>
-                            <label for="{{ field.key }}">{{ field.label }}</label>
-                            {% else %}
-                            <input type="{{ field.input_type }}" id="{{ field.key }}" name="{{ field.key }}"
-                                class="md3-input" value="{{ config_values.get(field.key, '') }}" />
-                            <label for="{{ field.key }}">{{ field.label }}</label>
-                            {% endif %}
-                            {% if field.description %}
-                            <span class="config-help">{{ field.description }}</span>
-                            {% endif %}
+            <div class="settings-workspace">
+                <section class="settings-column settings-column--primary">
+                    <div class="settings-panel settings-panel--form" id="configuration">
+                        {% if config_status == "saved" %}
+                        <div class="md3-snackbar success">
+                            <span class="material-icons">check_circle</span>
+                            Configuration saved. Restart the server to apply changes.
                         </div>
-                        {% endfor %}
+                        {% elif config_status == "error" %}
+                        <div class="md3-snackbar error">
+                            <span class="material-icons">error</span>
+                            Unable to update {{ config_env_path }}. Check file permissions.
+                        </div>
+                        {% endif %}
+
+                        <div class="settings-section-heading">
+                            <h2>Settings</h2>
+                            <p>Update email, storage, and AI behavior in one place.</p>
+                        </div>
+
+                        <form class="config-form" method="post" action="/config" data-scroll-restore>
+                            <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
+                            <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
+                            {% for section in config_sections %}
+                            <fieldset class="config-group">
+                                <legend>{{ section.title }}</legend>
+                                <div class="config-grid">
+                                    {% for field in section.fields %}
+                                    <div
+                                        class="md3-field{% if config_values.get(field.key, '') or (field.key == 'INBOX_AI_USER__PREFERENCES' and user_preferences.get('guidance', '')) %} filled{% endif %}">
+                                        {% if field.input_type == "select" %}
+                                        <select id="{{ field.key }}" name="{{ field.key }}" class="md3-select">
+                                            {% for option in field.options %}
+                                            <option value="{{ option }}" {% if config_values.get(field.key, '' )==option
+                                                %}selected{% endif %}>
+                                                {{ option | capitalize }}
+                                            </option>
+                                            {% endfor %}
+                                        </select>
+                                        <label for="{{ field.key }}">{{ field.label }}</label>
+                                        {% elif field.input_type == "textarea" %}
+                                        <textarea id="{{ field.key }}" name="{{ field.key }}" class="md3-textarea"
+                                            rows="{{ field.textarea_rows or 6 }}">{% if field.key == 'INBOX_AI_USER__PREFERENCES' %}{{ user_preferences.get('guidance', '') }}{% elif config_values.get(field.key, '') %}{{ config_values.get(field.key, '') }}{% endif %}</textarea>
+                                        <label for="{{ field.key }}">{{ field.label }}</label>
+                                        {% else %}
+                                        <input type="{{ field.input_type }}" id="{{ field.key }}" name="{{ field.key }}"
+                                            class="md3-input" value="{{ config_values.get(field.key, '') }}" />
+                                        <label for="{{ field.key }}">{{ field.label }}</label>
+                                        {% endif %}
+                                        {% if field.description %}
+                                        <span class="config-help">{{ field.description }}</span>
+                                        {% endif %}
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </fieldset>
+                            {% endfor %}
+                            <div class="config-actions">
+                                <button type="submit" class="md3-button md3-button--filled">
+                                    <span class="material-icons" aria-hidden="true">save</span>
+                                    Save Changes
+                                </button>
+                                <span class="note">Restart the server after saving to ensure new values are used.</span>
+                            </div>
+                            <div class="config-meta">Editing <code>{{ config_env_path }}</code></div>
+                        </form>
                     </div>
-                </fieldset>
-                {% endfor %}
-                <div class="config-actions">
-                    <button type="submit" class="md3-button md3-button--filled">
-                        <span class="material-icons" aria-hidden="true">save</span>
-                        Save Changes
-                    </button>
-                    <span class="note">Restart the server after saving to ensure new values are used.</span>
-                </div>
-                <div class="config-meta">Editing <code>{{ config_env_path }}</code></div>
-            </form>
-        </div>
 
-        <div class="md3-card" id="maintenance">
-            <h2>Appearance</h2>
-            <p>Choose your preferred theme. Your selection is saved automatically.</p>
-            <div class="theme-grid" id="theme-grid">
-                <!-- Themes will be loaded here dynamically -->
-            </div>
-        </div>
+                    <div class="settings-panel" id="calendar">
+                        <div class="settings-section-heading">
+                            <h2>Google Calendar</h2>
+                            <p>Connect your Google Calendar to sync follow-up tasks as calendar events.</p>
+                        </div>
 
-        <div class="md3-card" id="calendar">
-            <h2>Google Calendar</h2>
-            <p>Connect your Google Calendar to sync follow-up tasks as calendar events.</p>
+                        <div id="calendar-status" class="calendar-status">
+                            <div class="status-message status-loading">
+                                <span class="material-icons">hourglass_empty</span>
+                                <span>Loading calendar status...</span>
+                            </div>
+                        </div>
 
-            <div id="calendar-status" class="calendar-status">
-                <div class="status-message status-loading">
-                    <span class="material-icons">hourglass_empty</span>
-                    <span>Loading calendar status...</span>
-                </div>
-            </div>
+                        <div id="calendar-actions" class="maintenance-actions" hidden>
+                            <button type="button" id="connect-calendar-btn" class="md3-button md3-button--filled"
+                                hidden>
+                                <span class="material-icons" aria-hidden="true">link</span>
+                                Connect Google Calendar
+                            </button>
 
-            <div id="calendar-actions" class="maintenance-actions" hidden>
-                <button type="button" id="connect-calendar-btn" class="md3-button md3-button--filled" hidden>
-                    <span class="material-icons" aria-hidden="true">link</span>
-                    Connect Google Calendar
-                </button>
+                            <button type="button" id="disconnect-calendar-btn" class="md3-button md3-button--tonal"
+                                hidden>
+                                <span class="material-icons" aria-hidden="true">link_off</span>
+                                Disconnect Calendar
+                            </button>
+                        </div>
 
-                <button type="button" id="disconnect-calendar-btn" class="md3-button md3-button--tonal" hidden>
-                    <span class="material-icons" aria-hidden="true">link_off</span>
-                    Disconnect Calendar
-                </button>
-            </div>
+                        <div id="calendar-config-note" class="calendar-config-note" hidden>
+                            <div class="md3-snackbar info">
+                                <span class="material-icons">info</span>
+                                <div>
+                                    <p><strong>Setup Required:</strong> Before connecting, add your Google OAuth
+                                        credentials:</p>
+                                    <ol>
+                                        <li>Go to <a href="https://console.cloud.google.com/" target="_blank"
+                                                rel="noopener">Google
+                                                Cloud Console</a></li>
+                                        <li>Create/select a project and enable the Google Calendar API</li>
+                                        <li>Create OAuth 2.0 credentials (Web application type)</li>
+                                        <li>Add <code>http://localhost:8000/calendar/callback</code> to authorized
+                                            redirect URIs</li>
+                                        <li>Copy the Client ID and Client Secret to the form above</li>
+                                        <li>Set <code>INBOX_AI_CALENDAR__ENABLED=true</code> in your .env</li>
+                                        <li>Save settings and restart the server</li>
+                                    </ol>
+                                </div>
+                            </div>
+                        </div>
 
-            <div id="calendar-config-note" class="calendar-config-note" hidden>
-                <div class="md3-snackbar info">
-                    <span class="material-icons">info</span>
-                    <div>
-                        <p><strong>Setup Required:</strong> Before connecting, add your Google OAuth credentials:</p>
-                        <ol>
-                            <li>Go to <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">Google
-                                    Cloud Console</a></li>
-                            <li>Create/select a project and enable the Google Calendar API</li>
-                            <li>Create OAuth 2.0 credentials (Web application type)</li>
-                            <li>Add <code>http://localhost:8000/calendar/callback</code> to authorized redirect URIs
-                            </li>
-                            <li>Copy the Client ID and Client Secret to the form above</li>
-                            <li>Set <code>INBOX_AI_CALENDAR__ENABLED=true</code> in your .env</li>
-                            <li>Save settings and restart the server</li>
-                        </ol>
+                        <div id="calendar-list" class="calendar-list" hidden></div>
                     </div>
-                </div>
+
+                    <div class="settings-panel" id="maintenance">
+                        <div class="settings-section-heading">
+                            <h2>Maintenance</h2>
+                            <p>Run occasional clean-up tasks from here. These actions affect stored data immediately.
+                            </p>
+                        </div>
+                        <div class="maintenance-actions">
+                            <button type="button" id="test-smtp-btn" class="md3-button md3-button--tonal">
+                                <span class="material-icons" aria-hidden="true">send</span>
+                                Test SMTP Connection
+                            </button>
+                            <form method="post" action="/categories/regenerate">
+                                <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
+                                <input type="hidden" name="redirect_to" value="{{ redirect_to }}#maintenance" />
+                                <button type="submit" class="md3-button md3-button--tonal">
+                                    <span class="material-icons" aria-hidden="true">category</span>
+                                    Rebuild Categories
+                                </button>
+                            </form>
+                            <form id="clear-database-form" method="post" action="/clear-database">
+                                <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
+                                <input type="hidden" name="redirect_to" value="{{ redirect_to }}#maintenance" />
+                                <button type="submit" class="md3-button md3-button--tonal settings-button--danger">
+                                    <span class="material-icons" aria-hidden="true">delete_outline</span>
+                                    Clear Database
+                                </button>
+                            </form>
+                        </div>
+
+                        <div id="smtp-test-results" class="smtp-test-results" hidden></div>
+                    </div>
+                </section>
+
+                <aside class="settings-column settings-column--secondary">
+                    <div class="settings-panel" id="appearance">
+                        <div class="settings-section-heading">
+                            <h2>Appearance</h2>
+                            <p>Choose your preferred theme. Your selection is saved automatically.</p>
+                        </div>
+                        <div class="theme-grid" id="theme-grid">
+                            <!-- Themes will be loaded here dynamically -->
+                        </div>
+                    </div>
+
+                    <div class="settings-panel" id="quality-feedback">
+                        <div class="settings-section-heading">
+                            <h2>Quality Feedback</h2>
+                            <p>Track how often AI summaries and drafts are accepted, edited, sent, or discarded.</p>
+                        </div>
+                        <div class="settings-metrics">
+                            <div class="settings-metric">
+                                <span class="settings-metric__label">Summary helpful ratings</span>
+                                <strong class="settings-metric__value">{{ feedback_metrics.get('insight_positive', 0)
+                                    }}</strong>
+                            </div>
+                            <div class="settings-metric">
+                                <span class="settings-metric__label">Summary negative ratings</span>
+                                <strong class="settings-metric__value">{{ feedback_metrics.get('insight_negative', 0)
+                                    }}</strong>
+                            </div>
+                            <div class="settings-metric">
+                                <span class="settings-metric__label">Draft helpful ratings</span>
+                                <strong class="settings-metric__value">{{ feedback_metrics.get('draft_positive', 0)
+                                    }}</strong>
+                            </div>
+                            <div class="settings-metric">
+                                <span class="settings-metric__label">Draft negative ratings</span>
+                                <strong class="settings-metric__value">{{ feedback_metrics.get('draft_negative', 0)
+                                    }}</strong>
+                            </div>
+                            <div class="settings-metric">
+                                <span class="settings-metric__label">Edited drafts</span>
+                                <strong class="settings-metric__value">{{ feedback_metrics.get('draft_edited', 0)
+                                    }}</strong>
+                            </div>
+                            <div class="settings-metric">
+                                <span class="settings-metric__label">Sent drafts</span>
+                                <strong class="settings-metric__value">{{ feedback_metrics.get('draft_sent', 0)
+                                    }}</strong>
+                            </div>
+                            <div class="settings-metric">
+                                <span class="settings-metric__label">Deleted drafts</span>
+                                <strong class="settings-metric__value">{{ feedback_metrics.get('draft_deleted', 0)
+                                    }}</strong>
+                            </div>
+                        </div>
+                    </div>
+                </aside>
             </div>
-
-            <div id="calendar-list" class="calendar-list" hidden></div>
-        </div>
-
-        <div class="md3-card" id="quality-feedback">
-            <h2>Quality Feedback</h2>
-            <p>Track how often AI summaries and drafts are accepted, edited, sent, or discarded.</p>
-            <div class="config-grid">
-                <div class="md3-field filled">
-                    <span class="config-help">Summary helpful ratings</span>
-                    <strong>{{ feedback_metrics.get('insight_positive', 0) }}</strong>
-                </div>
-                <div class="md3-field filled">
-                    <span class="config-help">Summary negative ratings</span>
-                    <strong>{{ feedback_metrics.get('insight_negative', 0) }}</strong>
-                </div>
-                <div class="md3-field filled">
-                    <span class="config-help">Draft helpful ratings</span>
-                    <strong>{{ feedback_metrics.get('draft_positive', 0) }}</strong>
-                </div>
-                <div class="md3-field filled">
-                    <span class="config-help">Draft negative ratings</span>
-                    <strong>{{ feedback_metrics.get('draft_negative', 0) }}</strong>
-                </div>
-                <div class="md3-field filled">
-                    <span class="config-help">Edited drafts</span>
-                    <strong>{{ feedback_metrics.get('draft_edited', 0) }}</strong>
-                </div>
-                <div class="md3-field filled">
-                    <span class="config-help">Sent drafts</span>
-                    <strong>{{ feedback_metrics.get('draft_sent', 0) }}</strong>
-                </div>
-                <div class="md3-field filled">
-                    <span class="config-help">Deleted drafts</span>
-                    <strong>{{ feedback_metrics.get('draft_deleted', 0) }}</strong>
-                </div>
-            </div>
-        </div>
-
-        <div class="md3-card" id="maintenance">
-            <h2>Maintenance</h2>
-            <p>Run occasional clean-up tasks from here. These actions affect stored data immediately.</p>
-            <div class="maintenance-actions">
-                <button type="button" id="test-smtp-btn" class="md3-button md3-button--tonal">
-                    <span class="material-icons" aria-hidden="true">send</span>
-                    Test SMTP Connection
-                </button>
-                <form method="post" action="/categories/regenerate">
-                    <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
-                    <input type="hidden" name="redirect_to" value="{{ redirect_to }}#maintenance" />
-                    <button type="submit" class="md3-button md3-button--tonal">
-                        <span class="material-icons" aria-hidden="true">category</span>
-                        Rebuild Categories
-                    </button>
-                </form>
-                <form id="clear-database-form" method="post" action="/clear-database">
-                    <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
-                    <input type="hidden" name="redirect_to" value="{{ redirect_to }}#maintenance" />
-                    <button type="submit" class="md3-button md3-button--tonal"
-                        style="background: var(--md3-color-error-container); color: var(--md3-color-on-error-container);">
-                        <span class="material-icons" aria-hidden="true">delete_outline</span>
-                        Clear Database
-                    </button>
-                </form>
-            </div>
-
-            <!-- SMTP Test Results -->
-            <div id="smtp-test-results" style="display: none; margin-top: 16px;"></div>
-        </div>
-    </div>
+        </section>
+    </main>
 
     <script type="module">
-        import { DialogManager } from "{{ url_for('static', path='js/modules/dialog.js') }}";
-        import { ToastManager } from "{{ url_for('static', path='js/modules/toast.js') }}";
+        import { DialogManager } from "{{ url_for('static', path='js/modules/dialog.js') }}?v={{ static_asset_version }}";
+        import { ToastManager } from "{{ url_for('static', path='js/modules/toast.js') }}?v={{ static_asset_version }}";
 
         const dialog = new DialogManager();
 
@@ -239,12 +273,11 @@
 
             button.disabled = true;
             button.innerHTML = '<span class="material-icons" aria-hidden="true">hourglass_empty</span> Testing...';
+            resultsDiv.hidden = false;
 
             try {
                 const response = await fetch('/api/smtp/test', { method: 'POST' });
                 const data = await response.json();
-
-                resultsDiv.style.display = 'block';
 
                 if (data.test_email === 'success') {
                     resultsDiv.innerHTML = `
@@ -264,14 +297,14 @@
                             <div>
                                 <strong>SMTP Test Failed</strong>
                                 <p><strong>Configuration:</strong></p>
-                                <ul style="margin: 8px 0; padding-left: 20px;">
+                                <ul class="settings-inline-list">
                                     <li>Host: ${data.config.host || 'Not configured'}</li>
                                     <li>Port: ${data.config.port || 'Not configured'}</li>
                                     <li>Username: ${data.config.username || 'Not configured'}</li>
                                     <li>TLS: ${data.config.use_tls ? 'Enabled' : 'Disabled'}</li>
                                 </ul>
                                 <p><strong>Errors:</strong></p>
-                                <ul style="margin: 8px 0; padding-left: 20px;">
+                                <ul class="settings-inline-list">
                                     ${data.errors.map(err => `<li>${err}</li>`).join('')}
                                 </ul>
                             </div>
@@ -279,7 +312,6 @@
                     `;
                 }
             } catch (error) {
-                resultsDiv.style.display = 'block';
                 resultsDiv.innerHTML = `
                     <div class="md3-snackbar error">
                         <span class="material-icons">error</span>
@@ -327,8 +359,8 @@
 
             themeGrid.innerHTML = themesToRender.map(theme => `
                 <button type="button" class="theme-chip" data-theme-select="${theme.id}" title="${theme.title}">
-                    <div class="theme-preview" style="background: linear-gradient(135deg, ${theme.gradientStart} 0%, ${theme.gradientEnd} 100%);"></div>
-                    <span>${theme.label}</span>
+                    <div class="theme-preview ${theme.previewClass || `theme-${theme.id.replace('high-contrast', 'contrast')}`}"></div>
+                    <span class="theme-label">${theme.label}</span>
                 </button>
             `).join("");
 

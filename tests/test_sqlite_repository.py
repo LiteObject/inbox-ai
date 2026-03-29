@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import logging
 import sqlite3
 from datetime import datetime, timedelta, timezone
-import json
 from pathlib import Path
 
 from inbox_ai.core.config import StorageSettings
@@ -192,6 +193,25 @@ def test_repository_persists_feedback_and_thread_context(tmp_path: Path) -> None
     assert metrics["draft_sent"] == 1
     assert metrics["draft_deleted"] == 1
     repository.close()
+
+
+def test_repository_reopen_skips_duplicate_column_migration_warnings(
+    tmp_path: Path, caplog
+) -> None:
+    db_path = tmp_path / "reopen.db"
+    settings = StorageSettings(db_path=db_path)
+
+    first_repository = SqliteEmailRepository(settings)
+    first_repository.close()
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        second_repository = SqliteEmailRepository(settings)
+        second_repository.close()
+
+    warning_messages = [record.getMessage() for record in caplog.records]
+    assert all("009_sent_drafts.sql" not in message for message in warning_messages)
+    assert all("010_calendar_sync.sql" not in message for message in warning_messages)
 
 
 def test_repository_persists_drafts(tmp_path: Path) -> None:

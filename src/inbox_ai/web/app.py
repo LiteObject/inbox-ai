@@ -33,7 +33,7 @@ from starlette.datastructures import UploadFile
 from starlette.responses import Response
 from starlette.templating import Jinja2Templates
 
-from inbox_ai.calendar import GoogleCalendarClient
+from inbox_ai.calendar import CalendarAuthError, GoogleCalendarClient
 from inbox_ai.core import AppSettings, load_app_settings
 from inbox_ai.core.datetime_utils import display_datetime, serialize_datetime
 from inbox_ai.core.models import (
@@ -368,6 +368,23 @@ CONFIG_SECTIONS: tuple[ConfigSection, ...] = (
 CONFIG_FIELD_KEYS: tuple[str, ...] = tuple(
     field.key for section in CONFIG_SECTIONS for field in section.fields
 )
+
+
+def _clear_calendar_credentials(repository: SqliteEmailRepository) -> None:
+    """Remove stored Google Calendar OAuth state and tokens."""
+    repository.delete_user_preference("calendar_access_token")
+    repository.delete_user_preference("calendar_refresh_token")
+    repository.delete_user_preference("calendar_oauth_state")
+
+
+def _expire_calendar_connection(
+    repository: SqliteEmailRepository, exc: CalendarAuthError
+) -> str:
+    """Clear invalid calendar credentials and return a user-facing message."""
+    message = str(exc) or "Google Calendar authorization expired. Please reconnect."
+    LOGGER.warning("Google Calendar authorization expired: %s", message)
+    _clear_calendar_credentials(repository)
+    return message
 
 
 def create_app(settings: AppSettings | None = None) -> FastAPI:
@@ -896,12 +913,15 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
     async def delete_email(
         request: Request,
         email_uid: int,
+        repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
         redirect_to: str | None = Form(None),
         csrf_token: str = Form(..., alias=CSRF_FIELD_NAME),
     ) -> RedirectResponse:
         csrf.validate(request, csrf_token)
         redirect_target = _sanitize_redirect(redirect_to) or "/"
-        outcome = await asyncio.to_thread(_delete_email, app_settings, email_uid)
+        outcome = await asyncio.to_thread(
+            _delete_email, app_settings, email_uid, repository
+        )
 
         # Invalidate cache after delete
         if outcome.success:
@@ -913,8 +933,42 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         target = _append_query_param(target, "delete_message", outcome.message)
         return RedirectResponse(url=target, status_code=http_status.HTTP_303_SEE_OTHER)
 
+    @app.delete("/api/emails/{email_uid}")
+    async def delete_email_api(
+        request: Request,
+        email_uid: int,
+        repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
+    ) -> JSONResponse:
+        csrf_token = request.headers.get("X-CSRF-Token")
+        csrf.validate(request, csrf_token)
+
+        outcome = await asyncio.to_thread(
+            _delete_email, app_settings, email_uid, repository
+        )
+
+        if outcome.success:
+            response_cache.invalidate("dashboard")
+            LOGGER.info("Invalidated cache after deleting email %s via API", email_uid)
+
+        status_code = (
+            http_status.HTTP_200_OK
+            if outcome.success
+            else http_status.HTTP_400_BAD_REQUEST
+        )
+        return JSONResponse(
+            status_code=status_code,
+            content={
+                "success": outcome.success,
+                "message": outcome.message,
+                "uid": email_uid,
+            },
+        )
+
     @app.post("/emails/bulk-delete")
-    async def bulk_delete_emails(request: Request) -> RedirectResponse:
+    async def bulk_delete_emails(
+        request: Request,
+        repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
+    ) -> RedirectResponse:
         form = await request.form()
         raw_token = form.get(csrf.field_name)
         token = raw_token if isinstance(raw_token, str) else None
@@ -931,7 +985,9 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                 continue
             uids.append(value)
 
-        outcome = await asyncio.to_thread(_delete_emails, app_settings, tuple(uids))
+        outcome = await asyncio.to_thread(
+            _delete_emails, app_settings, tuple(uids), repository
+        )
 
         # Invalidate cache after bulk delete
         if outcome.success:
@@ -1502,6 +1558,10 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                     {"id": cal.get("id"), "summary": cal.get("summary")}
                     for cal in calendars
                 ]
+            except CalendarAuthError as exc:
+                status_data["connected"] = False
+                status_data["reauth_required"] = True
+                status_data["error"] = _expire_calendar_connection(repository, exc)
             except Exception as exc:  # noqa: BLE001
                 LOGGER.error("Failed to fetch calendars: %s", exc)
                 status_data["error"] = str(exc)
@@ -1517,9 +1577,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         csrf_token = request.headers.get("X-CSRF-Token")
         csrf.validate(request, csrf_token)
 
-        repository.delete_user_preference("calendar_access_token")
-        repository.delete_user_preference("calendar_refresh_token")
-        repository.delete_user_preference("calendar_oauth_state")
+        _clear_calendar_credentials(repository)
 
         return {"success": True, "message": "Calendar disconnected"}
 
@@ -1646,6 +1704,12 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                 ),
             }
 
+        except CalendarAuthError as exc:
+            return {
+                "success": False,
+                "error": _expire_calendar_connection(repository, exc),
+                "reauth_required": True,
+            }
         except Exception as exc:  # noqa: BLE001
             LOGGER.exception("Failed to sync follow-up to calendar")
             return {"success": False, "error": str(exc)}
@@ -1717,6 +1781,13 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                 "event_summary": event.get("summary"),
             }
 
+        except CalendarAuthError as exc:
+            return {
+                "success": False,
+                "exists": None,
+                "error": _expire_calendar_connection(repository, exc),
+                "reauth_required": True,
+            }
         except Exception as exc:  # noqa: BLE001
             error_str = str(exc)
             LOGGER.warning(
@@ -1879,9 +1950,9 @@ def _parse_limit(raw: str | None, default: int) -> int:
 
 
 def _normalize_follow_status(raw: str | None) -> tuple[str | None, str]:
-    value = (raw or "open").lower()
+    value = (raw or "all").lower()
     if value not in _FOLLOW_STATUS_OPTIONS:
-        value = "open"
+        value = "all"
     return (None if value == "all" else value, value)
 
 
@@ -2557,7 +2628,9 @@ def _generate_follow_ups(
         )
 
 
-def _delete_email(settings: AppSettings, uid: int) -> DeleteOutcome:
+def _delete_email(
+    settings: AppSettings, uid: int, repository: SqliteEmailRepository
+) -> DeleteOutcome:
     missing_credentials = not settings.imap.username or not settings.imap.app_password
     if missing_credentials:
         return DeleteOutcome(
@@ -2566,20 +2639,16 @@ def _delete_email(settings: AppSettings, uid: int) -> DeleteOutcome:
         )
 
     try:
-        with SqliteEmailRepository(settings.storage) as repository:
-            email = repository.fetch_email(uid)
-            if email is None:
-                return DeleteOutcome(
-                    success=True, message=f"Message UID {uid} not found."
-                )
-            mailbox_name = email.mailbox
+        email = repository.fetch_email(uid)
+        mailbox_name = (
+            email.mailbox
+            if email is not None
+            else (settings.imap.mailboxes[0] if settings.imap.mailboxes else "INBOX")
+        )
 
-        with (
-            ImapClient(settings.imap, mailbox_name) as mailbox,
-            SqliteEmailRepository(settings.storage) as repository,
-        ):
+        with ImapClient(settings.imap, mailbox_name) as mailbox:
             mailbox.move_to_trash(uid, settings.imap.trash_folder)
-            removed = repository.delete_email(uid)
+        removed = repository.delete_email(uid)
     except ImapError as exc:
         return DeleteOutcome(success=False, message=f"Delete failed: {exc}")
     except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-exception-caught
@@ -2594,7 +2663,9 @@ def _delete_email(settings: AppSettings, uid: int) -> DeleteOutcome:
     )
 
 
-def _delete_emails(settings: AppSettings, uids: Sequence[int]) -> DeleteOutcome:
+def _delete_emails(
+    settings: AppSettings, uids: Sequence[int], repository: SqliteEmailRepository
+) -> DeleteOutcome:
     unique_uids = tuple(dict.fromkeys(uids))
     if not unique_uids:
         return DeleteOutcome(success=True, message="No emails to delete.")
@@ -2606,20 +2677,23 @@ def _delete_emails(settings: AppSettings, uids: Sequence[int]) -> DeleteOutcome:
             message="Configure IMAP username and app password before deleting.",
         )
 
-    try:
-        with SqliteEmailRepository(settings.storage) as repository:
-            emails = []
-            for uid in unique_uids:
-                email = repository.fetch_email(uid)
-                if email:
-                    emails.append(email)
-            if not emails:
-                return DeleteOutcome(success=True, message="No emails found to delete.")
+    default_mailbox = settings.imap.mailboxes[0] if settings.imap.mailboxes else "INBOX"
 
-            # Group by mailbox
-            by_mailbox = {}
-            for email in emails:
-                by_mailbox.setdefault(email.mailbox, []).append(email.uid)
+    try:
+        emails = []
+        for uid in unique_uids:
+            email = repository.fetch_email(uid)
+            if email:
+                emails.append(email)
+
+        # Group by mailbox — UIDs not found locally go to the default mailbox.
+        by_mailbox: dict[str, list[int]] = {}
+        found_uids = {email.uid for email in emails}
+        for email in emails:
+            by_mailbox.setdefault(email.mailbox, []).append(email.uid)
+        for uid in unique_uids:
+            if uid not in found_uids:
+                by_mailbox.setdefault(default_mailbox, []).append(uid)
 
         successes = 0
         failures: list[tuple[int, str]] = []
@@ -2636,21 +2710,20 @@ def _delete_emails(settings: AppSettings, uids: Sequence[int]) -> DeleteOutcome:
                     failures.append((uid, str(exc)))
                 continue
 
-            with SqliteEmailRepository(settings.storage) as repository:
-                for uid in mailbox_uids:
-                    try:
-                        repository.delete_email(uid)
-                    except (
-                        Exception
-                    ) as exc:  # noqa: BLE001  # pylint: disable=broad-exception-caught
-                        LOGGER.warning(
-                            "Repository cleanup failed for UID %s: %s",
-                            uid,
-                            exc,
-                        )
-                        failures.append((uid, str(exc)))
-                        continue
-                    successes += 1
+            for uid in mailbox_uids:
+                try:
+                    repository.delete_email(uid)
+                except (
+                    Exception
+                ) as exc:  # noqa: BLE001  # pylint: disable=broad-exception-caught
+                    LOGGER.warning(
+                        "Repository cleanup failed for UID %s: %s",
+                        uid,
+                        exc,
+                    )
+                    failures.append((uid, str(exc)))
+                    continue
+                successes += 1
     except ImapError as exc:
         return DeleteOutcome(success=False, message=f"Delete failed: {exc}")
     except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-exception-caught

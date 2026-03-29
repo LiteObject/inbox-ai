@@ -5,7 +5,7 @@
 
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/static/js/service-worker.js')
+        navigator.serviceWorker.register('/static/js/service-worker.js?v=20260328c')
             .then((registration) => {
                 console.log('[SW Registration] Success:', registration.scope);
 

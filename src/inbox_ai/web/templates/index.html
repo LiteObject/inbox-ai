@@ -5,17 +5,18 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Inbox AI Dashboard</title>
+    {% set static_asset_version = '20260328f' %}
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet" />
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet" />
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,400,0,0"
         rel="stylesheet" />
-    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}" />
-    <script src="{{ url_for('static', path='js/register-sw.js') }}" defer></script>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}?v={{ static_asset_version }}" />
+    <script src="{{ url_for('static', path='js/register-sw.js') }}?v={{ static_asset_version }}" defer></script>
 </head>
 
-<body class="page-root">
+<body class="page-root inbox-dashboard-page">
     <!-- Abstract Background Shapes Layer -->
     <div class="organic-background" aria-hidden="true">
         <div class="shape shape-1"></div>
@@ -27,6 +28,8 @@
     </div>
 
     {% set page_title = 'InboxAI' %}
+    {% set page_subtitle = 'Inbox overview' %}
+    {% set page_subtitle_icon = 'inbox' %}
     {% set show_settings_button = true %}
     {% set show_back_button = false %}
     {% include 'partials/header.html' %}
@@ -60,97 +63,112 @@
 
     <div id="toast-container" class="toast-container" aria-live="assertive" aria-atomic="true"></div>
 
-    <main class="md3-layout">
-        <section class="md3-navigation-rail" id="filter-rail">
-            <h2>Filters</h2>
-            <form class="filter-form" method="get" data-scroll-restore>
-                <div class="md3-field">
-                    <label for="filter-insights-limit">Insights limit</label>
-                    <input class="md3-input" id="filter-insights-limit" type="number" name="insights_limit" min="1"
-                        max="100" value="{{ filters.insights_limit }}" />
-                </div>
+    <main class="md3-layout inbox-dashboard">
+        <section class="md3-main-content">
+            <div class="md3-toolbar">
+                <h2 class="toolbar-heading">Inbox Insights (<span id="insights-visible-count">{{ insights | length }}</span> / <span
+                    id="insights-total-count">{{ insights_total | default(0) }}</span>)</h2>
 
-                <div class="md3-field">
-                    <label for="filter-priority">Priority</label>
-                    <select class="md3-select" id="filter-priority" name="priority">
+                <form class="filter-toolbar" id="filter-rail" method="get" data-scroll-restore
+                    aria-label="Filter emails">
+                    <select class="md3-select filter-toolbar__select" id="filter-priority" name="priority"
+                        data-auto-submit aria-label="Priority">
                         {% for value, label in priority_filter_options %}
                         <option value="{{ value }}" {% if value==filters.priority_filter %}selected{% endif %}>
                             {{ label }}
                         </option>
                         {% endfor %}
                     </select>
-                </div>
 
-                <div class="md3-field">
-                    <label for="filter-category">Category</label>
-                    <select class="md3-select" id="filter-category" name="category">
-                        <option value="" {% if not filters.category_key %}selected{% endif %}>All categories</option>
-                        {% for category in category_options %}
-                        <option value="{{ category.key }}" {% if filters.category_key==category.key %}selected{% endif
-                            %}>
-                            {{ category.label }}
-                        </option>
-                        {% endfor %}
-                    </select>
-                </div>
+                    <select class="md3-select filter-toolbar__select" id="filter-category" name="category"
+                        data-auto-submit aria-label="Category">
+                    <option value="" {% if not filters.category_key %}selected{% endif %}>All categories</option>
+                    {% for category in category_options %}
+                    <option value="{{ category.key }}" {% if filters.category_key==category.key %}selected{% endif %}>
+                        {{ category.label }}
+                    </option>
+                    {% endfor %}
+                </select>
 
-                <div class="md3-field">
-                    <label for="filter-follow-status">Follow-up status</label>
-                    <select class="md3-select" id="filter-follow-status" name="follow_status">
-                        <option value="open" {% if filters.follow_status_value=='open' %}selected{% endif %}>Open
-                            follow-ups</option>
-                        <option value="done" {% if filters.follow_status_value=='done' %}selected{% endif %}>Completed
-                            follow-ups</option>
-                        <option value="all" {% if filters.follow_status_value=='all' %}selected{% endif %}>All statuses
-                        </option>
-                    </select>
-                </div>
-
-                <div class="md3-field">
-                    <label for="filter-follow-only">Follow-ups</label>
-                    <select class="md3-select" id="filter-follow-only" name="follow_only">
-                        <option value="" {% if not filters.follow_only %}selected{% endif %}>Include all insights
-                        </option>
-                        <option value="1" {% if filters.follow_only %}selected{% endif %}>Only with follow-ups</option>
-                    </select>
-                </div>
-
-                <div class="filter-actions">
-                    <button class="md3-button md3-button--filled" type="submit">
-                        <span class="material-icons" aria-hidden="true">filter_list</span>
-                        Apply Filters
+                <div class="filter-toolbar__more-anchor">
+                    <button class="md3-button md3-button--outlined filter-toolbar__more-btn" type="button"
+                        id="more-filters-toggle" aria-expanded="false" aria-controls="more-filters-popover">
+                        <span class="material-icons" aria-hidden="true">tune</span>
+                        <span>More</span>
+                        {% if filters.follow_status_value != 'all' or filters.follow_only or filters.insights_limit != 20 %}
+                        <span class="filter-toolbar__badge" aria-label="Advanced filters active"></span>
+                        {% endif %}
                     </button>
+                    <div class="filter-popover" id="more-filters-popover" role="dialog"
+                        aria-label="Advanced filters" hidden>
+                        <div class="filter-popover__body">
+                            <div class="md3-field">
+                                <label for="filter-follow-status">Follow-up status</label>
+                                <select class="md3-select" id="filter-follow-status" name="follow_status"
+                                    data-auto-submit>
+                                    <option value="all" {% if filters.follow_status_value=='all' %}selected{% endif %}>
+                                        All statuses</option>
+                                    <option value="open" {% if filters.follow_status_value=='open' %}selected{% endif %}>
+                                        Open follow-ups</option>
+                                    <option value="done" {% if filters.follow_status_value=='done' %}selected{% endif %}>
+                                        Completed follow-ups</option>
+                                </select>
+                            </div>
+                            <div class="md3-field">
+                                <label for="filter-follow-only">Follow-ups</label>
+                                <select class="md3-select" id="filter-follow-only" name="follow_only"
+                                    data-auto-submit>
+                                    <option value="" {% if not filters.follow_only %}selected{% endif %}>Include all
+                                        insights</option>
+                                    <option value="1" {% if filters.follow_only %}selected{% endif %}>Only with
+                                        follow-ups</option>
+                                </select>
+                            </div>
+                            <div class="md3-field">
+                                <label for="filter-insights-limit">Insights limit</label>
+                                <input class="md3-input" id="filter-insights-limit" type="number"
+                                    name="insights_limit" min="1" max="100"
+                                    value="{{ filters.insights_limit }}" data-auto-submit />
+                            </div>
+                        </div>
+                    </div>
                 </div>
+
+                {% if filters.priority_filter != 'all' or filters.category_key or filters.follow_status_value !=
+                'all' or filters.follow_only or filters.insights_limit != 20 %}
+                <div class="active-filter-chips" aria-label="Active filters">
+                    {% if filters.priority_filter != 'all' %}
+                    <span class="md3-chip">{{ filters.priority_filter }}</span>
+                    {% endif %}
+                    {% if filters.category_key %}
+                    <span class="md3-chip">{{ filters.category_key }}</span>
+                    {% endif %}
+                    {% if filters.follow_status_value != 'all' %}
+                    <span class="md3-chip">{{ filters.follow_status_value }}</span>
+                    {% endif %}
+                    {% if filters.follow_only %}
+                    <span class="md3-chip">Follow-ups only</span>
+                    {% endif %}
+                    {% if filters.insights_limit != 20 %}
+                    <span class="md3-chip">Limit: {{ filters.insights_limit }}</span>
+                    {% endif %}
+                </div>
+                {% endif %}
+
+                <a class="md3-button md3-button--text filter-toolbar__reset" href="/"
+                    {% if filters.priority_filter == 'all' and not filters.category_key and
+                    filters.follow_status_value == 'all' and not filters.follow_only and
+                    filters.insights_limit == 20 %}hidden{% endif %}>
+                    <span class="material-icons" aria-hidden="true">restart_alt</span>
+                    Reset
+                </a>
+
+                <noscript>
+                    <button class="md3-button md3-button--filled" type="submit">Apply</button>
+                </noscript>
             </form>
 
-            <form class="secondary-form" method="post" action="/emails/bulk-delete" data-scroll-restore data-spinner
-                data-spinner-label="Moving emails to trash..."
-                data-confirm="Move all listed emails to trash? You can recover them from your trash folder.">
-                <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
-                <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-                {% for item in insights %}
-                <input type="hidden" name="uids" value="{{ item.uid }}" />
-                {% endfor %}
-                <button class="md3-button md3-button--tonal" type="submit" title="Move these emails to trash">
-                    <span class="material-icons" aria-hidden="true">delete_sweep</span>
-                    Delete These Emails
-                </button>
-            </form>
-        </section>
-
-        <section class="md3-main-content">
-            <div class="md3-toolbar">
-                <div class="toolbar-heading">
-                    <h2>Inbox Insights (<span id="insights-visible-count">{{ insights | length }}</span> / {{
-                        insights_total | default(0) }})</h2>
-                    <p>Tracking {{ total_email_count | default(0) }} messages across your inbox</p>
-                </div>
                 <div class="toolbar-actions">
-                    <form method="post" action="/categories/regenerate" data-scroll-restore data-spinner
-                        data-spinner-label="Rebuilding categories...">
-                        <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
-                        <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-                    </form>
                     <form method="post" action="/sync" data-spinner data-scroll-restore
                         data-spinner-label="Sync in progress...">
                         <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
@@ -171,15 +189,28 @@
                             aria-label="Search insights" />
                     </div>
                     <div class="list-meta">
-                        <p>Showing <span id="insights-visible-count-2">{{ insights | length }}</span> of
-                            {{ insights_total | default(0) }} insights</p>
-                        <div class="sort-controls">
-                            <button class="sort-button" id="sort-toggle" data-direction="desc"
-                                title="Sort by received date (newest first)"
-                                aria-label="Sort by received date, currently newest first">
-                                <span class="material-icons sort-icon" aria-hidden="true">arrow_downward</span>
-                                <span class="sr-only">Toggle sort order</span>
-                            </button>
+                        <div class="list-meta__actions">
+                            <form class="secondary-form" method="post" action="/emails/bulk-delete"
+                                data-scroll-restore data-spinner data-spinner-label="Moving emails to trash..."
+                                data-confirm="Move all listed emails to trash? You can recover them from your trash folder.">
+                                <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
+                                <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
+                                {% for item in insights %}
+                                <input type="hidden" name="uids" value="{{ item.uid }}" />
+                                {% endfor %}
+                                <button class="md3-button md3-button--text list-meta__trash-btn" type="submit"
+                                    title="Move listed emails to trash">
+                                    <span class="material-icons" aria-hidden="true">delete_sweep</span>
+                                </button>
+                            </form>
+                            <div class="sort-controls">
+                                <button class="sort-button" id="sort-toggle" data-direction="desc"
+                                    title="Sort by received date (newest first)"
+                                    aria-label="Sort by received date, currently newest first">
+                                    <span class="material-icons sort-icon" aria-hidden="true">arrow_downward</span>
+                                    <span class="sr-only">Toggle sort order</span>
+                                </button>
+                            </div>
                         </div>
                     </div>
 
@@ -196,8 +227,16 @@
                         {% set draft_body = item.draft.body if item.draft else '' %}
                         {% set draft_provider = item.draft.provider if item.draft else '' %}
                         {% set draft_fallback = 'true' if item.draft and item.draft.usedFallback else 'false' %}
+                        {% if item.priority >= 7 %}
+                        {% set priority_class = 'item-status-dot--high' %}
+                        {% elif item.priority >= 4 %}
+                        {% set priority_class = 'item-status-dot--medium' %}
+                        {% else %}
+                        {% set priority_class = 'item-status-dot--default' %}
+                        {% endif %}
                         <li>
                             <button type="button" class="email-list-item" data-uid="{{ item.uid }}"
+                                data-received="{{ item.receivedAt | default('', true) | e }}"
                                 data-subject="{{ item.subject | default('', true) | e }}"
                                 data-sender="{{ item.sender | default('', true) | e }}"
                                 data-summary="{{ item.summary | default('', true) | replace('\n', ' ') | e }}"
@@ -214,37 +253,54 @@
                                 data-draft-fallback="{{ draft_fallback }}"
                                 data-thread-id="{{ item.threadId | default('', true) | e }}" {% if loop.first %}selected
                                 data-selected="true" {% else %}data-selected="false" {% endif %}>
-                                {% if item.priority >= 7 %}
-                                <span class="material-icons item-icon priority-icon"
-                                    aria-hidden="true">error_outline</span>
-                                {% elif item.priority >= 4 %}
-                                <span class="material-icons item-icon priority-medium"
-                                    aria-hidden="true">warning_amber</span>
-                                {% else %}
-                                <span class="material-icons item-icon" aria-hidden="true">mail</span>
-                                {% endif %}
+                                <span class="item-status-dot {{ priority_class }}" aria-hidden="true"></span>
                                 <span class="item-content">
-                                    <span class="item-headline">{{ item.subject or "(no subject)" }}</span>
-                                    <span class="item-supporting">{{ item.sender or "Unknown sender" }}{% if
-                                        item.receivedAtDisplay %} · {{ item.receivedAtDisplay }}{% endif %}</span>
+                                    <span class="item-row">
+                                        <span class="item-headline">{{ item.subject or "(no subject)" }}</span>
+                                        <span class="item-date">{{ item.receivedAtDisplay or "Recently" }}</span>
+                                    </span>
+                                    <span class="item-supporting">{{ item.sender or "Unknown sender" }}</span>
                                 </span>
                             </button>
                         </li>
                         {% endfor %}
                     </ul>
 
-                    <div class="md3-empty-state" id="insights-filter-empty" {% if insights | length> 0 %}hidden{% endif
-                        %}>
-                        <span class="material-icons" aria-hidden="true">mail_outline</span>
-                        <p>No emails found. Try adjusting your filters.</p>
+                    <div class="md3-empty-state md3-empty-state--list" id="insights-filter-empty" {% if insights |
+                        length> 0 %}hidden{% endif %}>
+                        {% set has_active_filters = filters.priority_filter != 'all' or filters.category_key or
+                        filters.follow_status_value != 'all' or filters.follow_only or filters.insights_limit != 20 %}
+                        <span class="material-icons" aria-hidden="true">{% if has_active_filters %}filter_alt_off{% else
+                            %}inbox{% endif %}</span>
+                        {% if has_active_filters %}
+                        <h3>No emails match these filters</h3>
+                        <p>Broaden the priority, category, or follow-up filters to bring more messages back into view.
+                        </p>
+                        <div class="md3-empty-state__actions">
+                            <a class="md3-button md3-button--text" href="/">
+                                <span class="material-icons" aria-hidden="true">restart_alt</span>
+                                Reset filters
+                            </a>
+                        </div>
+                        {% else %}
+                        <h3>Your inbox is ready</h3>
+                        <p>Sync the mailbox to pull in the latest emails and generate a fresh set of insights.</p>
+                        {% endif %}
                     </div>
                 </aside>
 
                 <section class="md3-detail-pane">
                     <div id="detail-content" aria-live="polite">
-                        <div class="md3-empty-state">
-                            <span class="material-icons" aria-hidden="true">mail_outline</span>
-                            <p>Select an email to view its details.</p>
+                        <div class="md3-empty-state md3-empty-state--detail">
+                            <span class="material-icons" aria-hidden="true">draft</span>
+                            {% if insights %}
+                            <h3>Select an email</h3>
+                            <p>Open a message from the list to review the summary, follow-up tasks, and reply draft.</p>
+                            {% else %}
+                            <h3>No email details yet</h3>
+                            <p>Once messages are available, this panel will show summaries, actions, and draft replies.
+                            </p>
+                            {% endif %}
                         </div>
                     </div>
 
@@ -254,6 +310,11 @@
                         map(attribute='uid') | list %}
                         <template data-email-detail data-uid="{{ item.uid }}">
                             <article class="md3-detail-view detail-view">
+                                <button type="button" class="md3-back-button detail-mobile-back" data-detail-back>
+                                    <span class="material-icons" aria-hidden="true">arrow_back</span>
+                                    Back to inbox
+                                </button>
+
                                 <header class="md3-detail-header">
                                     <div class="md3-detail-title-section">
                                         <h3>{{ item.subject or "(no subject)" }}</h3>
@@ -290,17 +351,20 @@
                                         </div>
                                         {% endif %}
                                     </div>
-                                    <form method="post" action="/emails/{{ item.uid }}/delete" data-scroll-restore
-                                        data-spinner
-                                        data-confirm="Move this email to trash? You can recover it from your trash folder.">
-                                        <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
-                                        <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-                                        <button class="md3-button md3-button--tonal" type="submit"
-                                            title="Move to trash">
-                                            <span class="material-icons" aria-hidden="true">delete</span>
-                                            Delete Email
-                                        </button>
-                                    </form>
+                                    <div class="md3-detail-header-actions">
+                                        <form method="post" action="/emails/{{ item.uid }}/delete" data-scroll-restore
+                                            data-spinner
+                                            data-confirm="Move this email to trash? You can recover it from your trash folder.">
+                                            <input type="hidden" name="{{ csrf_field_name }}"
+                                                value="{{ csrf_token }}" />
+                                            <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
+                                            <button class="md3-button md3-button--text" type="submit"
+                                                title="Move to trash">
+                                                <span class="material-icons" aria-hidden="true">delete</span>
+                                                Move to trash
+                                            </button>
+                                        </form>
+                                    </div>
                                 </header>
 
                                 <div class="md3-detail-section md3-detail-section--tabs">
@@ -320,7 +384,7 @@
                                             id="original-tab-{{ item.uid }}" data-tab="original" tabindex="-1">
                                             <span class="md3-tab__content">
                                                 <span class="material-icons" aria-hidden="true">mail</span>
-                                                <span class="md3-tab__text-label">Original Email</span>
+                                                <span class="md3-tab__text-label">Original message</span>
                                             </span>
                                             <span class="md3-tab__indicator"></span>
                                         </button>
@@ -337,7 +401,16 @@
                                                     <span class="material-icons" aria-hidden="true">smart_toy</span>
                                                     AI Summary
                                                 </h4>
-                                                <p>{{ item.summary or "No summary available for this email." }}</p>
+                                                {% if item.summary %}
+                                                <p>{{ item.summary }}</p>
+                                                {% else %}
+                                                <div class="md3-empty-state md3-empty-state--section">
+                                                    <span class="material-icons" aria-hidden="true">notes</span>
+                                                    <h3>No summary available</h3>
+                                                    <p>This message is stored, but no summary has been generated for it
+                                                        yet.</p>
+                                                </div>
+                                                {% endif %}
                                                 <div class="feedback-actions">
                                                     <p class="feedback-actions__label">Was this summary useful?</p>
                                                     <form method="post" action="/emails/{{ item.uid }}/insight/rating"
@@ -353,7 +426,7 @@
                                                             aria-pressed="{% if item.userRating == 1 %}true{% else %}false{% endif %}">
                                                             <span class="material-icons"
                                                                 aria-hidden="true">thumb_up</span>
-                                                            Useful
+                                                            Helpful
                                                         </button>
                                                     </form>
                                                     <form method="post" action="/emails/{{ item.uid }}/insight/rating"
@@ -369,28 +442,36 @@
                                                             aria-pressed="{% if item.userRating == -1 %}true{% else %}false{% endif %}">
                                                             <span class="material-icons"
                                                                 aria-hidden="true">thumb_down</span>
-                                                            Off target
+                                                            Not useful
                                                         </button>
                                                     </form>
                                                 </div>
                                             </div>
 
-                                            {% if item.actionItems %}
                                             <div class="md3-detail-subsection">
                                                 <h4>
                                                     <span class="material-icons" aria-hidden="true">flag</span>
                                                     Key Actions
                                                 </h4>
-                                                <ul class="md3-detail-list">
+                                                {% if item.actionItems %}
+                                                <ul class="md3-detail-list md3-detail-list--compact">
                                                     {% for action in item.actionItems %}
                                                     <li>
                                                         <span class="material-icons" aria-hidden="true">task_alt</span>
-                                                        <span>{{ action }}</span>
+                                                        <span class="item-content">
+                                                            <span class="item-headline">{{ action }}</span>
+                                                        </span>
                                                     </li>
                                                     {% endfor %}
                                                 </ul>
+                                                {% else %}
+                                                <div class="md3-empty-state md3-empty-state--section">
+                                                    <span class="material-icons" aria-hidden="true">task_alt</span>
+                                                    <h3>No action items detected</h3>
+                                                    <p>This email does not currently have any tracked next steps.</p>
+                                                </div>
+                                                {% endif %}
                                             </div>
-                                            {% endif %}
                                         </div>
 
                                         <!-- Original Email Panel -->
@@ -398,17 +479,27 @@
                                             aria-labelledby="original-tab-{{ item.uid }}" hidden>
 
                                             <div class="email-original">
-                                                <div class="email-meta">
-                                                    <dl>
-                                                        <dt>From:</dt>
-                                                        <dd>{{ item.sender or "Unknown sender" }}</dd>
+                                                <div class="email-original__intro">
+                                                    <h4>Original message</h4>
+                                                    <p>Review sender, subject, and raw message content in one place.</p>
+                                                </div>
 
-                                                        <dt>Subject:</dt>
-                                                        <dd>{{ item.subject or "(no subject)" }}</dd>
-
-                                                        <dt>Received:</dt>
-                                                        <dd>{{ item.receivedAtDisplay or "Not available" }}</dd>
-                                                    </dl>
+                                                <div class="email-meta-grid">
+                                                    <div class="email-meta-item">
+                                                        <span class="email-meta-item__label">From</span>
+                                                        <span class="email-meta-item__value">{{ item.sender or "Unknown
+                                                            sender" }}</span>
+                                                    </div>
+                                                    <div class="email-meta-item">
+                                                        <span class="email-meta-item__label">Subject</span>
+                                                        <span class="email-meta-item__value">{{ item.subject or "(no
+                                                            subject)" }}</span>
+                                                    </div>
+                                                    <div class="email-meta-item">
+                                                        <span class="email-meta-item__label">Received</span>
+                                                        <span class="email-meta-item__value">{{ item.receivedAtDisplay
+                                                            or "Not available" }}</span>
+                                                    </div>
                                                 </div>
 
                                                 <div class="email-body" data-uid="{{ item.uid }}">
@@ -420,6 +511,9 @@
                                                                     stroke-width="4"></circle>
                                                             </svg>
                                                         </div>
+                                                        <p>Loading original message...</p>
+                                                        <span class="loading-placeholder__hint">This can take a moment
+                                                            for larger messages.</span>
                                                         <span class="sr-only">Loading email content...</span>
                                                     </div>
                                                 </div>
@@ -439,32 +533,37 @@
                                             <input type="hidden" name="{{ csrf_field_name }}"
                                                 value="{{ csrf_token }}" />
                                             <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
-                                            <button class="md3-button md3-button--tonal" type="submit">
+                                            <button class="md3-button md3-button--text" type="submit">
                                                 <span class="material-icons" aria-hidden="true">playlist_add</span>
-                                                Generate Follow-ups
+                                                Generate tasks
                                             </button>
                                         </form>
                                     </div>
                                     {% if item.followUps %}
-                                    <ul class="md3-detail-list">
+                                    <ul class="md3-detail-list md3-detail-list--tasks">
                                         {% for task in item.followUps %}
                                         <li>
-                                            <span class="material-icons" aria-hidden="true">schedule</span>
-                                            <span class="item-content">
+                                            <span class="material-icons task-icon" aria-hidden="true">schedule</span>
+                                            <div class="task-item-content">
                                                 <span class="item-headline">{{ task.action }}</span>
-                                                <span class="item-supporting">{% if task.dueAtDisplay %}Due {{
-                                                    task.dueAtDisplay }}{% else %}No due date{% endif %} · Status: {{
-                                                    task.status }}</span>
-                                            </span>
+                                                <div class="task-item-meta">
+                                                    <span class="task-badge">{% if task.dueAtDisplay %}Due {{
+                                                        task.dueAtDisplay }}{% else %}No due date{% endif %}</span>
+                                                    <span
+                                                        class="task-badge task-badge--status{% if task.status == 'done' %} task-badge--done{% endif %}">Status:
+                                                        {{
+                                                        task.status }}</span>
+                                                </div>
+                                            </div>
                                             <div class="task-actions">
                                                 {% if task.calendarEventId %}
                                                 <a href="javascript:void(0)"
                                                     class="md3-button md3-button--text calendar-view-btn"
                                                     data-event-id="{{ task.calendarEventId }}"
                                                     data-event-url="https://calendar.google.com/calendar/r/events/{{ task.calendarEventId }}"
-                                                    data-task-id="{{ task.id }}" title="View in Google Calendar">
+                                                    data-task-id="{{ task.id }}" title="Open in Google Calendar">
                                                     <span class="material-icons" aria-hidden="true">event</span>
-                                                    View Calendar
+                                                    Open in Calendar
                                                 </a>
                                                 {% else %}
                                                 <button class="md3-button md3-button--text calendar-sync-btn"
@@ -475,7 +574,7 @@
                                                 </button>
                                                 {% endif %}
                                                 <form method="post" action="/follow-ups/{{ task.id }}/status"
-                                                    data-scroll-restore data-spinner style="display: inline;">
+                                                    data-scroll-restore data-spinner>
                                                     <input type="hidden" name="{{ csrf_field_name }}"
                                                         value="{{ csrf_token }}" />
                                                     <input type="hidden" name="redirect_to" value="{{ redirect_to }}" />
@@ -499,7 +598,12 @@
                                         {% endfor %}
                                     </ul>
                                     {% else %}
-                                    <p>No follow-up tasks tracked for this email.</p>
+                                    <div class="md3-empty-state md3-empty-state--section">
+                                        <span class="material-icons" aria-hidden="true">assignment_late</span>
+                                        <h3>No follow-up tasks yet</h3>
+                                        <p>Generate follow-ups when you want InboxAI to turn this message into a
+                                            concrete to-do list.</p>
+                                    </div>
                                     {% endif %}
                                 </section>
 
@@ -508,6 +612,9 @@
                                         <span class="material-icons" aria-hidden="true">edit_note</span>
                                         Draft Reply
                                     </h4>
+                                    <p class="detail-section-intro">{% if item.draft %}Review, send, or regenerate this
+                                        reply.{% else %}Generate a reply or write one manually below.{%
+                                        endif %}</p>
                                     <form method="post" action="/emails/{{ item.uid }}/draft" data-scroll-restore
                                         data-spinner>
                                         <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token }}" />
@@ -521,12 +628,33 @@
                                         {% if item.draft and item.draft.userEdited %}
                                         <p class="feedback-actions__note">Edited after AI generation.</p>
                                         {% endif %}
-                                        <div class="md3-draft-actions">
-                                            <button class="md3-button md3-button--filled" type="submit">
+                                        <div class="md3-draft-actions md3-draft-actions--primary">
+                                            <button class="md3-button md3-button--tonal" type="submit">
                                                 <span class="material-icons" aria-hidden="true">save</span>
                                                 Save Draft
                                             </button>
                                             {% if item.draft %}
+                                            <button class="md3-button md3-button--filled md3-button--primary"
+                                                type="submit" formaction="/emails/{{ item.uid }}/draft/send"
+                                                data-confirm="Send this email reply?">
+                                                <span class="material-icons" aria-hidden="true">send</span>
+                                                Send Reply
+                                            </button>
+                                            <button class="md3-button md3-button--text" type="submit"
+                                                formaction="/emails/{{ item.uid }}/draft/regenerate">
+                                                <span class="material-icons" aria-hidden="true">auto_fix_high</span>
+                                                Regenerate reply
+                                            </button>
+                                            {% else %}
+                                            <button class="md3-button md3-button--filled" type="submit"
+                                                formaction="/emails/{{ item.uid }}/draft/regenerate">
+                                                <span class="material-icons" aria-hidden="true">auto_fix_high</span>
+                                                Generate reply
+                                            </button>
+                                            {% endif %}
+                                        </div>
+                                        {% if item.draft %}
+                                        <div class="md3-draft-actions md3-draft-actions--secondary">
                                             <span class="feedback-actions__label">How close was this draft?</span>
                                             <button
                                                 class="md3-button md3-button--text feedback-button{% if item.draft.userRating == 1 %} feedback-button--selected{% endif %}"
@@ -534,7 +662,7 @@
                                                 name="rating" value="1"
                                                 aria-pressed="{% if item.draft.userRating == 1 %}true{% else %}false{% endif %}">
                                                 <span class="material-icons" aria-hidden="true">thumb_up</span>
-                                                Use as-is
+                                                Ready to send
                                             </button>
                                             <button
                                                 class="md3-button md3-button--text feedback-button{% if item.draft.userRating == -1 %} feedback-button--selected{% endif %}"
@@ -544,30 +672,13 @@
                                                 <span class="material-icons" aria-hidden="true">thumb_down</span>
                                                 Needs edits
                                             </button>
-                                            <button class="md3-button md3-button--filled md3-button--primary"
-                                                type="submit" formaction="/emails/{{ item.uid }}/draft/send"
-                                                data-confirm="Send this email reply?">
-                                                <span class="material-icons" aria-hidden="true">send</span>
-                                                Send Reply
-                                            </button>
-                                            <button class="md3-button md3-button--tonal" type="submit"
-                                                formaction="/emails/{{ item.uid }}/draft/regenerate">
-                                                <span class="material-icons" aria-hidden="true">auto_fix_high</span>
-                                                Regenerate
-                                            </button>
-                                            <button class="md3-button md3-button--tonal" type="submit"
+                                            <button class="md3-button md3-button--text" type="submit"
                                                 formaction="/emails/{{ item.uid }}/draft/delete">
                                                 <span class="material-icons" aria-hidden="true">delete_outline</span>
-                                                Delete Draft
+                                                Delete draft
                                             </button>
-                                            {% else %}
-                                            <button class="md3-button md3-button--tonal" type="submit"
-                                                formaction="/emails/{{ item.uid }}/draft/regenerate">
-                                                <span class="material-icons" aria-hidden="true">auto_fix_high</span>
-                                                Generate
-                                            </button>
-                                            {% endif %}
                                         </div>
+                                        {% endif %}
                                     </form>
                                 </section>
                             </article>
@@ -656,10 +767,10 @@
         </div>
     </dialog>
 
-    <script src="{{ url_for('static', path='js/tabs.js') }}"></script>
-    <script type="module" src="{{ url_for('static', path='js/calendar.js') }}"></script>
-    <script src="{{ url_for('static', path='js/compose.js') }}"></script>
-    <script type="module" src="{{ url_for('static', path='js/dashboard.js') }}"></script>
+    <script src="{{ url_for('static', path='js/tabs.js') }}?v={{ static_asset_version }}"></script>
+    <script type="module" src="{{ url_for('static', path='js/calendar.js') }}?v={{ static_asset_version }}"></script>
+    <script src="{{ url_for('static', path='js/compose.js') }}?v={{ static_asset_version }}"></script>
+    <script type="module" src="{{ url_for('static', path='js/dashboard.js') }}?v={{ static_asset_version }}"></script>
 </body>
 
 </html>

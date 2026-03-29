@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+import importlib
 import os
 from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
 
-from inbox_ai.core.config import AppSettings, LlmSettings, StorageSettings
+from inbox_ai.calendar.google_calendar_client import CalendarAuthError
+from inbox_ai.core.config import (
+    AppSettings,
+    CalendarSettings,
+    LlmSettings,
+    StorageSettings,
+)
 from inbox_ai.core.models import (
     DraftRecord,
     EmailBody,
@@ -17,8 +24,10 @@ from inbox_ai.core.models import (
 )
 from inbox_ai.storage import SqliteEmailRepository
 from inbox_ai.web import create_app
-from inbox_ai.web.app import CONFIG_FIELD_KEYS
+from inbox_ai.web.app import CONFIG_FIELD_KEYS, DeleteOutcome
 from inbox_ai.web.security import CSRF_COOKIE_NAME, CSRF_FIELD_NAME
+
+web_app_module = importlib.import_module("inbox_ai.web.app")
 
 
 def _seed_data(repository: SqliteEmailRepository) -> int:
@@ -95,7 +104,7 @@ def test_dashboard_endpoints_return_data(tmp_path) -> None:
     assert payload["insights"][0]["priorityLabel"] == "Normal"
     assert payload["drafts"][0]["emailUid"] == 1
     assert payload["followUps"][0]["action"] == "Review notes"
-    assert payload["filters"]["followStatus"] == "open"
+    assert payload["filters"]["followStatus"] == "all"
 
     html_response = client.get("/")
     assert html_response.status_code == 200
@@ -139,13 +148,88 @@ def test_follow_up_actions_and_filters(tmp_path) -> None:
 
     html_response = client.get("/?follow_status=done")
     assert html_response.status_code == 200
-    assert "Status: done" in html_response.text
+    assert ">done</span>" in html_response.text
 
     api_response = client.get("/api/dashboard?follow_status=done")
     assert api_response.status_code == 200
     api_payload = api_response.json()
     assert api_payload["filters"]["followStatus"] == "done"
     assert api_payload["followUps"] and api_payload["followUps"][0]["status"] == "done"
+
+
+def test_delete_email_api_returns_json(tmp_path, monkeypatch) -> None:
+    db_path = tmp_path / "web_delete_api.db"
+    settings = StorageSettings(db_path=db_path)
+    repository = SqliteEmailRepository(settings)
+    _seed_data(repository)
+    repository.close()
+
+    app_settings = AppSettings(storage=settings)
+    app = create_app(app_settings)
+    client = TestClient(app)
+
+    client.get("/")
+    csrf_token = client.cookies.get(CSRF_COOKIE_NAME)
+    assert csrf_token is not None
+
+    def fake_delete_email(
+        _settings: AppSettings, uid: int, _repository: object
+    ) -> DeleteOutcome:
+        return DeleteOutcome(success=True, message=f"Message UID {uid} deleted.")
+
+    monkeypatch.setattr(web_app_module, "_delete_email", fake_delete_email)
+
+    response = client.delete(
+        "/api/emails/1",
+        headers={"X-CSRF-Token": csrf_token},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "success": True,
+        "message": "Message UID 1 deleted.",
+        "uid": 1,
+    }
+
+
+def test_dashboard_refresh_does_not_show_deleted_email(tmp_path, monkeypatch) -> None:
+    db_path = tmp_path / "web_delete_refresh.db"
+    settings = StorageSettings(db_path=db_path)
+    repository = SqliteEmailRepository(settings)
+    _seed_data(repository)
+    repository.close()
+
+    app_settings = AppSettings(storage=settings)
+    app = create_app(app_settings)
+    client = TestClient(app)
+
+    initial_response = client.get("/")
+    assert initial_response.status_code == 200
+    assert "Status update" in initial_response.text
+
+    csrf_token = client.cookies.get(CSRF_COOKIE_NAME)
+    assert csrf_token is not None
+
+    def fake_delete_email(
+        _settings: AppSettings, uid: int, repository: SqliteEmailRepository
+    ) -> DeleteOutcome:
+        deleted = repository.delete_email(uid)
+        assert deleted is True
+        return DeleteOutcome(success=True, message=f"Message UID {uid} deleted.")
+
+    monkeypatch.setattr(web_app_module, "_delete_email", fake_delete_email)
+
+    delete_response = client.delete(
+        "/api/emails/1",
+        headers={"X-CSRF-Token": csrf_token},
+    )
+
+    assert delete_response.status_code == 200
+    assert delete_response.json()["success"] is True
+
+    refreshed_response = client.get("/")
+    assert refreshed_response.status_code == 200
+    assert "Status update" not in refreshed_response.text
 
 
 def test_manual_sync_endpoint_handles_missing_credentials(tmp_path) -> None:
@@ -431,3 +515,105 @@ def test_config_editor_updates_env_file(tmp_path) -> None:
                 os.environ.pop(key, None)
             else:
                 os.environ[key] = value
+
+
+def test_calendar_status_clears_stale_tokens_on_auth_failure(
+    tmp_path, monkeypatch
+) -> None:
+    db_path = tmp_path / "web_calendar_status.db"
+    settings = StorageSettings(db_path=db_path)
+    repository = SqliteEmailRepository(settings)
+    repository.set_user_preference("calendar_access_token", "access-token")
+    repository.set_user_preference("calendar_refresh_token", "refresh-token")
+    repository.close()
+
+    async def fake_list_calendars(self) -> list[dict[str, str]]:
+        raise CalendarAuthError(
+            "Google Calendar authorization expired. Please reconnect."
+        )
+
+    monkeypatch.setattr(
+        web_app_module.GoogleCalendarClient,
+        "list_calendars",
+        fake_list_calendars,
+    )
+
+    app_settings = AppSettings(
+        storage=settings,
+        calendar=CalendarSettings(
+            enabled=True,
+            client_id="client-id",
+            client_secret="client-secret",
+        ),
+    )
+    app = create_app(app_settings)
+    client = TestClient(app)
+
+    response = client.get("/api/calendar/status")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "connected": False,
+        "configured": True,
+        "selected_calendar": "primary",
+        "reauth_required": True,
+        "error": "Google Calendar authorization expired. Please reconnect.",
+    }
+
+    with SqliteEmailRepository(settings) as verification_repo:
+        assert verification_repo.get_user_preference("calendar_access_token") is None
+        assert verification_repo.get_user_preference("calendar_refresh_token") is None
+
+
+def test_calendar_sync_clears_stale_tokens_on_auth_failure(
+    tmp_path, monkeypatch
+) -> None:
+    db_path = tmp_path / "web_calendar_sync.db"
+    settings = StorageSettings(db_path=db_path)
+    repository = SqliteEmailRepository(settings)
+    follow_up_id = _seed_data(repository)
+    repository.set_user_preference("calendar_access_token", "access-token")
+    repository.set_user_preference("calendar_refresh_token", "refresh-token")
+    repository.close()
+
+    async def fake_create_event(self, **kwargs) -> dict[str, str]:
+        raise CalendarAuthError(
+            "Google Calendar authorization expired. Please reconnect."
+        )
+
+    monkeypatch.setattr(
+        web_app_module.GoogleCalendarClient,
+        "create_event",
+        fake_create_event,
+    )
+
+    app_settings = AppSettings(
+        storage=settings,
+        calendar=CalendarSettings(
+            enabled=True,
+            client_id="client-id",
+            client_secret="client-secret",
+        ),
+    )
+    app = create_app(app_settings)
+    client = TestClient(app)
+
+    client.get("/")
+    csrf_token = client.cookies.get(CSRF_COOKIE_NAME)
+    assert csrf_token is not None
+
+    response = client.post(
+        f"/api/follow-ups/{follow_up_id}/sync-calendar",
+        headers={"X-CSRF-Token": csrf_token},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "success": False,
+        "error": "Google Calendar authorization expired. Please reconnect.",
+        "reauth_required": True,
+    }
+
+    with SqliteEmailRepository(settings) as verification_repo:
+        assert verification_repo.get_user_preference("calendar_access_token") is None
+        assert verification_repo.get_user_preference("calendar_refresh_token") is None
