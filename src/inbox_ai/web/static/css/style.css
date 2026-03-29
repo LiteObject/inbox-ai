@@ -1588,6 +1588,10 @@ h2.toolbar-heading {
     margin-top: var(--md3-spacing-4);
 }
 
+.calendar-rail__agenda-group-list[hidden] {
+    display: none;
+}
+
 .calendar-rail__agenda-item {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
@@ -1621,6 +1625,14 @@ h2.toolbar-heading {
     min-width: 0;
 }
 
+.calendar-rail__agenda-actions {
+    display: flex;
+    flex-direction: column;
+    gap: var(--md3-spacing-4);
+    align-items: center;
+}
+
+.calendar-rail__agenda-done,
 .calendar-rail__agenda-delete {
     width: 28px;
     height: 28px;
@@ -1628,8 +1640,15 @@ h2.toolbar-heading {
     color: var(--md3-color-on-surface-variant);
 }
 
+.calendar-rail__agenda-done .material-icons,
 .calendar-rail__agenda-delete .material-icons {
     font-size: 18px;
+}
+
+.calendar-rail__agenda-done:hover,
+.calendar-rail__agenda-done:focus-visible {
+    background: color-mix(in srgb, var(--md3-color-primary) 12%, transparent);
+    color: var(--md3-color-primary);
 }
 
 .calendar-rail__agenda-delete:hover,

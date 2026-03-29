@@ -124,6 +124,20 @@ class FollowUpTask:
 
 
 @dataclass(slots=True)
+class CalendarOccurrenceCompletion:
+    """Local completion record for a Google Calendar event occurrence."""
+
+    id: int | None
+    calendar_id: str
+    occurrence_key: str
+    occurrence_start_at: datetime
+    completed_at: datetime
+    event_id: str | None = None
+    follow_up_id: int | None = None
+    source_type: str = "calendar"
+
+
+@dataclass(slots=True)
 class EmailCategory:
     """Categorisation label assigned to an email."""
 
@@ -142,5 +156,6 @@ __all__ = [
     "ThreadSummary",
     "DraftRecord",
     "FollowUpTask",
+    "CalendarOccurrenceCompletion",
     "EmailCategory",
 ]

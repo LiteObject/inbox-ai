@@ -521,15 +521,22 @@ def _serialize_calendar_event(
     client: GoogleCalendarClient,
 ) -> dict[str, Any]:
     """Serialize a Google Calendar event for the frontend calendar rail."""
+    event_id = str(event.get("id") or "")
+    recurring_event_id = str(event.get("recurringEventId") or "") or None
+    original_start_at, _ = _extract_calendar_event_datetime(event.get("originalStartTime"))
     start_at, is_all_day = _extract_calendar_event_datetime(event.get("start"))
     end_at, _ = _extract_calendar_event_datetime(event.get("end"))
-    event_id = str(event.get("id") or "")
+    occurrence_start_at = original_start_at or start_at
+    occurrence_key = recurring_event_id or event_id
     event_url = event.get("htmlLink")
     if not event_url and event_id:
         event_url = client.get_event_url(event_id)
 
     return {
         "id": event_id,
+        "recurringEventId": recurring_event_id,
+        "occurrenceKey": occurrence_key,
+        "occurrenceStartAt": serialize_datetime(occurrence_start_at),
         "summary": str(event.get("summary") or "Untitled event"),
         "startsAt": serialize_datetime(start_at),
         "startsAtDisplay": _display_calendar_event_datetime(
@@ -538,10 +545,74 @@ def _serialize_calendar_event(
         ),
         "endsAt": serialize_datetime(end_at),
         "isAllDay": is_all_day,
+        "isRecurring": recurring_event_id is not None,
         "status": str(event.get("status") or ""),
         "eventUrl": str(event_url or ""),
         "location": str(event.get("location") or ""),
+        "completedLocally": False,
     }
+
+
+def _normalize_occurrence_start(value: datetime | None) -> datetime | None:
+    """Normalize a calendar occurrence start datetime to an aware UTC value."""
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+def _sync_follow_up_calendar_completion(
+    repository: SqliteEmailRepository,
+    settings: AppSettings,
+    task: FollowUpTask,
+) -> None:
+    """Mirror follow-up completion state into local calendar occurrence records."""
+    if task.id is None or not task.calendar_event_id:
+        return
+
+    occurrence_start_at = _normalize_occurrence_start(task.due_at)
+    if occurrence_start_at is None:
+        return
+
+    selected_calendar = _get_selected_calendar(repository, settings)
+    if task.status == "done":
+        repository.upsert_calendar_occurrence_completion(
+            selected_calendar,
+            task.calendar_event_id,
+            occurrence_start_at,
+            event_id=task.calendar_event_id,
+            follow_up_id=task.id,
+            source_type="follow-up",
+        )
+        return
+
+    repository.delete_calendar_occurrence_completion(
+        selected_calendar,
+        task.calendar_event_id,
+        occurrence_start_at,
+    )
+
+
+def _set_follow_up_status(
+    repository: SqliteEmailRepository,
+    settings: AppSettings,
+    follow_up_id: int,
+    target_status: str,
+) -> FollowUpTask | None:
+    """Update follow-up status and synchronize any linked calendar completion."""
+    existing_task = repository.get_follow_up_by_id(follow_up_id)
+    if existing_task is None:
+        return None
+
+    repository.update_follow_up_status(follow_up_id, target_status)
+    updated_task = repository.get_follow_up_by_id(follow_up_id)
+    if updated_task is None:
+        return None
+
+    _sync_follow_up_calendar_completion(repository, settings, updated_task)
+    response_cache.invalidate("dashboard")
+    return updated_task
 
 
 def create_app(settings: AppSettings | None = None) -> FastAPI:
@@ -1575,11 +1646,43 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
     ) -> RedirectResponse:
         csrf.validate(request, csrf_token)
         target_status = _normalize_status_update(status_value)
-        repository.update_follow_up_status(follow_up_id, target_status)
+        _set_follow_up_status(repository, app_settings, follow_up_id, target_status)
         redirect_target = _sanitize_redirect(redirect_to) or "/"
         return RedirectResponse(
             url=redirect_target,
             status_code=http_status.HTTP_303_SEE_OTHER,
+        )
+
+    @app.post("/api/follow-ups/{follow_up_id}/status")
+    async def update_follow_up_status_api(
+        request: Request,
+        follow_up_id: int,
+        status_value: str = Form(..., alias="status"),
+        repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
+    ) -> JSONResponse:
+        """Update a follow-up status without reloading the page."""
+        csrf_token = request.headers.get("X-CSRF-Token")
+        csrf.validate(request, csrf_token)
+
+        target_status = _normalize_status_update(status_value)
+        updated_task = _set_follow_up_status(
+            repository,
+            app_settings,
+            follow_up_id,
+            target_status,
+        )
+        if updated_task is None:
+            return JSONResponse(
+                {"success": False, "error": "Follow-up task not found."},
+                status_code=http_status.HTTP_404_NOT_FOUND,
+            )
+
+        return JSONResponse(
+            {
+                "success": True,
+                "followUp": _serialize_follow_up(updated_task),
+            },
+            status_code=http_status.HTTP_200_OK,
         )
 
     @app.delete("/api/follow-ups/{follow_up_id}")
@@ -1869,6 +1972,17 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                 time_max=end_at,
                 calendar_id=selected_calendar,
             )
+            completed_occurrences = {
+                (
+                    completion.occurrence_key,
+                    serialize_datetime(completion.occurrence_start_at),
+                )
+                for completion in repository.list_calendar_occurrence_completions(
+                    selected_calendar,
+                    starts_at=start_at,
+                    ends_at=end_at,
+                )
+            }
 
             if client.access_token and client.access_token != access_token:
                 _set_calendar_preference(
@@ -1878,16 +1992,32 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                     client.access_token,
                 )
 
+            serialized_events: list[dict[str, Any]] = []
+            for event in events:
+                if event.get("status") == "cancelled":
+                    continue
+
+                serialized = _serialize_calendar_event(event, client)
+                occurrence_signature = (
+                    str(serialized.get("occurrenceKey") or ""),
+                    serialized.get("occurrenceStartAt"),
+                )
+                if (
+                    occurrence_signature[0]
+                    and occurrence_signature[1]
+                    and occurrence_signature in completed_occurrences
+                ):
+                    serialized["completedLocally"] = True
+                    continue
+
+                serialized_events.append(serialized)
+
             return {
                 "success": True,
                 "configured": True,
                 "connected": True,
                 "selected_calendar": selected_calendar,
-                "events": [
-                    _serialize_calendar_event(event, client)
-                    for event in events
-                    if event.get("status") != "cancelled"
-                ],
+                "events": serialized_events,
             }
         except CalendarAuthError as exc:
             return {

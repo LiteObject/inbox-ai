@@ -42,6 +42,7 @@ function parseTaskNode(node) {
         status: node.dataset.taskStatus || 'open',
         dueAt: node.dataset.taskDueAt || '',
         dueAtDisplay: node.dataset.taskDueDisplay || 'No due date',
+        completedAt: node.dataset.taskCompletedAt || '',
         dueDate,
         dateKey: dueDate ? toDateKey(dueDate) : null,
         calendarEventId: node.dataset.calendarEventId || '',
@@ -391,6 +392,103 @@ export class CalendarRailController {
         return tokenInput ? tokenInput.value : '';
     }
 
+    updateTaskSourceNode(taskId, followUpData) {
+        const sourceNode = this.dataRoot.querySelector(`[data-calendar-rail-task][data-task-id="${CSS.escape(String(taskId))}"]`);
+        if (!sourceNode) {
+            return;
+        }
+
+        sourceNode.dataset.taskStatus = followUpData.status || '';
+        sourceNode.dataset.taskDueAt = followUpData.dueAt || '';
+        sourceNode.dataset.taskDueDisplay = followUpData.dueAtDisplay || '';
+        sourceNode.dataset.taskCompletedAt = followUpData.completedAt || '';
+        sourceNode.dataset.calendarEventId = followUpData.calendarEventId || '';
+    }
+
+    updateVisibleFollowUpState(taskId, followUpData) {
+        const taskItems = document.querySelectorAll(`[data-follow-up-task-id="${CSS.escape(String(taskId))}"]`);
+        taskItems.forEach((taskItem) => {
+            const badges = taskItem.querySelectorAll('.task-badge');
+            const dueBadge = badges[0];
+            const statusBadge = taskItem.querySelector('.task-badge--status');
+            if (dueBadge) {
+                dueBadge.textContent = followUpData.dueAtDisplay
+                    ? `Due ${followUpData.dueAtDisplay}`
+                    : 'No due date';
+            }
+
+            if (statusBadge) {
+                statusBadge.classList.toggle('task-badge--done', followUpData.status === 'done');
+                statusBadge.textContent = `Status: ${followUpData.status}`;
+            }
+
+            const form = taskItem.querySelector(`form[action="/follow-ups/${CSS.escape(String(taskId))}/status"]`);
+            if (!form) {
+                return;
+            }
+
+            const statusInput = form.querySelector('input[name="status"]');
+            if (statusInput) {
+                statusInput.value = followUpData.status === 'done' ? 'open' : 'done';
+            }
+
+            const submitButton = form.querySelector('button[type="submit"]');
+            if (submitButton) {
+                submitButton.innerHTML = followUpData.status === 'done'
+                    ? '<span class="material-icons" aria-hidden="true">undo</span>Reopen'
+                    : '<span class="material-icons" aria-hidden="true">check_circle</span>Mark done';
+            }
+        });
+    }
+
+    async setTaskStatus(taskId, nextStatus, statusButton) {
+        const originalLabel = statusButton?.innerHTML || '';
+
+        if (statusButton) {
+            statusButton.disabled = true;
+            statusButton.innerHTML = '<span class="material-icons rotating" aria-hidden="true">hourglass_empty</span>';
+        }
+
+        try {
+            const response = await fetch(`/api/follow-ups/${taskId}/status`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-Token': this.getCsrfToken(),
+                },
+                body: new URLSearchParams({ status: nextStatus }),
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success || !data.followUp) {
+                throw new Error(data.error || 'Failed to update follow-up');
+            }
+
+            this.updateTaskSourceNode(taskId, data.followUp);
+            this.updateVisibleFollowUpState(taskId, data.followUp);
+            window.dispatchEvent(new CustomEvent('inboxai:calendar-followup-updated', {
+                detail: {
+                    taskId,
+                    followUp: data.followUp,
+                },
+            }));
+
+            window.InboxAI?.toast?.show?.(
+                nextStatus === 'done' ? 'Follow-up marked done.' : 'Follow-up reopened.',
+                'success',
+            );
+        } catch (error) {
+            console.error('Failed to update follow-up task:', error);
+            window.InboxAI?.toast?.show?.(
+                error instanceof Error ? error.message : 'Failed to update follow-up',
+                'error',
+            );
+
+            if (statusButton) {
+                statusButton.disabled = false;
+                statusButton.innerHTML = originalLabel;
+            }
+        }
+    }
+
     async deleteTask(taskId, deleteButton) {
         const originalLabel = deleteButton?.innerHTML || '';
 
@@ -486,6 +584,7 @@ export class CalendarRailController {
             status: updated.status || this.followUpTasks[index].status,
             dueAt: updated.dueAt || this.followUpTasks[index].dueAt,
             dueAtDisplay: updated.dueAtDisplay || this.followUpTasks[index].dueAtDisplay,
+            completedAt: updated.completedAt || '',
             dueDate,
             dateKey: dueDate ? toDateKey(dueDate) : null,
             calendarEventId: updated.calendarEventId || '',
@@ -676,15 +775,27 @@ export class CalendarRailController {
                                     </button>
                                     ${task.sourceType === 'follow-up'
                 ? `
-                                    <button
-                                        type="button"
-                                        class="md3-icon-button calendar-rail__agenda-delete"
-                                        data-task-delete-id="${task.taskId}"
-                                        aria-label="Delete follow-up task ${task.action}"
-                                        title="Delete follow-up"
-                                    >
-                                        <span class="material-icons" aria-hidden="true">delete_outline</span>
-                                    </button>
+                                    <div class="calendar-rail__agenda-actions">
+                                        <button
+                                            type="button"
+                                            class="md3-icon-button calendar-rail__agenda-done"
+                                            data-task-status-id="${task.taskId}"
+                                            data-task-next-status="done"
+                                            aria-label="Mark follow-up task ${task.action} done"
+                                            title="Mark done"
+                                        >
+                                            <span class="material-icons" aria-hidden="true">check_circle</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            class="md3-icon-button calendar-rail__agenda-delete"
+                                            data-task-delete-id="${task.taskId}"
+                                            aria-label="Delete follow-up task ${task.action}"
+                                            title="Delete follow-up"
+                                        >
+                                            <span class="material-icons" aria-hidden="true">delete_outline</span>
+                                        </button>
+                                    </div>
                                     `
                 : ''}
                                 </div>
@@ -708,6 +819,17 @@ export class CalendarRailController {
             button.addEventListener('click', (event) => {
                 event.stopPropagation();
                 this.deleteTask(button.dataset.taskDeleteId, button);
+            });
+        });
+
+        this.agenda.querySelectorAll('[data-task-status-id]').forEach((button) => {
+            button.addEventListener('click', (event) => {
+                event.stopPropagation();
+                this.setTaskStatus(
+                    button.dataset.taskStatusId,
+                    button.dataset.taskNextStatus || 'done',
+                    button,
+                );
             });
         });
 

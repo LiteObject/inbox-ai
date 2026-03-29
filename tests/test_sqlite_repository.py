@@ -334,6 +334,38 @@ def test_repository_lists_and_updates_follow_ups(tmp_path: Path) -> None:
     repository.close()
 
 
+def test_repository_tracks_calendar_occurrence_completions(tmp_path: Path) -> None:
+    db_path = tmp_path / "calendar_occurrence_completions.db"
+    settings = StorageSettings(db_path=db_path)
+    repository = SqliteEmailRepository(settings)
+
+    occurrence_start = datetime(2026, 3, 28, 15, 0, tzinfo=timezone.utc)
+    repository.upsert_calendar_occurrence_completion(
+        "team-calendar",
+        "series-1",
+        occurrence_start,
+        event_id="instance-1",
+        source_type="calendar",
+    )
+
+    completions = repository.list_calendar_occurrence_completions(
+        "team-calendar",
+        starts_at=datetime(2026, 3, 28, 0, 0, tzinfo=timezone.utc),
+        ends_at=datetime(2026, 3, 29, 0, 0, tzinfo=timezone.utc),
+    )
+    assert len(completions) == 1
+    assert completions[0].occurrence_key == "series-1"
+    assert completions[0].event_id == "instance-1"
+
+    repository.delete_calendar_occurrence_completion(
+        "team-calendar",
+        "series-1",
+        occurrence_start,
+    )
+    assert repository.list_calendar_occurrence_completions("team-calendar") == ()
+    repository.close()
+
+
 def test_repository_lists_recent_drafts(tmp_path: Path) -> None:
     db_path = tmp_path / "drafts_list.db"
     settings = StorageSettings(db_path=db_path)

@@ -547,7 +547,7 @@
                                     {% if item.followUps %}
                                     <ul class="md3-detail-list md3-detail-list--tasks">
                                         {% for task in item.followUps %}
-                                        <li>
+                                        <li data-follow-up-task-id="{{ task.id }}">
                                             <span class="material-icons task-icon" aria-hidden="true">schedule</span>
                                             <div class="task-item-content">
                                                 <span class="item-headline">{{ task.action }}</span>
@@ -782,6 +782,7 @@
             data-task-status="{{ task.status | default('', true) | e }}"
             data-task-due-at="{{ task.dueAt | default('', true) | e }}"
             data-task-due-display="{{ task.dueAtDisplay | default('', true) | e }}"
+            data-task-completed-at="{{ task.completedAt | default('', true) | e }}"
             data-calendar-event-id="{{ task.calendarEventId | default('', true) | e }}">
         </div>
         {% endfor %}

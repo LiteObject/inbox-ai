@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Protocol
 
 from .models import (
+    CalendarOccurrenceCompletion,
     DraftRecord,
     EmailCategory,
     EmailEnvelope,
@@ -201,6 +202,38 @@ class EmailRepository(Protocol):
 
     def update_follow_up_status(self, follow_up_id: int, status: str) -> None:
         """Set the status for a follow-up entry."""
+        raise NotImplementedError
+
+    def upsert_calendar_occurrence_completion(
+        self,
+        calendar_id: str,
+        occurrence_key: str,
+        occurrence_start_at: datetime,
+        *,
+        event_id: str | None = None,
+        follow_up_id: int | None = None,
+        source_type: str = "calendar",
+    ) -> None:
+        """Create or update a local completion record for a calendar occurrence."""
+        raise NotImplementedError
+
+    def delete_calendar_occurrence_completion(
+        self,
+        calendar_id: str,
+        occurrence_key: str,
+        occurrence_start_at: datetime,
+    ) -> None:
+        """Delete a local completion record for a calendar occurrence."""
+        raise NotImplementedError
+
+    def list_calendar_occurrence_completions(
+        self,
+        calendar_id: str,
+        *,
+        starts_at: datetime | None = None,
+        ends_at: datetime | None = None,
+    ) -> tuple[CalendarOccurrenceCompletion, ...]:
+        """Return locally completed calendar occurrences for a calendar and range."""
         raise NotImplementedError
 
     def delete_follow_up(self, follow_up_id: int) -> bool:

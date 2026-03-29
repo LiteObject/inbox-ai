@@ -16,6 +16,7 @@ from ..core.datetime_utils import parse_datetime, serialize_datetime
 from ..core.interfaces import EmailRepository
 from ..core.models import (
     AttachmentMeta,
+    CalendarOccurrenceCompletion,
     DraftRecord,
     EmailBody,
     EmailCategory,
@@ -1070,6 +1071,116 @@ class SqliteEmailRepository(EmailRepository):
                 ),
             )
 
+    def upsert_calendar_occurrence_completion(
+        self,
+        calendar_id: str,
+        occurrence_key: str,
+        occurrence_start_at: datetime,
+        *,
+        event_id: str | None = None,
+        follow_up_id: int | None = None,
+        source_type: str = "calendar",
+    ) -> None:
+        """Create or refresh a local completion record for a calendar occurrence."""
+        completed_at = datetime.now(tz=UTC)
+        with self._connection:
+            self._connection.execute(
+                """
+                INSERT INTO calendar_occurrence_completions (
+                    calendar_id,
+                    occurrence_key,
+                    occurrence_start_at,
+                    event_id,
+                    follow_up_id,
+                    source_type,
+                    completed_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(calendar_id, occurrence_key, occurrence_start_at)
+                DO UPDATE SET
+                    event_id = excluded.event_id,
+                    follow_up_id = excluded.follow_up_id,
+                    source_type = excluded.source_type,
+                    completed_at = excluded.completed_at
+                """,
+                (
+                    calendar_id,
+                    occurrence_key,
+                    serialize_datetime(occurrence_start_at),
+                    event_id,
+                    follow_up_id,
+                    source_type,
+                    completed_at.isoformat(),
+                ),
+            )
+
+    def delete_calendar_occurrence_completion(
+        self,
+        calendar_id: str,
+        occurrence_key: str,
+        occurrence_start_at: datetime,
+    ) -> None:
+        """Remove a local completion record for a calendar occurrence."""
+        with self._connection:
+            self._connection.execute(
+                """
+                DELETE FROM calendar_occurrence_completions
+                WHERE calendar_id = ?
+                  AND occurrence_key = ?
+                  AND occurrence_start_at = ?
+                """,
+                (
+                    calendar_id,
+                    occurrence_key,
+                    serialize_datetime(occurrence_start_at),
+                ),
+            )
+
+    def list_calendar_occurrence_completions(
+        self,
+        calendar_id: str,
+        *,
+        starts_at: datetime | None = None,
+        ends_at: datetime | None = None,
+    ) -> tuple[CalendarOccurrenceCompletion, ...]:
+        """Return locally completed calendar occurrences for a calendar and range."""
+        query = """
+            SELECT id, calendar_id, occurrence_key, occurrence_start_at,
+                   completed_at, event_id, follow_up_id, source_type
+            FROM calendar_occurrence_completions
+            WHERE calendar_id = ?
+            """
+        parameters: list[object] = [calendar_id]
+
+        if starts_at is not None:
+            query += " AND occurrence_start_at >= ?"
+            parameters.append(serialize_datetime(starts_at))
+        if ends_at is not None:
+            query += " AND occurrence_start_at < ?"
+            parameters.append(serialize_datetime(ends_at))
+
+        query += " ORDER BY occurrence_start_at ASC"
+        rows = self._connection.execute(query, tuple(parameters)).fetchall()
+        return tuple(
+            CalendarOccurrenceCompletion(
+                id=row["id"],
+                calendar_id=row["calendar_id"],
+                occurrence_key=row["occurrence_key"],
+                occurrence_start_at=cast(
+                    datetime,
+                    parse_datetime(row["occurrence_start_at"], assume_utc=True),
+                ),
+                completed_at=cast(
+                    datetime,
+                    parse_datetime(row["completed_at"], assume_utc=True),
+                ),
+                event_id=row["event_id"],
+                follow_up_id=row["follow_up_id"],
+                source_type=row["source_type"],
+            )
+            for row in rows
+        )
+
     def delete_follow_up(self, follow_up_id: int) -> bool:
         """Delete a follow-up entry by identifier."""
         with self._connection:
@@ -1511,6 +1622,7 @@ class SqliteEmailRepository(EmailRepository):
             "CREATE INDEX IF NOT EXISTS idx_email_insights_user_rating ON email_insights(user_rating)",
             "CREATE INDEX IF NOT EXISTS idx_drafts_user_rating ON drafts(user_rating)",
             "CREATE INDEX IF NOT EXISTS idx_drafts_deleted_at ON drafts(deleted_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_calendar_occurrence_completions_lookup ON calendar_occurrence_completions(calendar_id, occurrence_start_at)",
         )
         with self._connection:
             for statement in index_statements:

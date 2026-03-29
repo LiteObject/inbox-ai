@@ -159,6 +159,46 @@ def test_follow_up_actions_and_filters(tmp_path) -> None:
     assert api_payload["followUps"] and api_payload["followUps"][0]["status"] == "done"
 
 
+def test_follow_up_status_api_marks_task_done_and_tracks_calendar_completion(
+    tmp_path,
+) -> None:
+    db_path = tmp_path / "web_followup_status_api.db"
+    settings = StorageSettings(db_path=db_path)
+    repository = SqliteEmailRepository(settings)
+    follow_up_id = _seed_data(repository)
+    repository.update_follow_up_calendar_sync(follow_up_id, "calendar-event-1")
+    repository.close()
+
+    app = create_app(AppSettings(storage=settings))
+    client = TestClient(app)
+
+    client.get("/")
+    csrf_token = client.cookies.get(CSRF_COOKIE_NAME)
+    assert csrf_token is not None
+
+    response = client.post(
+        f"/api/follow-ups/{follow_up_id}/status",
+        data={"status": "done"},
+        headers={"X-CSRF-Token": csrf_token},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["success"] is True
+    assert response.json()["followUp"]["status"] == "done"
+
+    with SqliteEmailRepository(settings) as verification_repo:
+        updated = verification_repo.get_follow_up_by_id(follow_up_id)
+        assert updated is not None
+        assert updated.status == "done"
+
+        completions = verification_repo.list_calendar_occurrence_completions(
+            "primary"
+        )
+        assert len(completions) == 1
+        assert completions[0].occurrence_key == "calendar-event-1"
+        assert completions[0].follow_up_id == follow_up_id
+
+
 def test_delete_follow_up_api_removes_task(tmp_path) -> None:
     db_path = tmp_path / "web_followup_delete.db"
     settings = StorageSettings(db_path=db_path)
@@ -732,7 +772,7 @@ def test_calendar_events_return_selected_calendar_items(tmp_path, monkeypatch) -
 
     captured: dict[str, object] = {}
 
-    async def fake_list_events(self, time_min, time_max, calendar_id=None):
+    async def fake_list_events(_self, time_min, time_max, calendar_id=None):
         captured["time_min"] = time_min
         captured["time_max"] = time_max
         captured["calendar_id"] = calendar_id
@@ -804,6 +844,77 @@ def test_calendar_events_return_selected_calendar_items(tmp_path, monkeypatch) -
         "time_max": datetime(2026, 4, 1, 0, 0, tzinfo=timezone.utc),
         "calendar_id": "team-calendar",
     }
+
+
+def test_calendar_events_skip_locally_completed_occurrences(
+    tmp_path, monkeypatch
+) -> None:
+    db_path = tmp_path / "web_calendar_completed_occurrences.db"
+    settings = StorageSettings(db_path=db_path)
+    repository = SqliteEmailRepository(settings)
+    repository.set_user_preference(
+        "calendar_access_token:owner@example.com", "access-token"
+    )
+    repository.set_user_preference(
+        "calendar_selected_calendar:owner@example.com", "team-calendar"
+    )
+    repository.upsert_calendar_occurrence_completion(
+        "team-calendar",
+        "series-1",
+        datetime(2026, 3, 28, 15, 0, tzinfo=timezone.utc),
+        event_id="instance-1",
+    )
+    repository.close()
+
+    async def fake_list_events(_self, time_min, time_max, calendar_id=None):
+        _ = (time_min, time_max, calendar_id)
+        return [
+            {
+                "id": "instance-1",
+                "recurringEventId": "series-1",
+                "summary": "Weekly review",
+                "originalStartTime": {"dateTime": "2026-03-28T15:00:00Z"},
+                "start": {"dateTime": "2026-03-28T15:00:00Z"},
+                "end": {"dateTime": "2026-03-28T16:00:00Z"},
+                "status": "confirmed",
+            },
+            {
+                "id": "instance-2",
+                "recurringEventId": "series-2",
+                "summary": "Open series item",
+                "originalStartTime": {"dateTime": "2026-03-29T15:00:00Z"},
+                "start": {"dateTime": "2026-03-29T15:00:00Z"},
+                "end": {"dateTime": "2026-03-29T16:00:00Z"},
+                "status": "confirmed",
+            },
+        ]
+
+    monkeypatch.setattr(
+        web_app_module.GoogleCalendarClient,
+        "list_events",
+        fake_list_events,
+    )
+
+    app_settings = AppSettings(
+        storage=settings,
+        imap=ImapSettings(username="owner@example.com"),
+        calendar=CalendarSettings(
+            enabled=True,
+            client_id="client-id",
+            client_secret="client-secret",
+        ),
+    )
+    app = create_app(app_settings)
+    client = TestClient(app)
+
+    response = client.get(
+        "/api/calendar/events?start=2026-03-28T00:00:00Z&end=2026-04-01T00:00:00Z"
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert [event["id"] for event in payload["events"]] == ["instance-2"]
 
 
 def test_calendar_events_return_empty_list_when_not_connected(tmp_path) -> None:
