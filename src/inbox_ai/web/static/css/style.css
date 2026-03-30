@@ -3968,6 +3968,26 @@ h2.toolbar-heading {
     color: var(--md3-color-on-surface);
 }
 
+.settings-page .settings-metric__value--compact {
+    font-size: 20px;
+    line-height: 1.2;
+}
+
+.settings-page .settings-sync-details {
+    display: grid;
+    gap: var(--md3-spacing-8);
+    margin-top: var(--md3-spacing-16);
+    padding-top: var(--md3-spacing-16);
+    border-top: 1px solid var(--md3-color-outline-variant);
+}
+
+.settings-page .settings-sync-details p {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--md3-color-on-surface-variant);
+}
+
 /* Calendar Status */
 .calendar-status {
     margin-bottom: var(--md3-spacing-16);
@@ -4176,6 +4196,10 @@ h2.toolbar-heading {
 
     .settings-page .settings-metric__value {
         font-size: 22px;
+    }
+
+    .settings-page .settings-metric__value--compact {
+        font-size: 17px;
     }
 
     .settings-page .theme-grid {

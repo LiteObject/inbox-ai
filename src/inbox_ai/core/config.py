@@ -105,6 +105,14 @@ class SyncSettings(BaseModel):
     max_messages: int | None = Field(
         default=None, description="Hard cap for messages processed in a cycle"
     )
+    auto_interval_seconds: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Seconds between automatic background sync cycles. "
+            "Set to 0 to disable auto-sync."
+        ),
+    )
 
 
 class FollowUpSettings(BaseModel):

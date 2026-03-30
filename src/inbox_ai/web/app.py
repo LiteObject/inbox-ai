@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import secrets
+import sqlite3
 import time
 from collections import deque
 from collections.abc import Iterable, Iterator, Mapping, Sequence
@@ -303,6 +304,15 @@ CONFIG_SECTIONS: tuple[ConfigSection, ...] = (
                 input_type="number",
                 description="Leave blank to process all available messages",
             ),
+            ConfigField(
+                "INBOX_AI_SYNC__AUTO_INTERVAL_SECONDS",
+                "Background Sync Interval (seconds)",
+                input_type="number",
+                description=(
+                    "Set to 0 to disable automatic background sync. "
+                    "Changes apply after restart."
+                ),
+            ),
         ),
     ),
     ConfigSection(
@@ -377,6 +387,11 @@ _CALENDAR_CREDENTIAL_KEYS: tuple[str, ...] = (
     "calendar_oauth_state",
 )
 _CALENDAR_SELECTED_KEY = "calendar_selected_calendar"
+_AUTO_SYNC_STATUS_KEY = "auto_sync_status"
+_AUTO_SYNC_LAST_STARTED_KEY = "auto_sync_last_started_at"
+_AUTO_SYNC_LAST_FINISHED_KEY = "auto_sync_last_finished_at"
+_AUTO_SYNC_LAST_DURATION_KEY = "auto_sync_last_duration_seconds"
+_AUTO_SYNC_LAST_MESSAGE_KEY = "auto_sync_last_message"
 
 
 def _get_calendar_account_key(settings: AppSettings) -> str | None:
@@ -388,14 +403,61 @@ def _get_calendar_account_key(settings: AppSettings) -> str | None:
     return normalized or None
 
 
-def _iter_calendar_preference_keys(
+def _iter_scoped_preference_keys(
     settings: AppSettings, base_key: str
 ) -> tuple[str, ...]:
-    """Yield scoped and legacy preference keys for calendar settings."""
+    """Yield scoped and legacy preference keys for account-bound settings."""
     account_key = _get_calendar_account_key(settings)
     if not account_key:
         return (base_key,)
     return (f"{base_key}:{account_key}", base_key)
+
+
+def _get_scoped_preference(
+    repository: SqliteEmailRepository,
+    settings: AppSettings,
+    base_key: str,
+) -> str | None:
+    """Read a scoped user preference, preferring the active inbox account."""
+    for key in _iter_scoped_preference_keys(settings, base_key):
+        value = repository.get_user_preference(key)
+        if value is not None:
+            return value
+    return None
+
+
+def _set_scoped_preference(
+    repository: SqliteEmailRepository,
+    settings: AppSettings,
+    base_key: str,
+    value: str,
+) -> None:
+    """Write a user preference using the current inbox account scope."""
+    target_key = _iter_scoped_preference_keys(settings, base_key)[0]
+    repository.set_user_preference(target_key, value)
+
+
+def _set_optional_scoped_preference(
+    repository: SqliteEmailRepository,
+    settings: AppSettings,
+    base_key: str,
+    value: str | None,
+) -> None:
+    """Store or clear a scoped preference depending on whether a value exists."""
+    if value is None:
+        _delete_scoped_preference(repository, settings, base_key)
+        return
+    _set_scoped_preference(repository, settings, base_key, value)
+
+
+def _delete_scoped_preference(
+    repository: SqliteEmailRepository,
+    settings: AppSettings,
+    base_key: str,
+) -> None:
+    """Delete scoped and legacy variants of a user preference key."""
+    for key in _iter_scoped_preference_keys(settings, base_key):
+        repository.delete_user_preference(key)
 
 
 def _get_calendar_preference(
@@ -404,11 +466,7 @@ def _get_calendar_preference(
     base_key: str,
 ) -> str | None:
     """Read a calendar preference, preferring the current inbox account scope."""
-    for key in _iter_calendar_preference_keys(settings, base_key):
-        value = repository.get_user_preference(key)
-        if value is not None:
-            return value
-    return None
+    return _get_scoped_preference(repository, settings, base_key)
 
 
 def _set_calendar_preference(
@@ -418,8 +476,7 @@ def _set_calendar_preference(
     value: str,
 ) -> None:
     """Write a calendar preference using the current inbox account scope."""
-    target_key = _iter_calendar_preference_keys(settings, base_key)[0]
-    repository.set_user_preference(target_key, value)
+    _set_scoped_preference(repository, settings, base_key, value)
 
 
 def _delete_calendar_preference(
@@ -428,8 +485,147 @@ def _delete_calendar_preference(
     base_key: str,
 ) -> None:
     """Delete scoped and legacy variants of a calendar preference key."""
-    for key in _iter_calendar_preference_keys(settings, base_key):
-        repository.delete_user_preference(key)
+    _delete_scoped_preference(repository, settings, base_key)
+
+
+def _parse_seconds_value(value: str | None) -> float | None:
+    """Parse a stored seconds value into a float."""
+    if value is None:
+        return None
+
+    candidate = value.strip()
+    if not candidate:
+        return None
+
+    try:
+        return float(candidate)
+    except ValueError:
+        LOGGER.warning("Ignoring invalid seconds value: %r", value)
+        return None
+
+
+def _display_seconds_value(value: float | int | None) -> str | None:
+    """Render a seconds value into a compact human-readable label."""
+    if value is None:
+        return None
+
+    total_seconds = max(float(value), 0.0)
+    if total_seconds < 10 and not total_seconds.is_integer():
+        return f"{total_seconds:.1f}s"
+
+    rounded_seconds = int(round(total_seconds))
+    hours, remainder = divmod(rounded_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    parts: list[str] = []
+    if hours:
+        parts.append(f"{hours}h")
+    if minutes:
+        parts.append(f"{minutes}m")
+    if seconds or not parts:
+        parts.append(f"{seconds}s")
+    return " ".join(parts[:2])
+
+
+def _record_auto_sync_state(
+    repository: SqliteEmailRepository,
+    settings: AppSettings,
+    *,
+    status: str,
+    started_at: datetime | None = None,
+    finished_at: datetime | None = None,
+    duration_seconds: float | None = None,
+    message: str | None = None,
+) -> None:
+    """Persist the latest background auto-sync state for the active account."""
+    _set_scoped_preference(repository, settings, _AUTO_SYNC_STATUS_KEY, status)
+    _set_optional_scoped_preference(
+        repository,
+        settings,
+        _AUTO_SYNC_LAST_STARTED_KEY,
+        serialize_datetime(started_at),
+    )
+    _set_optional_scoped_preference(
+        repository,
+        settings,
+        _AUTO_SYNC_LAST_FINISHED_KEY,
+        serialize_datetime(finished_at),
+    )
+    duration_value = (
+        None if duration_seconds is None else f"{max(duration_seconds, 0.0):.3f}"
+    )
+    _set_optional_scoped_preference(
+        repository,
+        settings,
+        _AUTO_SYNC_LAST_DURATION_KEY,
+        duration_value,
+    )
+    normalized_message = message.strip() if message and message.strip() else None
+    _set_optional_scoped_preference(
+        repository,
+        settings,
+        _AUTO_SYNC_LAST_MESSAGE_KEY,
+        normalized_message,
+    )
+
+
+def _build_auto_sync_summary(
+    repository: SqliteEmailRepository,
+    settings: AppSettings,
+) -> dict[str, str | bool | None]:
+    """Build display-ready background auto-sync metadata for the settings page."""
+    enabled = settings.sync.auto_interval_seconds > 0
+    stored_status = _get_scoped_preference(repository, settings, _AUTO_SYNC_STATUS_KEY)
+    started_at = _parse_iso_datetime_value(
+        _get_scoped_preference(repository, settings, _AUTO_SYNC_LAST_STARTED_KEY)
+    )
+    finished_at = _parse_iso_datetime_value(
+        _get_scoped_preference(repository, settings, _AUTO_SYNC_LAST_FINISHED_KEY)
+    )
+    duration_seconds = _parse_seconds_value(
+        _get_scoped_preference(repository, settings, _AUTO_SYNC_LAST_DURATION_KEY)
+    )
+    message = _get_scoped_preference(repository, settings, _AUTO_SYNC_LAST_MESSAGE_KEY)
+
+    if not enabled:
+        status_key = "disabled"
+    elif stored_status == "running":
+        status_key = "running"
+    elif stored_status == "success":
+        status_key = "success"
+    elif stored_status == "error":
+        status_key = "error"
+    else:
+        status_key = "waiting"
+
+    status_labels = {
+        "disabled": "Disabled",
+        "waiting": "Waiting",
+        "running": "Running",
+        "success": "Success",
+        "error": "Failed",
+    }
+    default_messages = {
+        "disabled": (
+            "Background auto-sync is disabled. Set the interval above 0 and restart "
+            "the server to enable it."
+        ),
+        "waiting": "Automatic sync is enabled and waiting for the next scheduled cycle.",
+        "running": "A background sync cycle is currently in progress.",
+        "success": "Background auto-sync completed successfully.",
+        "error": "Background auto-sync failed during the last run.",
+    }
+
+    return {
+        "enabled": enabled,
+        "status_label": status_labels[status_key],
+        "interval_display": _display_seconds_value(settings.sync.auto_interval_seconds)
+        or "Off",
+        "last_run_display": display_datetime(finished_at or started_at) or "Never",
+        "started_at_display": display_datetime(started_at),
+        "finished_at_display": display_datetime(finished_at),
+        "duration_display": _display_seconds_value(duration_seconds) or "n/a",
+        "message": message or default_messages[status_key],
+    }
 
 
 def _get_selected_calendar(
@@ -671,13 +867,111 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
     sync_rate_lock = asyncio.Lock()
     sync_rate_history: deque[float] = deque()
 
+    # Concurrency guard: prevents overlapping sync cycles.
+    sync_running_lock = asyncio.Lock()
+
+    # Background auto-sync state.
+    auto_sync_task: asyncio.Task[None] | None = None
+
     def get_repository() -> Iterator[SqliteEmailRepository]:
         with connection_pool.acquire(timeout=10.0) as repository:
             yield repository
 
+    def _persist_auto_sync_state(
+        *,
+        status: str,
+        started_at: datetime | None = None,
+        finished_at: datetime | None = None,
+        duration_seconds: float | None = None,
+        message: str | None = None,
+    ) -> None:
+        """Persist background auto-sync metadata without breaking sync execution."""
+        try:
+            with connection_pool.acquire(timeout=10.0) as repository:
+                _record_auto_sync_state(
+                    repository,
+                    app_settings,
+                    status=status,
+                    started_at=started_at,
+                    finished_at=finished_at,
+                    duration_seconds=duration_seconds,
+                    message=message,
+                )
+        except (RuntimeError, TimeoutError, sqlite3.Error):
+            LOGGER.exception("Failed to persist background auto-sync state")
+
+    async def _auto_sync_loop() -> None:
+        """Periodically run email sync in the background."""
+        interval = app_settings.sync.auto_interval_seconds
+        LOGGER.info("Background auto-sync started (interval=%ds)", interval)
+        # Wait one full interval before the first automatic cycle.
+        await asyncio.sleep(interval)
+        while True:
+            if sync_running_lock.locked():
+                LOGGER.debug("Sync already running, skipping auto-sync cycle")
+            else:
+                async with sync_running_lock:
+                    LOGGER.info("Auto-sync cycle starting")
+                    started_at = datetime.now(UTC)
+                    _persist_auto_sync_state(
+                        status="running",
+                        started_at=started_at,
+                        message="A background sync cycle is currently in progress.",
+                    )
+                    try:
+                        outcome = await asyncio.to_thread(
+                            _run_sync_cycle, app_settings, None
+                        )
+                        finished_at = datetime.now(UTC)
+                        duration_seconds = (finished_at - started_at).total_seconds()
+                        _persist_auto_sync_state(
+                            status="success" if outcome.success else "error",
+                            started_at=started_at,
+                            finished_at=finished_at,
+                            duration_seconds=duration_seconds,
+                            message=outcome.message,
+                        )
+                        if outcome.success:
+                            invalidated = response_cache.invalidate("dashboard")
+                            LOGGER.info(
+                                "Auto-sync complete (%s). Invalidated %d cache entries.",
+                                outcome.message,
+                                invalidated,
+                            )
+                        else:
+                            LOGGER.warning("Auto-sync failed: %s", outcome.message)
+                    except Exception:  # noqa: BLE001
+                        finished_at = datetime.now(UTC)
+                        duration_seconds = (finished_at - started_at).total_seconds()
+                        _persist_auto_sync_state(
+                            status="error",
+                            started_at=started_at,
+                            finished_at=finished_at,
+                            duration_seconds=duration_seconds,
+                            message="Auto-sync cycle raised an exception.",
+                        )
+                        LOGGER.exception("Auto-sync cycle raised an exception")
+            await asyncio.sleep(interval)
+
+    @app.on_event("startup")
+    async def startup_event():
+        """Start background auto-sync if configured."""
+        nonlocal auto_sync_task
+        if app_settings.sync.auto_interval_seconds > 0:
+            auto_sync_task = asyncio.create_task(_auto_sync_loop())
+
     @app.on_event("shutdown")
     async def shutdown_event():
-        """Close connection pool on app shutdown."""
+        """Cancel background sync and close connection pool on app shutdown."""
+        nonlocal auto_sync_task
+        if auto_sync_task is not None:
+            auto_sync_task.cancel()
+            try:
+                await auto_sync_task
+            except asyncio.CancelledError:
+                pass
+            auto_sync_task = None
+            LOGGER.info("Background auto-sync stopped")
         connection_pool.close()
         LOGGER.info("Connection pool closed")
 
@@ -863,6 +1157,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         config_values = _load_env_values(env_file)
         user_preferences = repository.get_all_user_preferences()
         feedback_metrics = repository.get_feedback_metrics()
+        auto_sync_summary = _build_auto_sync_summary(repository, app_settings)
         redirect_target = _build_redirect_target(request)
         csrf_token = csrf.generate_token()
         context = {
@@ -871,6 +1166,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             "config_values": config_values,
             "user_preferences": user_preferences,
             "feedback_metrics": feedback_metrics,
+            "auto_sync_summary": auto_sync_summary,
             "config_status": request.query_params.get("config_status"),
             "config_env_path": str(env_file),
             "redirect_to": redirect_target,
@@ -1112,18 +1408,32 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         queue: asyncio.Queue[str] = asyncio.Queue()
 
         async def run_sync():
-            outcome = await asyncio.to_thread(_run_sync_cycle, app_settings, queue)
+            if sync_running_lock.locked():
+                queue.put_nowait("A sync is already running. Please wait.")
+                target = _append_query_param(redirect_target, "sync_status", "error")
+                target = _append_query_param(
+                    target,
+                    "sync_message",
+                    "A sync is already running. Please wait.",
+                )
+                queue.put_nowait(f"redirect:{target}")
+                return
 
-            # Invalidate cache after sync completes
-            invalidated = response_cache.invalidate("dashboard")
-            LOGGER.info(
-                "Invalidated %d dashboard cache entries after sync", invalidated
-            )
+            async with sync_running_lock:
+                outcome = await asyncio.to_thread(_run_sync_cycle, app_settings, queue)
 
-            status_value = "ok" if outcome.success else "error"
-            target = _append_query_param(redirect_target, "sync_status", status_value)
-            target = _append_query_param(target, "sync_message", outcome.message)
-            queue.put_nowait(f"redirect:{target}")
+                # Invalidate cache after sync completes
+                invalidated = response_cache.invalidate("dashboard")
+                LOGGER.info(
+                    "Invalidated %d dashboard cache entries after sync", invalidated
+                )
+
+                status_value = "ok" if outcome.success else "error"
+                target = _append_query_param(
+                    redirect_target, "sync_status", status_value
+                )
+                target = _append_query_param(target, "sync_message", outcome.message)
+                queue.put_nowait(f"redirect:{target}")
 
         asyncio.create_task(run_sync())
 

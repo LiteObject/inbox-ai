@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 import os
 from datetime import datetime, timezone
@@ -16,6 +17,7 @@ from inbox_ai.core.config import (
     ImapSettings,
     LlmSettings,
     StorageSettings,
+    SyncSettings,
 )
 from inbox_ai.core.models import (
     DraftRecord,
@@ -191,9 +193,7 @@ def test_follow_up_status_api_marks_task_done_and_tracks_calendar_completion(
         assert updated is not None
         assert updated.status == "done"
 
-        completions = verification_repo.list_calendar_occurrence_completions(
-            "primary"
-        )
+        completions = verification_repo.list_calendar_occurrence_completions("primary")
         assert len(completions) == 1
         assert completions[0].occurrence_key == "calendar-event-1"
         assert completions[0].follow_up_id == follow_up_id
@@ -332,6 +332,113 @@ def test_manual_sync_endpoint_handles_missing_credentials(tmp_path) -> None:
     html_response = client.get(location)
     assert html_response.status_code == 200
     assert "Configure IMAP username" in html_response.text
+
+
+def test_settings_page_shows_background_auto_sync_runtime(tmp_path) -> None:
+    db_path = tmp_path / "web_settings_auto_sync.db"
+    settings = StorageSettings(db_path=db_path)
+    repository = SqliteEmailRepository(settings)
+    repository.set_user_preference(
+        "auto_sync_status:owner@example.com",
+        "success",
+    )
+    repository.set_user_preference(
+        "auto_sync_last_started_at:owner@example.com",
+        "2026-03-28T15:00:00+00:00",
+    )
+    repository.set_user_preference(
+        "auto_sync_last_finished_at:owner@example.com",
+        "2026-03-28T15:00:12+00:00",
+    )
+    repository.set_user_preference(
+        "auto_sync_last_duration_seconds:owner@example.com",
+        "12.340",
+    )
+    repository.set_user_preference(
+        "auto_sync_last_message:owner@example.com",
+        "Processed 12 emails.",
+    )
+    repository.close()
+
+    app = create_app(
+        AppSettings(
+            storage=settings,
+            imap=ImapSettings(username="owner@example.com"),
+            sync=SyncSettings(auto_interval_seconds=300),
+        )
+    )
+    client = TestClient(app)
+
+    response = client.get("/settings")
+
+    assert response.status_code == 200
+    assert "Background Sync" in response.text
+    assert "Processed 12 emails." in response.text
+    assert ">Success<" in response.text
+    assert ">5m<" in response.text
+    assert ">12s<" in response.text
+
+
+def test_background_auto_sync_persists_last_run_metadata(tmp_path, monkeypatch) -> None:
+    db_path = tmp_path / "web_auto_sync_runtime.db"
+    settings = StorageSettings(db_path=db_path)
+
+    async def fake_sleep(_seconds: float) -> None:
+        fake_sleep.calls += 1
+        if fake_sleep.calls >= 2:
+            raise asyncio.CancelledError
+
+    fake_sleep.calls = 0
+
+    async def fake_to_thread(func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    def fake_run_sync_cycle(_settings: AppSettings, _progress_queue=None):
+        return web_app_module.SyncOutcome(
+            success=True,
+            message="Processed 3 emails.",
+        )
+
+    monkeypatch.setattr(web_app_module.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(web_app_module.asyncio, "to_thread", fake_to_thread)
+    monkeypatch.setattr(web_app_module, "_run_sync_cycle", fake_run_sync_cycle)
+
+    app = create_app(
+        AppSettings(
+            storage=settings,
+            imap=ImapSettings(username="owner@example.com"),
+            sync=SyncSettings(auto_interval_seconds=1),
+        )
+    )
+
+    with TestClient(app):
+        pass
+
+    with SqliteEmailRepository(settings) as verification_repo:
+        assert (
+            verification_repo.get_user_preference("auto_sync_status:owner@example.com")
+            == "success"
+        )
+        assert (
+            verification_repo.get_user_preference(
+                "auto_sync_last_message:owner@example.com"
+            )
+            == "Processed 3 emails."
+        )
+        started_at = verification_repo.get_user_preference(
+            "auto_sync_last_started_at:owner@example.com"
+        )
+        finished_at = verification_repo.get_user_preference(
+            "auto_sync_last_finished_at:owner@example.com"
+        )
+        duration_seconds = verification_repo.get_user_preference(
+            "auto_sync_last_duration_seconds:owner@example.com"
+        )
+
+    assert started_at is not None
+    assert finished_at is not None
+    assert duration_seconds is not None
+    assert float(duration_seconds) >= 0
 
 
 def test_dashboard_accepts_manual_draft_edits(tmp_path) -> None:

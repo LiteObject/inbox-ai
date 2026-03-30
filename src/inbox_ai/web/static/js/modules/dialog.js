@@ -1,5 +1,15 @@
 const HAS_DIALOG_SUPPORT = typeof window !== "undefined" && typeof HTMLDialogElement !== "undefined";
 
+function focusElement(element) {
+    if (!element || typeof element.focus !== "function") {
+        return;
+    }
+
+    window.requestAnimationFrame(() => {
+        element.focus();
+    });
+}
+
 function createUniqueId(prefix) {
     if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
         return `${prefix}-${crypto.randomUUID()}`;
@@ -58,12 +68,20 @@ export class DialogManager {
         this.confirmButton = dialog.querySelector('[data-action="confirm"]');
     }
 
-    async confirm(message, headline = "Confirm Action", confirmText = "Confirm", cancelText = "Cancel") {
+    async confirm(
+        message,
+        headline = "Confirm Action",
+        confirmText = "Confirm",
+        cancelText = "Cancel",
+        options = {},
+    ) {
         this.ensureDialog();
 
         if (!this.dialogElement) {
             return Promise.resolve(window.confirm(message));
         }
+
+        const { initialFocus = "cancel" } = options;
 
         if (this.headlineElement) {
             this.headlineElement.textContent = headline;
@@ -90,6 +108,9 @@ export class DialogManager {
             this.dialogElement.addEventListener("close", handleClose, { once: true });
             try {
                 this.dialogElement.showModal();
+                focusElement(
+                    initialFocus === "confirm" ? this.confirmButton : this.cancelButton,
+                );
             } catch (error) {
                 this.dialogElement.removeEventListener("close", handleClose);
                 resolve(window.confirm(message));

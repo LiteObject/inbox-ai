@@ -212,7 +212,15 @@ function installSpinnerForms(spinner, toastManager, dialogManager) {
 
             const confirmMessage = submitter?.dataset.confirm ?? form.dataset.confirm;
             if (confirmMessage) {
-                const confirmed = await dialogManager.confirm(confirmMessage, 'Confirm Action', 'Delete', 'Cancel');
+                const formAction = submitter?.formAction || form.action || '';
+                const isDeleteAction = /\/bulk-delete$|\/delete$/i.test(formAction);
+                const confirmed = await dialogManager.confirm(
+                    confirmMessage,
+                    'Confirm Action',
+                    'Delete',
+                    'Cancel',
+                    { initialFocus: isDeleteAction ? 'confirm' : 'cancel' },
+                );
                 if (!confirmed) {
                     return;
                 }
@@ -450,6 +458,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             'Confirm Action',
             'Delete',
             'Cancel',
+            { initialFocus: 'confirm' },
         );
         if (!confirmed) {
             return;

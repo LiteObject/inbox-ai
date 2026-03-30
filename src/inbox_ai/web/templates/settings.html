@@ -212,6 +212,41 @@
                         </div>
                     </div>
 
+                    <div class="settings-panel" id="background-sync">
+                        <div class="settings-section-heading">
+                            <h2>Background Sync</h2>
+                            <p>Shows the most recent automatic inbox sync activity for this account.</p>
+                        </div>
+                        <div class="settings-metrics">
+                            <div class="settings-metric">
+                                <span class="settings-metric__label">Status</span>
+                                <strong class="settings-metric__value">{{ auto_sync_summary.status_label }}</strong>
+                            </div>
+                            <div class="settings-metric">
+                                <span class="settings-metric__label">Interval</span>
+                                <strong class="settings-metric__value">{{ auto_sync_summary.interval_display }}</strong>
+                            </div>
+                            <div class="settings-metric">
+                                <span class="settings-metric__label">Last run</span>
+                                <strong class="settings-metric__value settings-metric__value--compact">{{
+                                    auto_sync_summary.last_run_display }}</strong>
+                            </div>
+                            <div class="settings-metric">
+                                <span class="settings-metric__label">Run time</span>
+                                <strong class="settings-metric__value">{{ auto_sync_summary.duration_display }}</strong>
+                            </div>
+                        </div>
+                        <div class="settings-sync-details">
+                            <p>{{ auto_sync_summary.message }}</p>
+                            {% if auto_sync_summary.started_at_display %}
+                            <p>Started {{ auto_sync_summary.started_at_display }}.</p>
+                            {% endif %}
+                            {% if auto_sync_summary.finished_at_display %}
+                            <p>Finished {{ auto_sync_summary.finished_at_display }}.</p>
+                            {% endif %}
+                        </div>
+                    </div>
+
                     <div class="settings-panel" id="quality-feedback">
                         <div class="settings-section-heading">
                             <h2>Quality Feedback</h2>
