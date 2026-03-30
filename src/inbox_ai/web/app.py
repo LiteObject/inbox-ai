@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import re
@@ -628,16 +629,34 @@ def _build_auto_sync_summary(
     }
 
 
-def _get_selected_calendar(
+def _get_selected_calendars(
     repository: SqliteEmailRepository, settings: AppSettings
-) -> str:
-    """Resolve the selected calendar for the current inbox account."""
-    selected_calendar = _get_calendar_preference(
+) -> list[str]:
+    """Resolve the selected calendars for the current inbox account."""
+    raw = _get_calendar_preference(
         repository,
         settings,
         _CALENDAR_SELECTED_KEY,
     )
-    return selected_calendar or settings.calendar.selected_calendar
+    if raw:
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, list) and parsed:
+                return [str(c) for c in parsed if c]
+        except (json.JSONDecodeError, TypeError):
+            pass
+        # Legacy single-string value.
+        return [raw]
+    fallback = settings.calendar.selected_calendar
+    return [fallback] if fallback else ["primary"]
+
+
+def _get_selected_calendar(
+    repository: SqliteEmailRepository, settings: AppSettings
+) -> str:
+    """Resolve the primary selected calendar (first in the list)."""
+    calendars = _get_selected_calendars(repository, settings)
+    return calendars[0] if calendars else settings.calendar.selected_calendar
 
 
 def _clear_calendar_credentials(
@@ -2207,7 +2226,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
         status_data: dict[str, Any] = {
             "connected": is_connected,
             "configured": app_settings.calendar.is_configured(),
-            "selected_calendar": _get_selected_calendar(repository, app_settings),
+            "selected_calendars": _get_selected_calendars(repository, app_settings),
             "account_email": app_settings.imap.username,
         }
 
@@ -2300,27 +2319,38 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
             app_settings,
             "calendar_refresh_token",
         )
-        selected_calendar = _get_selected_calendar(repository, app_settings)
+        selected_calendars = _get_selected_calendars(repository, app_settings)
 
         try:
             client = GoogleCalendarClient(app_settings.calendar)
             client.set_tokens(access_token, refresh_token)
-            events = await client.list_events(
-                time_min=start_at,
-                time_max=end_at,
-                calendar_id=selected_calendar,
-            )
-            completed_occurrences = {
-                (
-                    completion.occurrence_key,
-                    serialize_datetime(completion.occurrence_start_at),
+
+            all_events: list[dict[str, Any]] = []
+            for cal_id in selected_calendars:
+                try:
+                    cal_events = await client.list_events(
+                        time_min=start_at,
+                        time_max=end_at,
+                        calendar_id=cal_id,
+                    )
+                    all_events.extend(cal_events)
+                except httpx.HTTPStatusError:
+                    logger.warning("Failed to fetch events for calendar %s", cal_id)
+                    continue
+
+            completed_occurrences: set[tuple[str, str | None]] = set()
+            for cal_id in selected_calendars:
+                completed_occurrences.update(
+                    (
+                        completion.occurrence_key,
+                        serialize_datetime(completion.occurrence_start_at),
+                    )
+                    for completion in repository.list_calendar_occurrence_completions(
+                        cal_id,
+                        starts_at=start_at,
+                        ends_at=end_at,
+                    )
                 )
-                for completion in repository.list_calendar_occurrence_completions(
-                    selected_calendar,
-                    starts_at=start_at,
-                    ends_at=end_at,
-                )
-            }
 
             if client.access_token and client.access_token != access_token:
                 _set_calendar_preference(
@@ -2330,10 +2360,17 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                     client.access_token,
                 )
 
+            seen_event_ids: set[str] = set()
             serialized_events: list[dict[str, Any]] = []
-            for event in events:
+            for event in all_events:
                 if event.get("status") == "cancelled":
                     continue
+
+                event_id = event.get("id", "")
+                if event_id and event_id in seen_event_ids:
+                    continue
+                if event_id:
+                    seen_event_ids.add(event_id)
 
                 serialized = _serialize_calendar_event(event, client)
                 occurrence_signature = (
@@ -2354,7 +2391,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                 "success": True,
                 "configured": True,
                 "connected": True,
-                "selected_calendar": selected_calendar,
+                "selected_calendars": selected_calendars,
                 "events": serialized_events,
             }
         except CalendarAuthError as exc:
@@ -2396,16 +2433,31 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
     @app.post("/api/calendar/select")
     async def calendar_select(
         request: Request,
-        calendar_id: str = Form(...),
         repository: SqliteEmailRepository = Depends(get_repository),  # noqa: B008
     ) -> dict[str, Any]:
-        """Persist the selected Google Calendar for the current inbox account."""
+        """Persist the selected Google Calendars for the current inbox account."""
         csrf_token = request.headers.get("X-CSRF-Token")
         csrf.validate(request, csrf_token)
 
-        selected_calendar = calendar_id.strip()
-        if not selected_calendar:
-            return {"success": False, "error": "Calendar ID is required."}
+        content_type = request.headers.get("content-type", "")
+        if "application/json" in content_type:
+            body = await request.json()
+            raw_ids: list[str] = body.get("calendar_ids", [])
+        else:
+            form = await request.form()
+            raw_ids = [
+                v.strip()
+                for v in str(
+                    form.get("calendar_ids", form.get("calendar_id", ""))
+                ).split(",")
+            ]
+
+        selected_calendars = [cid for cid in raw_ids if cid]
+        if not selected_calendars:
+            return {
+                "success": False,
+                "error": "At least one calendar must be selected.",
+            }
 
         access_token = _get_calendar_preference(
             repository,
@@ -2434,17 +2486,18 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
                 for cal in calendars
                 if cal.get("id")
             }
-            if selected_calendar not in calendar_lookup:
+            invalid = [cid for cid in selected_calendars if cid not in calendar_lookup]
+            if invalid:
                 return {
                     "success": False,
-                    "error": "Selected calendar is not available for this account.",
+                    "error": "One or more selected calendars are not available for this account.",
                 }
 
             _set_calendar_preference(
                 repository,
                 app_settings,
                 _CALENDAR_SELECTED_KEY,
-                selected_calendar,
+                json.dumps(selected_calendars),
             )
 
             if client.access_token and client.access_token != access_token:
@@ -2457,8 +2510,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
 
             return {
                 "success": True,
-                "selected_calendar": selected_calendar,
-                "selected_calendar_summary": calendar_lookup[selected_calendar],
+                "selected_calendars": selected_calendars,
                 "account_email": app_settings.imap.username,
             }
         except CalendarAuthError as exc:

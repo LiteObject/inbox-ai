@@ -6,7 +6,7 @@ import json
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 import httpx
 
@@ -193,7 +193,7 @@ class GoogleCalendarClient:
 
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"{self.CALENDAR_API_BASE}/calendars/{target_calendar}/events",
+                f"{self.CALENDAR_API_BASE}/calendars/{quote(target_calendar, safe='')}/events",
                 headers={"Authorization": f"Bearer {self._access_token}"},
                 params=params,
             )
@@ -265,7 +265,7 @@ class GoogleCalendarClient:
 
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                f"{self.CALENDAR_API_BASE}/calendars/{target_calendar}/events",
+                f"{self.CALENDAR_API_BASE}/calendars/{quote(target_calendar, safe='')}/events",
                 headers={
                     "Authorization": f"Bearer {self._access_token}",
                     "Content-Type": "application/json",
@@ -303,7 +303,7 @@ class GoogleCalendarClient:
 
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"{self.CALENDAR_API_BASE}/calendars/{target_calendar}/events/{event_id}",
+                f"{self.CALENDAR_API_BASE}/calendars/{quote(target_calendar, safe='')}/events/{quote(event_id, safe='')}",
                 headers={"Authorization": f"Bearer {self._access_token}"},
             )
 
@@ -363,7 +363,7 @@ class GoogleCalendarClient:
 
         async with httpx.AsyncClient() as client:
             response = await client.patch(
-                f"{self.CALENDAR_API_BASE}/calendars/{target_calendar}/events/{event_id}",
+                f"{self.CALENDAR_API_BASE}/calendars/{quote(target_calendar, safe='')}/events/{quote(event_id, safe='')}",
                 headers={
                     "Authorization": f"Bearer {self._access_token}",
                     "Content-Type": "application/json",

@@ -48,6 +48,48 @@ def test_ollama_client_accepts_per_call_overrides(
     }
 
 
+def test_ollama_client_accepts_chat_message_content_shape(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_post(url: str, *, json: dict[str, object], timeout: int) -> httpx.Response:
+        del json, timeout
+        request = httpx.Request("POST", url)
+        return httpx.Response(
+            200,
+            json={"message": {"role": "assistant", "content": "ok"}},
+            request=request,
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+
+    client = OllamaClient(_settings())
+
+    assert client.generate("hello") == "ok"
+
+
+def test_ollama_client_accepts_openai_choices_shape(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_post(url: str, *, json: dict[str, object], timeout: int) -> httpx.Response:
+        del json, timeout
+        request = httpx.Request("POST", url)
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {"message": {"role": "assistant", "content": "ok from choices"}}
+                ]
+            },
+            request=request,
+        )
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+
+    client = OllamaClient(_settings())
+
+    assert client.generate("hello") == "ok from choices"
+
+
 def test_ollama_client_fails_fast_on_client_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -126,3 +168,29 @@ def test_ollama_client_reset_circuit_breaker_allows_recovery(
 
     assert client.generate("hello") == "recovered"
     assert calls == 10
+
+
+def test_ollama_client_counts_malformed_success_payload_as_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    def fake_post(url: str, *, json: dict[str, object], timeout: int) -> httpx.Response:
+        nonlocal calls
+        del json, timeout
+        calls += 1
+        request = httpx.Request("POST", url)
+        return httpx.Response(200, json={"done": True}, request=request)
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+
+    client = OllamaClient(_settings())
+
+    for _ in range(3):
+        with pytest.raises(LLMError, match="no usable text field"):
+            client.generate("hello")
+
+    with pytest.raises(LLMError, match="circuit breaker is open"):
+        client.generate("hello")
+
+    assert calls == 3

@@ -16,6 +16,53 @@ _MAX_RETRY_ATTEMPTS = 3
 _CIRCUIT_BREAKER_THRESHOLD = 3
 
 
+def _first_non_empty_text(*values: object) -> str | None:
+    for value in values:
+        if isinstance(value, str) and value.strip():
+            return value
+    return None
+
+
+def _extract_choice_text(data: dict[str, object]) -> str | None:
+    choices = data.get("choices")
+    if not isinstance(choices, list):
+        return None
+
+    for choice in choices:
+        if not isinstance(choice, dict):
+            continue
+
+        text = _first_non_empty_text(choice.get("text"))
+        if text is not None:
+            return text
+
+        message = choice.get("message")
+        if isinstance(message, dict):
+            text = _first_non_empty_text(message.get("content"))
+            if text is not None:
+                return text
+
+    return None
+
+
+def _extract_response_text(data: dict[str, object]) -> str:
+    message = data.get("message")
+    output = data.get("output")
+
+    result = _first_non_empty_text(
+        data.get("response"),
+        message.get("content") if isinstance(message, dict) else None,
+        output.get("text") if isinstance(output, dict) else None,
+        _extract_choice_text(data),
+    )
+    if result is None:
+        available_keys = ", ".join(sorted(data.keys())) or "none"
+        raise LLMError(
+            f"LLM returned no usable text field (available keys: {available_keys})"
+        )
+    return result
+
+
 class LLMError(RuntimeError):
     """Raised when the LLM provider fails to respond as expected."""
 
@@ -114,11 +161,13 @@ class OllamaClient:
                 ) from last_error
             raise LLMError("LLM request failed after retries") from last_error
 
-        self._reset_failures()
+        try:
+            result = _extract_response_text(data)
+        except LLMError:
+            self._record_failure()
+            raise
 
-        result = data.get("response")
-        if not isinstance(result, str) or not result.strip():
-            raise LLMError("LLM returned empty or missing 'response' field")
+        self._reset_failures()
         return result
 
     def reset_circuit_breaker(self) -> None:

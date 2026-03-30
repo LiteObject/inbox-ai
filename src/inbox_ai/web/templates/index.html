@@ -757,10 +757,22 @@
 
                     <section class="calendar-rail__section calendar-rail__section--agenda"
                         aria-labelledby="calendar-rail-agenda-heading">
-                        <div class="calendar-rail__section-heading">
-                            <h4 id="calendar-rail-agenda-heading">Agenda</h4>
-                            <span class="calendar-rail__section-meta" id="calendar-rail-agenda-meta">Due now through
-                                next week</span>
+                        <div class="calendar-rail__section-heading calendar-rail__section-heading--agenda">
+                            <div class="calendar-rail__section-heading-copy">
+                                <h4 id="calendar-rail-agenda-heading">Agenda</h4>
+                                <span class="calendar-rail__section-meta" id="calendar-rail-agenda-meta">Due now through
+                                    next 7 days</span>
+                            </div>
+                            <div class="calendar-rail__range-toggle" role="group" aria-label="Agenda range">
+                                <button type="button" class="calendar-rail__range-option" data-agenda-range="7-days"
+                                    aria-pressed="true">
+                                    7 days
+                                </button>
+                                <button type="button" class="calendar-rail__range-option" data-agenda-range="month"
+                                    aria-pressed="false">
+                                    This month
+                                </button>
+                            </div>
                         </div>
                         <div class="calendar-rail__agenda" id="calendar-rail-agenda">
                             <p class="calendar-rail__empty-copy">Nothing urgent yet. Open follow-ups due soon will

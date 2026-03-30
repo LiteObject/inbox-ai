@@ -1292,6 +1292,56 @@ h2.toolbar-heading {
     text-align: right;
 }
 
+.calendar-rail__section-heading--agenda {
+    align-items: flex-start;
+    flex-wrap: wrap;
+}
+
+.calendar-rail__section-heading-copy {
+    display: grid;
+    gap: 2px;
+}
+
+.calendar-rail__section-heading--agenda .calendar-rail__section-meta {
+    text-align: left;
+}
+
+.calendar-rail__range-toggle {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: var(--md3-spacing-4);
+    padding: 4px;
+    border: 1px solid color-mix(in srgb, var(--md3-color-outline-variant) 88%, var(--md3-color-surface) 12%);
+    border-radius: var(--md3-radius-full);
+    background: color-mix(in srgb, var(--md3-color-surface-container-high) 72%, var(--md3-color-surface) 28%);
+}
+
+.calendar-rail__range-option {
+    min-height: 30px;
+    padding: 0 12px;
+    border: none;
+    border-radius: var(--md3-radius-full);
+    background: transparent;
+    color: var(--md3-color-on-surface-variant);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    transition: background-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+.calendar-rail__range-option:hover,
+.calendar-rail__range-option:focus-visible {
+    background: color-mix(in srgb, var(--md3-color-primary-container) 58%, var(--md3-color-surface) 42%);
+    color: var(--md3-color-on-primary-container);
+}
+
+.calendar-rail__range-option[aria-pressed="true"] {
+    background: var(--md3-color-surface);
+    color: var(--md3-color-on-surface);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md3-color-primary) 24%, var(--md3-color-outline-variant) 76%);
+}
+
 .calendar-rail__month-header {
     display: grid;
     grid-template-columns: 36px 1fr 36px;
@@ -4027,6 +4077,42 @@ h2.toolbar-heading {
     margin-top: var(--md3-spacing-8);
     padding-left: 20px;
     list-style: disc;
+}
+
+.calendar-checkbox-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--md3-spacing-8);
+    margin-top: var(--md3-spacing-8);
+    border: none;
+    padding: 0;
+}
+
+.calendar-checkbox-item {
+    display: flex;
+    align-items: center;
+    gap: var(--md3-spacing-8);
+    padding: var(--md3-spacing-8) var(--md3-spacing-12);
+    border-radius: var(--md3-shape-corner-small);
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+}
+
+.calendar-checkbox-item:hover {
+    background-color: var(--theme-surface-container);
+}
+
+.calendar-checkbox-item input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--theme-primary);
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.calendar-checkbox-item span {
+    font-size: 0.875rem;
+    color: var(--theme-on-surface);
 }
 
 /* Material Design 3 Color Utilities */

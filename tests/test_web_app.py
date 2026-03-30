@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import json
 import os
 from datetime import datetime, timezone
 from urllib.parse import parse_qsl, urlsplit
@@ -735,7 +736,7 @@ def test_calendar_status_clears_stale_tokens_on_auth_failure(
     assert response.json() == {
         "connected": False,
         "configured": True,
-        "selected_calendar": "primary",
+        "selected_calendars": ["primary"],
         "account_email": None,
         "reauth_required": True,
         "error": "Google Calendar authorization expired. Please reconnect.",
@@ -788,7 +789,7 @@ def test_calendar_status_uses_account_scoped_preferences(tmp_path, monkeypatch) 
     assert response.json() == {
         "connected": True,
         "configured": True,
-        "selected_calendar": "team-calendar",
+        "selected_calendars": ["team-calendar"],
         "account_email": "owner@example.com",
         "calendars": [
             {"id": "primary", "summary": "Personal"},
@@ -841,25 +842,24 @@ def test_calendar_select_persists_selected_calendar_for_current_account(
 
     response = client.post(
         "/api/calendar/select",
-        data={"calendar_id": "team-calendar"},
-        headers={"X-CSRF-Token": csrf_token},
+        content=json.dumps({"calendar_ids": ["team-calendar"]}),
+        headers={
+            "X-CSRF-Token": csrf_token,
+            "Content-Type": "application/json",
+        },
     )
 
     assert response.status_code == 200
     assert response.json() == {
         "success": True,
-        "selected_calendar": "team-calendar",
-        "selected_calendar_summary": "Team",
+        "selected_calendars": ["team-calendar"],
         "account_email": "owner@example.com",
     }
 
     with SqliteEmailRepository(settings) as verification_repo:
-        assert (
-            verification_repo.get_user_preference(
-                "calendar_selected_calendar:owner@example.com"
-            )
-            == "team-calendar"
-        )
+        assert verification_repo.get_user_preference(
+            "calendar_selected_calendar:owner@example.com"
+        ) == json.dumps(["team-calendar"])
 
 
 def test_calendar_events_return_selected_calendar_items(tmp_path, monkeypatch) -> None:
@@ -929,7 +929,7 @@ def test_calendar_events_return_selected_calendar_items(tmp_path, monkeypatch) -
     assert payload["success"] is True
     assert payload["configured"] is True
     assert payload["connected"] is True
-    assert payload["selected_calendar"] == "team-calendar"
+    assert payload["selected_calendars"] == ["team-calendar"]
     assert len(payload["events"]) == 1
     assert payload["events"][0]["id"] == "external-1"
     assert payload["events"][0]["summary"] == "Team offsite"

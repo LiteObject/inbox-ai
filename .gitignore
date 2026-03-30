@@ -136,7 +136,6 @@ celerybeat.pid
 *.sage.py
 
 # Environments
-.env
 .envrc
 .venv
 env/
@@ -211,3 +210,4 @@ node_modules/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+config.bat

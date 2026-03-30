@@ -491,15 +491,15 @@
             `;
         }
 
-        async function saveCalendarSelection(calendarId) {
+        async function saveCalendarSelection(calendarIds) {
             const csrfToken = document.querySelector('input[name="{{ csrf_field_name }}"]')?.value;
             const response = await fetch('/api/calendar/select', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                    'Content-Type': 'application/json',
                     'X-CSRF-Token': csrfToken,
                 },
-                body: new URLSearchParams({ calendar_id: calendarId }),
+                body: JSON.stringify({ calendar_ids: calendarIds }),
             });
 
             return response.json();
@@ -557,36 +557,46 @@
                     `;
 
                     if (data.calendars && data.calendars.length > 0) {
+                        const selectedSet = new Set(data.selected_calendars || []);
                         calendarList.innerHTML = `
-                            <strong>Target Calendar</strong>
-                            <p>Choose which Google Calendar should receive follow-up events for this inbox account.</p>
-                            <div class="maintenance-actions">
-                                <select id="calendar-select" class="md3-select" aria-label="Select Google Calendar">
-                                    ${data.calendars.map(cal => {
-                            const isSelected = cal.id === data.selected_calendar;
+                            <strong>Visible Calendars</strong>
+                            <p>Choose which Google Calendars to show in the planner. The first checked calendar is used when syncing follow-ups.</p>
+                            <fieldset class="calendar-checkbox-list">
+                                ${data.calendars.map(cal => {
+                            const isChecked = selectedSet.has(cal.id);
                             const summary = escapeHtml(cal.summary || cal.id);
                             const id = escapeHtml(cal.id);
-                            return `<option value="${id}" ${isSelected ? 'selected' : ''}>${summary}</option>`;
+                            return `<label class="calendar-checkbox-item">
+                                        <input type="checkbox" name="calendar_ids" value="${id}" ${isChecked ? 'checked' : ''}>
+                                        <span>${summary}</span>
+                                    </label>`;
                         }).join('')}
-                                </select>
+                            </fieldset>
+                            <div class="maintenance-actions">
                                 <button type="button" id="save-calendar-selection-btn" class="md3-button md3-button--tonal">
                                     <span class="material-icons" aria-hidden="true">event</span>
-                                    Save Calendar
+                                    Save Calendars
                                 </button>
                             </div>
                         `;
                         calendarList.hidden = false;
 
                         document.getElementById('save-calendar-selection-btn')?.addEventListener('click', async () => {
-                            const select = document.getElementById('calendar-select');
+                            const checkboxes = calendarList.querySelectorAll('input[name="calendar_ids"]:checked');
                             const button = document.getElementById('save-calendar-selection-btn');
-                            if (!select || !button) {
+                            if (!button) {
+                                return;
+                            }
+
+                            const selectedIds = Array.from(checkboxes).map(cb => cb.value);
+                            if (selectedIds.length === 0) {
+                                ToastManager.show('Select at least one calendar', 'error');
                                 return;
                             }
 
                             button.disabled = true;
                             try {
-                                const result = await saveCalendarSelection(select.value);
+                                const result = await saveCalendarSelection(selectedIds);
                                 if (result.success) {
                                     ToastManager.show('Calendar selection saved', 'success');
                                     await loadCalendarStatus();
